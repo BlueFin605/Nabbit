@@ -2,5 +2,6 @@
 // their route modules here, before the handler is exported.
 import '../routes/recipes.js';
 import '../routes/images.js';
+import '../routes/lists.js';
 
 export { handler } from '../router.js';

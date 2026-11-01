@@ -7,7 +7,7 @@ export interface RequestCtx {
   body: unknown;
 }
 export type RouteHandler = (ctx: RequestCtx) => Promise<{ status: number; body?: unknown }>;
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export class HttpError extends Error {
   constructor(

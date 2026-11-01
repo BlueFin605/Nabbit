@@ -4,3 +4,5 @@ export { newId } from './id';
 export { parseIngredient } from './parse-ingredient';
 export { toMetric, roundMetric, convertTemperatures, fToC } from './metric';
 export { scaleIngredient, scaleRecipeIngredients, formatQuantity } from './scale';
+export type { ListItem, ShoppingList } from './lists';
+export { CATEGORIES } from './lists';

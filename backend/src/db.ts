@@ -4,11 +4,14 @@
  * Handlers depend on the small `Db` interface, never on the AWS SDK directly, so unit tests inject
  * the in-memory double from `db-memory.ts` via `setDb()`. Key layout (see infrastructure/SYSDOC.md):
  *   recipe item   pk=OWNER#{ownerId}  sk=RECIPE#{id}
+ *   list          pk=OWNER#{ownerId}  sk=LIST#{id}
+ *   item memory   pk=OWNER#{ownerId}  sk=MEM#{lowercased name}
  * Helpers `ownerPk` / `recipeSk` build keys so every item is scoped to its owner by construction.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
+  DeleteCommand,
   GetCommand,
   PutCommand,
   QueryCommand,
@@ -39,6 +42,8 @@ export interface Db {
   getItem(pk: string, sk: string): Promise<Item | undefined>;
   /** Create or replace an item; throws `ConditionFailedError` if `condition` fails. */
   putItem(item: Item, condition?: Condition): Promise<void>;
+  /** Remove an item (no-op if absent). */
+  deleteItem(pk: string, sk: string): Promise<void>;
   /** All items in a partition whose sk starts with `skPrefix` (follows pagination). */
   queryItems(pk: string, skPrefix: string): Promise<Item[]>;
 }
@@ -46,6 +51,11 @@ export interface Db {
 export const ownerPk = (ownerId: string): string => `OWNER#${ownerId}`;
 export const recipeSk = (id: string): string => `RECIPE#${id}`;
 export const RECIPE_SK_PREFIX = 'RECIPE#';
+export const listSk = (id: string): string => `LIST#${id}`;
+export const LIST_SK_PREFIX = 'LIST#';
+/** Item memory is keyed by the lowercased item name. */
+export const memSk = (lowerName: string): string => `MEM#${lowerName}`;
+export const MEM_SK_PREFIX = 'MEM#';
 
 /** DynamoDB-backed implementation. `AWS_ENDPOINT_URL` (local dev) is honoured by the SDK itself. */
 export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?: DynamoDBDocumentClient): Db {
@@ -88,6 +98,9 @@ export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?
         if ((err as { name?: string }).name === 'ConditionalCheckFailedException') throw new ConditionFailedError();
         throw err;
       }
+    },
+    async deleteItem(pk, sk) {
+      await doc.send(new DeleteCommand({ TableName: tableName, Key: { pk, sk } }));
     },
     async queryItems(pk, skPrefix) {
       const items: Item[] = [];

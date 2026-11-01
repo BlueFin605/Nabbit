@@ -21,6 +21,9 @@ export function createMemoryDb(): Db & { items: Map<string, Item> } {
       if (!holds(items.get(key(item.pk, item.sk)), condition)) throw new ConditionFailedError();
       items.set(key(item.pk, item.sk), structuredClone(item));
     },
+    async deleteItem(pk, sk) {
+      items.delete(key(pk, sk));
+    },
     async queryItems(pk, skPrefix) {
       return [...items.values()].filter((i) => i.pk === pk && i.sk.startsWith(skPrefix)).map((i) => structuredClone(i));
     },
