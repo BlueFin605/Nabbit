@@ -86,7 +86,17 @@ namespace Infrastructure.Stacks
             });
 
             // ---- Storage ----
-            ImageBucket = PrivateBucket("ImageBucket", config.Name("images"));
+            // Browser uploads directly via presigned POST from the SPA origin; reads go through CloudFront, so POST only.
+            ImageBucket = PrivateBucket("ImageBucket", config.Name("images"), new[]
+            {
+                new CorsRule
+                {
+                    AllowedOrigins = new[] { origin },
+                    AllowedMethods = new[] { HttpMethods.POST },
+                    AllowedHeaders = new[] { "*" },
+                    MaxAge = 3000,
+                },
+            });
             SpaBucket = PrivateBucket("SpaBucket", config.Name("spa"));
 
             // ---- API ----
@@ -248,12 +258,13 @@ namespace Infrastructure.Stacks
             Out("ImportReservedConcurrency", config.ImportReservedConcurrency.ToString());
         }
 
-        private Bucket PrivateBucket(string id, string name) => new Bucket(this, id, new BucketProps
+        private Bucket PrivateBucket(string id, string name, ICorsRule[] cors = null) => new Bucket(this, id, new BucketProps
         {
             BucketName = name,
             BlockPublicAccess = BlockPublicAccess.BLOCK_ALL,
             Encryption = BucketEncryption.S3_MANAGED,
             EnforceSSL = true,
+            Cors = cors,
             RemovalPolicy = RemovalPolicy.RETAIN,
         });
 

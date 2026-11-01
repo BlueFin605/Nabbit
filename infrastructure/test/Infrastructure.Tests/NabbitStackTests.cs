@@ -57,6 +57,20 @@ namespace Infrastructure.Tests
         }
 
         [Fact]
+        public void ImageBucket_HasSingleOriginPostCors_AndSpaBucketHasNone()
+        {
+            var buckets = Resources(Synth(), "AWS::S3::Bucket").Select(b => b.Value.GetProperty("Properties")).ToList();
+            var withCors = buckets.Where(p => p.TryGetProperty("CorsConfiguration", out _)).ToList();
+            var cors = Assert.Single(withCors).GetProperty("CorsConfiguration").GetProperty("CorsRules");
+            var rule = Assert.Single(cors.EnumerateArray());
+            Assert.Equal(new[] { "https://nabbit.example.com" }, rule.GetProperty("AllowedOrigins").EnumerateArray().Select(e => e.GetString()).ToArray());
+            Assert.Equal(new[] { "POST" }, rule.GetProperty("AllowedMethods").EnumerateArray().Select(e => e.GetString()).ToArray());
+            Assert.Equal(new[] { "*" }, rule.GetProperty("AllowedHeaders").EnumerateArray().Select(e => e.GetString()).ToArray());
+            Assert.Equal(3000, rule.GetProperty("MaxAge").GetInt32());
+            Assert.Contains("images", withCors[0].GetProperty("BucketName").GetString());
+        }
+
+        [Fact]
         public void BucketPolicies_NeverAllowWildcardPrincipal()
         {
             foreach (var p in Resources(Synth(), "AWS::S3::BucketPolicy"))
