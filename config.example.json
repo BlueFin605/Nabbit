@@ -1,1 +1,1 @@
-{ "nabbit": { "prefix": "nabbit", "region": "ap-southeast-2", "environment": "production", "domain": "nabbit.example.com" } }
+{ "nabbit": { "prefix": "nabbit", "region": "ap-southeast-2", "environment": "production", "domain": "nabbit.example.com", "hostedZoneId": "Z0000000000EXAMPLE", "importReservedConcurrency": 2 } }
