@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { HttpError, handler, resetRoutes, route } from '../src/router.js';
+import { HttpError, handler, resetRoutes, route, type RouteHandler } from '../src/router.js';
 
 function event(method: string, path: string, opts: { sub?: string; body?: string; b64?: boolean; query?: string } = {}): APIGatewayProxyEventV2 {
   return {
@@ -19,7 +19,7 @@ function event(method: string, path: string, opts: { sub?: string; body?: string
 }
 
 const call = async (e: APIGatewayProxyEventV2) => {
-  const res = (await handler(e, {} as never, () => undefined)) as { statusCode: number; headers: Record<string, string>; body?: string };
+  const res = (await handler(e)) as { statusCode: number; headers: Record<string, string>; body?: string };
   return { ...res, json: res.body ? JSON.parse(res.body) : undefined };
 };
 
@@ -46,7 +46,7 @@ describe('router', () => {
   });
 
   it('extracts params, query and JSON body', async () => {
-    const h = vi.fn(async () => ({ status: 201, body: { ok: true } }));
+    const h = vi.fn<RouteHandler>(async () => ({ status: 201, body: { ok: true } }));
     route('POST', '/recipes/{id}/notes/{noteId}', h);
     const res = await call(event('POST', '/recipes/a%20b/notes/7', { sub: 'u1', query: 'q=1&x=y', body: '{"a":1}' }));
     expect(res.statusCode).toBe(201);
@@ -55,7 +55,7 @@ describe('router', () => {
   });
 
   it('decodes base64 bodies and tolerates empty body', async () => {
-    const h = vi.fn(async () => ({ status: 204 }));
+    const h = vi.fn<RouteHandler>(async () => ({ status: 204 }));
     route('PUT', '/x', h);
     await call(event('PUT', '/x', { sub: 'u1', body: Buffer.from('{"b":2}').toString('base64'), b64: true }));
     expect(h.mock.calls[0]![0].body).toEqual({ b: 2 });
@@ -95,7 +95,7 @@ describe('router', () => {
   });
 
   it('ownerId is always the claim, never the body', async () => {
-    const h = vi.fn(async () => ({ status: 200 }));
+    const h = vi.fn<RouteHandler>(async () => ({ status: 200 }));
     route('POST', '/x', h);
     await call(event('POST', '/x', { sub: 'real', body: '{"ownerId":"attacker"}' }));
     expect(h.mock.calls[0]![0].ownerId).toBe('real');

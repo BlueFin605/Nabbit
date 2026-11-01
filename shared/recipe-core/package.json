@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "scripts": { "test": "vitest run --passWithNoTests" }
+  "scripts": { "test": "vitest run --passWithNoTests", "typecheck": "tsc --noEmit" }
 }

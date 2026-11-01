@@ -6,6 +6,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "dev": "node --enable-source-maps --watch --import tsx src/local.ts",
     "init-local": "node scripts/init-local.mjs"
   },

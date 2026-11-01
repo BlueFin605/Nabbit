@@ -18,7 +18,7 @@ function event(method: string, path: string, sub: string, body?: unknown, query 
   } as unknown as APIGatewayProxyEventV2;
 }
 const call = async (method: string, path: string, sub: string, body?: unknown, query = '') => {
-  const res = (await handler(event(method, path, sub, body, query), {} as never, () => undefined)) as {
+  const res = (await handler(event(method, path, sub, body, query))) as {
     statusCode: number;
     body?: string;
   };

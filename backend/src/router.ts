@@ -1,4 +1,4 @@
-import type { APIGatewayProxyHandlerV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 
 export interface RequestCtx {
   ownerId: string;
@@ -59,13 +59,15 @@ function match(r: Route, method: string, parts: string[]): Record<string, string
   return params;
 }
 
-const json = (statusCode: number, body?: unknown): APIGatewayProxyResultV2 => ({
+const json = (statusCode: number, body?: unknown): APIGatewayProxyStructuredResultV2 => ({
   statusCode,
   headers: { 'content-type': 'application/json' },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 
-export const handler: APIGatewayProxyHandlerV2 = async (event) => {
+// Structurally a Lambda handler (the runtime passes extra args we ignore); the narrow return type
+// (no `void`) lets the local dev server call it directly.
+export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> => {
   try {
     // Ownership comes ONLY from the verified JWT claim, never from the request body.
     const sub = (event.requestContext as { authorizer?: { jwt?: { claims?: Record<string, unknown> } } }).authorizer?.jwt?.claims?.sub;
