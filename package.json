@@ -12,7 +12,8 @@
   "scripts": {
     "lint": "eslint .",
     "test": "npm test --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "dev": "dotnet run --project aspire/Nabbit.AppHost"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
