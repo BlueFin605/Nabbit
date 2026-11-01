@@ -21,8 +21,11 @@ describe('local server', () => {
   });
 
   it('routes other paths to the API handler', async () => {
-    const res = await fetch(`${base}/nope`);
+    expect((await fetch(`${base}/nope`)).status).toBe(401);
+    const jwt = `x.${Buffer.from(JSON.stringify({ sub: 'u1' })).toString('base64url')}.y`;
+    const res = await fetch(`${base}/nope`, { headers: { authorization: `Bearer ${jwt}` } });
     expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
   });
 });
 
