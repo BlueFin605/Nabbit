@@ -3,6 +3,7 @@ import type { Environment } from './environment.types';
 export const environment: Environment = {
   production: false,
   apiBaseUrl: 'http://localhost:3000',
+  imageBaseUrl: '/img',
   cognito: {
     region: 'us-east-1',
     userPoolId: 'us-east-1_testPoolId0',

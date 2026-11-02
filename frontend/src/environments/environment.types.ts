@@ -2,6 +2,8 @@ export interface Environment {
   production: boolean;
   /** API origin with no trailing slash, e.g. https://api.nabbit.example.com. */
   apiBaseUrl: string;
+  /** Base for recipe images (`${imageBaseUrl}/${imageKey}`), no trailing slash. `/img` = same-origin CloudFront path. */
+  imageBaseUrl: string;
   cognito: {
     region: string;
     userPoolId: string;

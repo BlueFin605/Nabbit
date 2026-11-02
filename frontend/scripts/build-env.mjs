@@ -36,6 +36,8 @@ if (placeholder) {
 const env = {
   production: true,
   apiBaseUrl: get('NG_APP_API_BASE_URL', 'https://api.nabbit.invalid'),
+  // Optional (outside the all-or-nothing set): defaults to the same-origin CloudFront /img/* path.
+  imageBaseUrl: (process.env.NG_APP_IMAGE_BASE_URL || '/img').replace(/\/+$/, ''),
   cognito: {
     region: get('NG_APP_COGNITO_REGION', 'ap-southeast-2'),
     userPoolId: get('NG_APP_COGNITO_USER_POOL_ID', 'ap-southeast-2_placeholder'),
