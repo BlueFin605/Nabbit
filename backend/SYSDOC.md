@@ -53,6 +53,10 @@ Item names written to a list are remembered (`MEM#`) with their category, which 
 
 In AWS the JWT authorizer supplies `sub`. The local server decodes (does not verify) a bearer JWT's `sub`, or, when `NODE_ENV=development`, accepts `X-Dev-Sub`. Local stack and run commands are in the root `README.md`. Tests: `npm test -w backend`, `npm run typecheck -w backend`.
 
+## DynamoDB adapter tests
+
+Handler tests use the in-memory double (`src/db-memory.ts`). `test/db-dynamo.test.ts` drives the real `createDynamoDb` with a stub DocumentClient and asserts the generated commands (condition expressions, `ADD` counters, Query pagination, Delete, `ConditionalCheckFailedException` to `ConditionFailedError`), and pins the semantics the double mirrors (undefined values dropped, counters preserve other attributes, queries sorted by sk). The double's remaining differences (no 400 KB item limit, no 1 MB page limit/pagination, no expression validation or TTL expiry) are listed in its header comment. `test/db-localstack.test.ts` runs the adapter against real DynamoDB semantics and is skipped unless `NABBIT_LOCALSTACK_ENDPOINT` is set; start LocalStack, run `init-local.mjs` with `AWS_ENDPOINT_URL` and `TABLE_NAME`, then `NABBIT_LOCALSTACK_ENDPOINT=... NABBIT_LOCALSTACK_TABLE=... npx vitest run test/db-localstack.test.ts` from `backend/` (exact commands are in the file header).
+
 ## API suite
 
 `tests/api/nabbit.frcol` (FullyRested; folders health, recipes, lists, import, import-rate-limit) checks the HTTP contract: status plus JSON Schema per request, including 400/401/404/409/422/429 cases. It needs LocalStack-backed DynamoDB and S3 (the dev server has no in-memory mode). URL imports are tested only with rejected addresses so the suite never reaches the internet. The `production` environment is for the owner to run deliberately.
