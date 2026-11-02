@@ -27,6 +27,14 @@ interface Route {
 }
 const routes: Route[] = [];
 
+/** Longest accepted path-parameter value; longer ids can never exist (and could exceed DynamoDB's key limit). */
+export const MAX_PARAM_LENGTH = 100;
+
+/** 400 `too_large` when `value` serialises to more than `maxBytes` of JSON (keeps items under DynamoDB's 400 KB). */
+export function assertMaxBytes(value: unknown, maxBytes: number): void {
+  if (Buffer.byteLength(JSON.stringify(value), 'utf8') > maxBytes) throw new HttpError(400, 'too_large');
+}
+
 const split = (path: string): string[] => path.split('/').filter(Boolean);
 
 /** Register a route. Patterns support `{name}` path parameters, e.g. `/recipes/{id}`. */
@@ -54,6 +62,7 @@ function match(r: Route, method: string, parts: string[]): Record<string, string
       } catch {
         return undefined;
       }
+      if (params[seg.slice(1, -1)]!.length > MAX_PARAM_LENGTH) return undefined; // unknown id -> 404
     } else if (seg !== part) return undefined;
   }
   return params;

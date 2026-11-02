@@ -10,13 +10,15 @@
  */
 import { newId, toMetric, type Ingredient, type Recipe } from '@nabbit/recipe-core';
 import { ConditionFailedError, RECIPE_SK_PREFIX, getDb, ownerPk, recipeSk, type Item } from '../db.js';
-import { HttpError, route, type RequestCtx } from '../router.js';
+import { HttpError, assertMaxBytes, route, type RequestCtx } from '../router.js';
 
 const MAX_TITLE = 200;
 const MAX_INGREDIENTS = 200;
 const MAX_STEPS = 100;
 const MAX_TAGS = 50;
 const MAX_STRING = 5000;
+/** Serialized recipe cap, well under DynamoDB's 400 KB item limit. */
+const MAX_RECIPE_BYTES = 350 * 1024;
 const RETENTION_DAYS = 30;
 
 type Obj = Record<string, unknown>;
@@ -77,7 +79,7 @@ function parseFields(body: unknown, ownerId: string): Fields {
   const imageKey = optStr(body.imageKey, 'imageKey');
   // Image keys are `{ownerId}/{uuid}`; refuse to reference another owner's image.
   if (imageKey !== undefined && !imageKey.startsWith(`${ownerId}/`)) bad('imageKey is not yours');
-  return {
+  const fields: Fields = {
     title,
     servings: body.servings as number,
     ingredients: (body.ingredients as unknown[]).map(parseIngredient),
@@ -86,6 +88,8 @@ function parseFields(body: unknown, ownerId: string): Fields {
     ...(sourceUrl !== undefined ? { sourceUrl } : {}),
     ...(imageKey !== undefined ? { imageKey } : {}),
   };
+  assertMaxBytes(fields, MAX_RECIPE_BYTES);
+  return fields;
 }
 
 const nowSec = (): number => Math.floor(Date.now() / 1000);

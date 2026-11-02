@@ -6,7 +6,7 @@ What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. T
 
 - `src/router.ts` — tiny router: `route(method, pattern, handler)` with `{param}` segments; `HttpError(status, message)` becomes `{error}` JSON; 401 when the authorizer `sub` claim is missing. Route modules self-register on import. Paths with empty segments (`//`, trailing `/`) are 404 so normalization cannot alias routes. The import route is registered only by `handlers/import.ts` and the local dev server (`local.ts`), never by `handlers/api.ts`.
 - `src/routes/` — `recipes.ts`, `images.ts`, `lists.ts`, `import.ts`. The header comment of each is the endpoint contract.
-- `src/db.ts` — the `Db` interface (get, conditional put, delete, query by prefix, atomic counter), key builders and the DynamoDB implementation; `db-memory.ts` is the unit-test double (`setDb`). Key layout: root `SYSDOC.md`.
+- `src/db.ts` — the `Db` interface (get, conditional put, delete, query by prefix, atomic counter, atomic `bumpItemMemory`), key builders and the DynamoDB implementation; `db-memory.ts` is the unit-test double (`setDb`). Key layout: root `SYSDOC.md`.
 - `src/import/` — `safe-fetch.ts`, `extract-structured.ts`, `extract-text.ts`, `import-error.ts`.
 - `src/local.ts`, `src/local-adapter.ts` — Express dev server wrapping the same handlers; `src/e2e-fixture-fetch.ts` — dev-only fixture hook for e2e (`../e2e/SYSDOC.md`).
 - `scripts/init-local.mjs` creates the local table and image bucket; `scripts/build.mjs` is the bundler.
@@ -15,6 +15,8 @@ What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. T
 ## HTTP endpoints
 
 All need a JWT (otherwise 401 `{error:'unauthorized'}`), except health. Errors are `{error}`. Another owner's record is always 404.
+
+**Limits.** Path parameters longer than 100 characters never match a record (404, so oversized sort keys never reach DynamoDB; ids containing `#` or `/` are just unknown ids inside the caller's own partition). A recipe or list whose serialized JSON exceeds 350 KB is rejected with 400 `{error:'too_large'}` (DynamoDB's item limit is 400 KB). Also 400: `GET /items/suggest` with `q` over 100 characters.
 
 | Method and path | Success | Errors |
 |---|---|---|
@@ -37,7 +39,7 @@ All need a JWT (otherwise 401 `{error:'unauthorized'}`), except health. Errors a
 | `DELETE /lists/{id}/items/{itemId}` | 200 list | 404, 409 |
 | `GET /items/suggest?q=` | 200, up to 8 `{name, category}` from item memory, most used first | |
 
-Item names written to a list are remembered (`MEM#`) with their category, which drives suggest and sticky aisle grouping.
+Item names written to a list are remembered (`MEM#`) with their category, which drives suggest and sticky aisle grouping. Memory is updated with one atomic `UpdateItem` (`ADD uses :n SET category, updatedAt`) so concurrent adds never lose increments; a category change on an existing item adds 0 to `uses`.
 
 ## Import pipeline
 

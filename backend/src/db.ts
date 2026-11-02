@@ -50,6 +50,11 @@ export interface Db {
   queryItems(pk: string, skPrefix: string): Promise<Item[]>;
   /** Atomically add 1 to the item's `count` (creating it), set `ttl` (epoch seconds), return the new count. */
   incrementCounter(pk: string, sk: string, ttl: number): Promise<number>;
+  /**
+   * Atomically add `by` to an item-memory entry's `uses` (creating it at 0 first) and set its
+   * `category` and `updatedAt` (ISO string), leaving other attributes untouched.
+   */
+  bumpItemMemory(pk: string, sk: string, category: string, now: string, by: number): Promise<void>;
 }
 
 export const ownerPk = (ownerId: string): string => `OWNER#${ownerId}`;
@@ -120,6 +125,17 @@ export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?
         }),
       );
       return Number(res.Attributes?.count ?? 1);
+    },
+    async bumpItemMemory(pk, sk, category, now, by) {
+      await doc.send(
+        new UpdateCommand({
+          TableName: tableName,
+          Key: { pk, sk },
+          UpdateExpression: 'ADD #u :by SET #c = :c, #t = :t',
+          ExpressionAttributeNames: { '#u': 'uses', '#c': 'category', '#t': 'updatedAt' },
+          ExpressionAttributeValues: { ':by': by, ':c': category, ':t': now },
+        }),
+      );
     },
     async queryItems(pk, skPrefix) {
       const items: Item[] = [];

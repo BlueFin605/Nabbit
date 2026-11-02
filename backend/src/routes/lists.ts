@@ -13,11 +13,13 @@
  */
 import { newId, type ListItem, type ShoppingList } from '@nabbit/recipe-core';
 import { ConditionFailedError, LIST_SK_PREFIX, MEM_SK_PREFIX, getDb, listSk, memSk, ownerPk, type Item } from '../db.js';
-import { HttpError, route, type RequestCtx } from '../router.js';
+import { HttpError, assertMaxBytes, route, type RequestCtx } from '../router.js';
 
 const MAX_LISTS = 50;
 const MAX_ITEMS = 500;
 const MAX_NAME = 100;
+/** Serialized list cap, well under DynamoDB's 400 KB item limit. */
+const MAX_LIST_BYTES = 350 * 1024;
 const MAX_SUGGESTIONS = 8;
 const DEFAULT_CATEGORY = 'Other';
 
@@ -69,20 +71,14 @@ async function save(ownerId: string, next: ShoppingList, expected: number): Prom
 /** Bump version/updatedAt and persist a modified copy of `list`. */
 async function commit(ownerId: string, list: ShoppingList, items: ListItem[], listName = list.name): Promise<ShoppingList> {
   const next: ShoppingList = { id: list.id, name: listName, items, version: list.version + 1, updatedAt: new Date().toISOString() };
+  assertMaxBytes(next, MAX_LIST_BYTES);
   await save(ownerId, next, list.version);
   return next;
 }
 
-interface Memory {
-  category: string;
-  uses: number;
-}
-async function loadMemory(ownerId: string, lower: string): Promise<Memory | undefined> {
+async function loadMemoryCategory(ownerId: string, lower: string): Promise<string | undefined> {
   const m = await getDb().getItem(ownerPk(ownerId), memSk(lower));
-  return m ? { category: m.category as string, uses: m.uses as number } : undefined;
-}
-async function writeMemory(ownerId: string, lower: string, m: Memory): Promise<void> {
-  await getDb().putItem({ pk: ownerPk(ownerId), sk: memSk(lower), category: m.category, uses: m.uses });
+  return m ? (m.category as string) : undefined;
 }
 
 async function listAll({ ownerId }: RequestCtx) {
@@ -162,20 +158,20 @@ async function addItems({ ownerId, params, body }: RequestCtx) {
     incoming = [{ name: name(body.name, 'name'), ...(cat !== undefined ? { category: cat } : {}) }];
   }
 
-  const memories = new Map<string, Memory | undefined>();
+  const memories = new Map<string, { category: string; uses: number }>();
   const items = list.items.map((i) => ({ ...i }));
   for (const inc of incoming) {
     const lower = inc.name.toLowerCase();
-    if (!memories.has(lower)) memories.set(lower, await loadMemory(ownerId, lower));
     const prev = memories.get(lower);
-    const cat = inc.category ?? prev?.category ?? DEFAULT_CATEGORY;
+    const cat = inc.category ?? prev?.category ?? (await loadMemoryCategory(ownerId, lower)) ?? DEFAULT_CATEGORY;
     memories.set(lower, { category: cat, uses: (prev?.uses ?? 0) + 1 });
     if (items.some((i) => !i.checked && i.name.toLowerCase() === lower)) continue; // merge onto existing unchecked item
     if (items.length >= MAX_ITEMS) return bad(`at most ${MAX_ITEMS} items per list`);
     items.push({ id: newId(), name: inc.name, category: cat, checked: false });
   }
   const saved = await commit(ownerId, list, items);
-  for (const [lower, m] of memories) await writeMemory(ownerId, lower, m!);
+  const now = new Date().toISOString();
+  for (const [lower, m] of memories) await getDb().bumpItemMemory(ownerPk(ownerId), memSk(lower), m.category, now, m.uses);
   return { status: 201, body: saved };
 }
 
@@ -198,8 +194,7 @@ async function patchItem({ ownerId, params, body }: RequestCtx) {
   const saved = await commit(ownerId, list, items);
   if (newCat !== undefined) {
     const lower = updated.name.toLowerCase();
-    const prev = await loadMemory(ownerId, lower);
-    await writeMemory(ownerId, lower, { category: newCat, uses: prev?.uses ?? 1 });
+    await getDb().bumpItemMemory(ownerPk(ownerId), memSk(lower), newCat, new Date().toISOString(), 0);
   }
   return { status: 200, body: saved };
 }
@@ -213,6 +208,7 @@ async function deleteItem({ ownerId, params }: RequestCtx) {
 
 async function suggest({ ownerId, query }: RequestCtx) {
   const q = (query.q ?? '').trim().toLowerCase();
+  if (q.length > MAX_NAME) return bad(`q must be at most ${MAX_NAME} characters`);
   const rows = await getDb().queryItems(ownerPk(ownerId), memSk(q));
   const out = rows
     .map((r) => ({ name: r.sk.slice(MEM_SK_PREFIX.length), category: r.category as string, uses: r.uses as number }))

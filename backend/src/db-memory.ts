@@ -30,6 +30,11 @@ export function createMemoryDb(): Db & { items: Map<string, Item> } {
       items.set(k, { pk, sk, count, ttl });
       return count;
     },
+    async bumpItemMemory(pk, sk, category, now, by) {
+      const k = key(pk, sk);
+      const prev = items.get(k);
+      items.set(k, { ...prev, pk, sk, uses: ((prev?.uses as number | undefined) ?? 0) + by, category, updatedAt: now });
+    },
     async queryItems(pk, skPrefix) {
       return [...items.values()].filter((i) => i.pk === pk && i.sk.startsWith(skPrefix)).map((i) => structuredClone(i));
     },
