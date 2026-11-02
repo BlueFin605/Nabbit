@@ -1,11 +1,11 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, signal, viewChild, type ElementRef, type OnInit } from '@angular/core';
 import { Router } from '@angular/router';
+import { RecipeEditor } from '../recipes/recipe-editor';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { formatQuantity, parseIngredient, type Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportRequest, ImportResult, RecipeDraft, RecipeInput } from '../../core/api/api.types';
 
@@ -44,22 +44,13 @@ export function toImportRequest(value: string): ImportRequest {
  */
 @Component({
   selector: 'app-import',
-  imports: [MatButtonModule, MatFormFieldModule, MatInputModule, MatProgressSpinnerModule],
+  imports: [RecipeEditor, MatButtonModule, MatFormFieldModule, MatInputModule, MatProgressSpinnerModule],
   styles: `
     :host { display: block; }
     .box { width: 100%; }
     .banner { padding: 12px 16px; border-radius: 12px; margin: 12px 0; background: var(--mat-sys-tertiary-container, #fde7b0); }
     .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
     .loading { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
-    .photo { width: 100%; max-height: 260px; object-fit: cover; border-radius: 16px; }
-    .row { display: flex; gap: 8px; align-items: flex-start; }
-    .row mat-form-field { flex: 1; }
-    .actions { display: flex; gap: 12px; margin: 16px 0 88px; }
-    ul.ingredients { list-style: none; padding: 0; margin: 0 0 8px; }
-    ul.ingredients li { display: flex; align-items: center; gap: 8px; min-height: 48px; }
-    ul.ingredients .qty { flex: 1; }
-    details summary { cursor: pointer; min-height: 48px; display: flex; align-items: center; }
-    .original { color: var(--mat-sys-on-surface-variant, #555); font-size: 0.9em; margin: 0 0 8px; }
   `,
   template: `
     <h1>Import a recipe</h1>
@@ -92,58 +83,14 @@ export function toImportRequest(value: string): ImportRequest {
         @if (isEmpty()) {
           <p class="banner" role="note">We couldn't find a recipe there. Fill it in yourself — the source link is kept.</p>
         }
-        @if (imageUrl(); as img) {
-          <img class="photo" [src]="img" alt="Photo found on the page" />
-        }
-
-        <mat-form-field appearance="outline" class="box">
-          <mat-label>Title</mat-label>
-          <input matInput class="title" [value]="d.recipe.title" (input)="setTitle($event)" />
-        </mat-form-field>
-        <mat-form-field appearance="outline" class="box">
-          <mat-label>Servings</mat-label>
-          <input matInput class="servings" type="number" min="1" [value]="d.recipe.servings" (input)="setServings($event)" />
-        </mat-form-field>
-
-        <h2>Ingredients</h2>
-        <ul class="ingredients">
-          @for (ing of d.recipe.ingredients; track ing.id; let i = $index) {
-            <li>
-              <details class="qty">
-                <summary>{{ metric(ing) }}</summary>
-                <p class="original">Original: {{ original(ing) }}</p>
-              </details>
-              <button mat-button type="button" class="remove-ingredient" [attr.aria-label]="'Remove ' + ing.name" (click)="removeIngredient(i)">Remove</button>
-            </li>
-          }
-        </ul>
-        <div class="row">
-          <mat-form-field appearance="outline" subscriptSizing="dynamic">
-            <mat-label>Add ingredient</mat-label>
-            <input matInput class="new-ingredient" [value]="newIngredient()" (input)="newIngredient.set(val($event))" (keydown.enter)="addIngredient()" />
-          </mat-form-field>
-          <button mat-button type="button" class="add-ingredient" (click)="addIngredient()">Add</button>
-        </div>
-
-        <h2>Steps</h2>
-        @for (s of d.recipe.steps; track $index; let i = $index) {
-          <div class="row">
-            <mat-form-field appearance="outline" subscriptSizing="dynamic">
-              <mat-label>Step {{ i + 1 }}</mat-label>
-              <textarea matInput class="step" rows="2" [value]="s" (input)="setStep(i, $event)"></textarea>
-            </mat-form-field>
-            <button mat-button type="button" class="remove-step" [attr.aria-label]="'Remove step ' + (i + 1)" (click)="removeStep(i)">Remove</button>
-          </div>
-        }
-        <button mat-button type="button" class="add-step" (click)="addStep()">Add step</button>
-
-        @if (error(); as e) {
-          <p class="error" role="alert">{{ e }}</p>
-        }
-        <div class="actions">
-          <button mat-flat-button type="button" class="save" [disabled]="saving()" (click)="save()">Save</button>
-          <button mat-button type="button" class="discard" [disabled]="saving()" (click)="discard()">Discard</button>
-        </div>
+        <app-recipe-editor
+          [recipe]="d.recipe"
+          [previewImage]="imageUrl()"
+          [saving]="saving()"
+          [error]="error()"
+          (saved)="save($event)"
+          (cancelled)="discard()"
+        />
       }
     }
   `,
@@ -165,7 +112,6 @@ export class Import implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected readonly draft = signal<RecipeDraft | null>(null);
   protected readonly imageUrl = signal<string | undefined>(undefined);
-  protected readonly newIngredient = signal('');
   protected readonly isEmpty = computed(() => {
     const d = this.draft();
     return !!d && d.recipe.ingredients.length === 0 && d.recipe.steps.length === 0;
@@ -226,63 +172,8 @@ export class Import implements OnInit {
     return GENERIC_ERROR_MESSAGE;
   }
 
-  // ---- preview helpers ----
-
-  protected metric(i: Ingredient): string {
-    return formatQuantity(i, 'metric');
-  }
-
-  protected original(i: Ingredient): string {
-    return i.original ?? formatQuantity(i, 'original');
-  }
-
-  private patch(fn: (r: RecipeDraft['recipe']) => RecipeDraft['recipe']): void {
-    this.draft.update((d) => (d ? { ...d, recipe: fn(d.recipe) } : d));
-  }
-
-  protected setTitle(e: Event): void {
-    const title = this.val(e);
-    this.patch((r) => ({ ...r, title }));
-  }
-
-  protected setServings(e: Event): void {
-    const n = Number(this.val(e));
-    if (Number.isFinite(n) && n >= 1) this.patch((r) => ({ ...r, servings: Math.round(n) }));
-  }
-
-  protected removeIngredient(index: number): void {
-    this.patch((r) => ({ ...r, ingredients: r.ingredients.filter((_, i) => i !== index) }));
-  }
-
-  protected addIngredient(): void {
-    const line = this.newIngredient().trim();
-    if (!line) return;
-    this.patch((r) => ({ ...r, ingredients: [...r.ingredients, parseIngredient(line)] }));
-    this.newIngredient.set('');
-  }
-
-  protected setStep(index: number, e: Event): void {
-    const v = this.val(e);
-    this.patch((r) => ({ ...r, steps: r.steps.map((s, i) => (i === index ? v : s)) }));
-  }
-
-  protected removeStep(index: number): void {
-    this.patch((r) => ({ ...r, steps: r.steps.filter((_, i) => i !== index) }));
-  }
-
-  protected addStep(): void {
-    this.patch((r) => ({ ...r, steps: [...r.steps, ''] }));
-  }
-
-  protected save(): void {
-    const d = this.draft();
-    if (!d || this.saving()) return;
-    const rest = d.recipe;
-    const input: RecipeInput = {
-      ...rest,
-      title: rest.title.trim() || 'Untitled recipe',
-      steps: rest.steps.filter((s) => s.trim()),
-    };
+  protected save(input: RecipeInput): void {
+    if (this.saving()) return;
     this.saving.set(true);
     this.error.set(null);
     this.api.createRecipe(input).subscribe({

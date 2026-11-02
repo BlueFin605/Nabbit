@@ -1,11 +1,14 @@
 import { Component, DestroyRef, computed, inject, input, signal, type OnInit } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { MatDialog } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { convertTemperatures, formatQuantity, scaleRecipeIngredients, type Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
-import type { Recipe } from '../../core/api/api.types';
+import type { Recipe, RecipeInput } from '../../core/api/api.types';
+import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
+import { CONFLICT_MESSAGE, isVersionConflict } from './recipe-editor';
 import { imageUrl } from '../../core/api/image-url';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
@@ -78,6 +81,23 @@ function readMode(): Mode {
             }
           </div>
 
+          @if (resized()) {
+            <div class="resize">
+              <button mat-flat-button type="button" class="save-size" [disabled]="savingSize()" (click)="confirmResize()">
+                Save as new size ({{ servings() }} servings)
+              </button>
+            </div>
+          }
+          @if (conflict()) {
+            <div class="conflict" role="alert">
+              <span>{{ conflictMessage }}</span>
+              <button mat-flat-button type="button" class="reload" (click)="reload()">Reload</button>
+            </div>
+          }
+          @if (sizeError(); as e) {
+            <p class="size-error" role="alert">{{ e }}</p>
+          }
+
           <h2>Ingredients</h2>
           <ul class="ingredients">
             @for (line of lines(); track line.id) {
@@ -113,10 +133,15 @@ function readMode(): Mode {
 export class RecipeDetail implements OnInit {
   private readonly api = inject(ApiClient);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly dialog = inject(MatDialog);
 
   /** Bound from the `:id` route param via withComponentInputBinding. */
   readonly id = input<string>();
 
+  protected readonly conflictMessage = CONFLICT_MESSAGE;
+  protected readonly savingSize = signal(false);
+  protected readonly conflict = signal(false);
+  protected readonly sizeError = signal<string | null>(null);
   protected readonly min = MIN_SERVINGS;
   protected readonly max = MAX_SERVINGS;
   protected readonly load = signal<Load>({ status: 'loading' });
@@ -135,6 +160,12 @@ export class RecipeDetail implements OnInit {
     const r = this.recipe();
     if (!r) return [];
     return scaleRecipeIngredients(r.ingredients, r.servings, this.servings());
+  });
+
+  /** The stepper differs from the stored servings. */
+  protected readonly resized = computed(() => {
+    const r = this.recipe();
+    return !!r && this.servings() !== r.servings;
   });
 
   protected readonly lines = computed(() =>
@@ -171,6 +202,18 @@ export class RecipeDetail implements OnInit {
   }
 
   ngOnInit(): void {
+    this.fetch();
+  }
+
+  /** Refetches after a version conflict; drops the unsaved size change. */
+  protected reload(): void {
+    this.conflict.set(false);
+    this.sizeError.set(null);
+    this.chosen.set(null);
+    this.fetch();
+  }
+
+  private fetch(): void {
     const id = this.id();
     if (!id) {
       this.load.set({ status: 'notFound' });
@@ -180,6 +223,57 @@ export class RecipeDetail implements OnInit {
       next: (recipe) => this.load.set(recipe.deletedAt ? { status: 'notFound' } : { status: 'ok', recipe }),
       error: (err: { status?: number }) =>
         this.load.set({ status: err?.status === 404 || err?.status === 410 ? 'notFound' : 'error' }),
+    });
+  }
+
+  /** Confirm (before -> after per ingredient), then PUT the scaled ingredients with the new servings. */
+  protected confirmResize(): void {
+    const r = this.recipe();
+    if (!r || !this.resized()) return;
+    const mode = this.mode();
+    const after = this.scaledIngredients();
+    const data: ConfirmDialogData = {
+      title: `Save as ${this.servings()} servings?`,
+      message: `Changes this recipe from ${r.servings} to ${this.servings()} servings.`,
+      lines: r.ingredients.map((b, i) => `${formatQuantity(b, mode)} → ${formatQuantity(after[i], mode)}`),
+      confirmLabel: 'Save new size',
+    };
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, { data })
+      .afterClosed()
+      .subscribe((ok) => {
+        if (ok === true) this.saveSize(r);
+      });
+  }
+
+  private saveSize(r: Recipe): void {
+    const servings = this.servings();
+    const { id, version, createdAt: _c, updatedAt: _u, deletedAt: _d, ...rest } = r;
+    void [_c, _u, _d];
+    const input: RecipeInput = {
+      ...rest,
+      servings,
+      // The scaled quantity no longer matches the original text, so drop it from scaled lines.
+      ingredients: this.scaledIngredients().map((i, n) => {
+        if (i === r.ingredients[n]) return i;
+        const { original: _o, ...scaled } = i;
+        void _o;
+        return scaled;
+      }),
+    };
+    this.savingSize.set(true);
+    this.sizeError.set(null);
+    this.api.updateRecipe(id, input, version).subscribe({
+      next: (updated) => {
+        this.savingSize.set(false);
+        this.chosen.set(null);
+        this.load.set({ status: 'ok', recipe: updated });
+      },
+      error: (err: unknown) => {
+        this.savingSize.set(false);
+        if (isVersionConflict(err)) this.conflict.set(true);
+        else this.sizeError.set("Couldn't save the new size. Try again.");
+      },
     });
   }
 

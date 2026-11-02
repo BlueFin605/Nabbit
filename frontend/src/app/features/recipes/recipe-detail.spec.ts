@@ -1,6 +1,7 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { provideRouter } from '@angular/router';
+import { MatDialog } from '@angular/material/dialog';
 import { of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
@@ -34,6 +35,7 @@ const recipe = (): Recipe => ({
 
 describe('RecipeDetail', () => {
   let getRecipe: jest.Mock;
+  let updateRecipe: jest.Mock;
   let fixture: ComponentFixture<RecipeDetail>;
   const el = () => fixture.nativeElement as HTMLElement;
   const settle = async () => {
@@ -49,8 +51,9 @@ describe('RecipeDetail', () => {
 
   async function setup(impl: () => unknown = () => of(recipe())) {
     getRecipe = jest.fn(impl);
+    updateRecipe = jest.fn((_id: string, input: { servings: number }) => of({ ...recipe(), servings: input.servings, version: 2 }));
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: ApiClient, useValue: { getRecipe } }],
+      providers: [provideRouter([]), { provide: ApiClient, useValue: { getRecipe, updateRecipe } }],
     });
     fixture = TestBed.createComponent(RecipeDetail);
     fixture.componentRef.setInput('id', 'r1');
@@ -146,5 +149,66 @@ describe('RecipeDetail', () => {
   it('shows "Recipe not found" for a soft-deleted recipe', async () => {
     await setup(() => of({ ...recipe(), deletedAt: '2026-02-01T00:00:00Z' }));
     expect(el().textContent).toContain('Recipe not found');
+  });
+
+  describe('save as new size', () => {
+    const stubDialog = (ok: boolean) =>
+      jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(ok) } as never);
+
+    it('only offers the button when the stepper differs from stored', async () => {
+      await setup();
+      expect(el().querySelector('.save-size')).toBeNull();
+      await click('button[aria-label="More servings"]');
+      expect(el().querySelector('.save-size')?.textContent).toContain('Save as new size (5 servings)');
+      await click('button[aria-label="Fewer servings"]');
+      expect(el().querySelector('.save-size')).toBeNull();
+    });
+
+    it('confirm dialog lists before and after; PUT carries scaled quantities, new servings and stored version', async () => {
+      await setup();
+      await click('button[aria-label="More servings"]');
+      await click('button[aria-label="More servings"]');
+      await click('button[aria-label="More servings"]');
+      await click('button[aria-label="More servings"]'); // 4 -> 8: doubles
+      const open = stubDialog(true);
+      await click('.save-size');
+      const data = open.mock.calls[0][1]?.data as { lines: string[]; confirmLabel: string };
+      expect(data.lines).toEqual(['480 ml flour → 960 ml flour', 'salt to taste → salt to taste']);
+      expect(updateRecipe).toHaveBeenCalledTimes(1);
+      const [id, body, version] = updateRecipe.mock.calls[0] as [string, { servings: number; ingredients: Ingredient[]; title: string }, number];
+      expect(id).toBe('r1');
+      expect(version).toBe(1);
+      expect(body.servings).toBe(8);
+      expect(body.title).toBe('Pancakes');
+      expect(body.ingredients[0]).toMatchObject({ id: 'i1', quantity: 4, metric: { quantity: 960, unit: 'ml' } });
+      expect(body.ingredients[0].original).toBeUndefined();
+      expect(body.ingredients[1]).toEqual(salt);
+      expect(body).not.toHaveProperty('version');
+      expect(body).not.toHaveProperty('id');
+      // the view now treats 8 as the stored size
+      expect(el().querySelector('.save-size')).toBeNull();
+    });
+
+    it('does not save when the dialog is cancelled', async () => {
+      await setup();
+      await click('button[aria-label="More servings"]');
+      stubDialog(false);
+      await click('.save-size');
+      expect(updateRecipe).not.toHaveBeenCalled();
+    });
+
+    it('409 shows the reload prompt and Reload refetches', async () => {
+      await setup();
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'version_conflict' } })));
+      await click('button[aria-label="More servings"]');
+      stubDialog(true);
+      await click('.save-size');
+      expect(el().querySelector('.conflict')?.textContent).toContain('This recipe changed on another device — reload');
+      getRecipe.mockReturnValue(of({ ...recipe(), servings: 6, version: 3 }));
+      await click('.reload');
+      expect(getRecipe).toHaveBeenCalledTimes(2);
+      expect(el().querySelector('.conflict')).toBeNull();
+      expect(el().querySelector('output')?.textContent).toBe('6');
+    });
   });
 });

@@ -1,5 +1,6 @@
 import type { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth-guard';
+import { unsavedChangesGuard } from './core/guards/unsaved-changes-guard';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'recipes' },
@@ -14,6 +15,12 @@ export const routes: Routes = [
     path: 'recipes/:id',
     canActivate: [authGuard],
     loadComponent: () => import('./features/recipes/recipe-detail').then((m) => m.RecipeDetail),
+  },
+  {
+    path: 'recipes/:id/edit',
+    canActivate: [authGuard],
+    canDeactivate: [unsavedChangesGuard],
+    loadComponent: () => import('./features/recipes/recipe-edit').then((m) => m.RecipeEdit),
   },
   {
     path: 'lists',

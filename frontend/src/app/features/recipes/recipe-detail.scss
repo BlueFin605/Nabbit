@@ -63,3 +63,22 @@
   gap: 12px;
   margin-top: 16px;
 }
+
+.resize {
+  margin: 8px 0;
+}
+
+.conflict {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin: 12px 0;
+  background: var(--mat-sys-error-container, #f9dedc);
+}
+
+.size-error {
+  color: var(--mat-sys-error, #b3261e);
+}
