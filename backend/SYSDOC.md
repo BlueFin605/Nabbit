@@ -1,6 +1,6 @@
 # Backend — Nabbit
 
-What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. The build bundles each `src/handlers/*.ts` with esbuild (CommonJS) to `dist/<name>/index.js`: `api` (router plus recipes, images, lists; deliberately no import route), `import` (the import route only, so its own reserved concurrency caps it) and `health`. Depends on `@nabbit/recipe-core`.
+What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. The build bundles each `src/handlers/*.ts` with esbuild (CommonJS) to `dist/<name>/index.js`: `api` (router plus recipes, images, lists; deliberately no import route), `import` (the import route only, so its own reserved concurrency caps it) and `health` (built, but no deployed route points at it). Depends on `@nabbit/recipe-core`.
 
 ## Where things are
 
@@ -14,7 +14,9 @@ What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. T
 
 ## HTTP endpoints
 
-All need a JWT (otherwise 401 `{error:'unauthorized'}`), except health. Errors are `{error}`. Another owner's record is always 404.
+All need a JWT, except health. Errors are `{error}`. Another owner's record is always 404. The 401 body depends on where it is raised: the local server (and the handler itself, when the authorizer `sub` claim is missing) returns `{error:'unauthorized'}`; in AWS the API Gateway JWT authorizer rejects first with its own `{"message":"Unauthorized"}`, so clients must not rely on the body.
+
+**Router-level errors** (any route): 400 `invalid_json` (body is not JSON), 400 `too_large` (see Limits), 404 `not_found` (no matching route, a path parameter over 100 characters, or a path with an empty segment such as `//` or a trailing `/`), 500 `internal` (unexpected exception, logged, no detail returned).
 
 **Limits.** Path parameters longer than 100 characters never match a record (404, so oversized sort keys never reach DynamoDB; ids containing `#` or `/` are just unknown ids inside the caller's own partition). A recipe or list whose serialized JSON exceeds 350 KB is rejected with 400 `{error:'too_large'}` (DynamoDB's item limit is 400 KB). Also 400: `GET /items/suggest` with `q` over 100 characters.
 
@@ -26,7 +28,7 @@ All need a JWT (otherwise 401 `{error:'unauthorized'}`), except health. Errors a
 | `GET /recipes/{id}` | 200 | 404 |
 | `PUT /recipes/{id}` | 200, full replace, body carries `version` | 400, 404, 409 `version_conflict` |
 | `DELETE /recipes/{id}` | 204, soft delete (30-day TTL) | 404, 409 |
-| `POST /recipes/{id}/restore` | 200 | 404, 409 |
+| `POST /recipes/{id}/restore` | 200 | 404 (unknown, other owner's, or not deleted), 409 |
 | `POST /recipes/images` | 200 `{imageKey,url,fields,expiresIn}` presigned POST; jpeg/png/webp, 5 MB | 400 |
 | `POST /recipes/import` | 200 `{draft, imageUrl?}`; body `{url}` xor `{text}` (text max 50,000 chars); saves nothing | 400, 422 `{error: <import code>}`, 429 `rate_limited` + `retry-after` |
 | `GET /lists` | 200 summaries | |
@@ -37,7 +39,7 @@ All need a JWT (otherwise 401 `{error:'unauthorized'}`), except health. Errors a
 | `POST /lists/{id}/items` | 201 list; `{name, category?}` or `{items:[...]}` (max 500 items) | 400, 404, 409 |
 | `PATCH /lists/{id}/items/{itemId}` | 200 list (`checked`, `name`, `category`) | 400, 404, 409 |
 | `DELETE /lists/{id}/items/{itemId}` | 200 list | 404, 409 |
-| `GET /items/suggest?q=` | 200, up to 8 `{name, category}` from item memory, most used first | |
+| `GET /items/suggest?q=` | 200, up to 8 `{name, category}` from item memory, most used first | 400 (`q` over 100 chars) |
 
 Item names written to a list are remembered (`MEM#`) with their category, which drives suggest and sticky aisle grouping. Memory is updated with one atomic `UpdateItem` (`ADD uses :n SET category, updatedAt`) so concurrent adds never lose increments; a category change on an existing item adds 0 to `uses`.
 
@@ -59,4 +61,4 @@ Handler tests use the in-memory double (`src/db-memory.ts`). `test/db-dynamo.tes
 
 ## API suite
 
-`tests/api/nabbit.frcol` (FullyRested; folders health, recipes, lists, import, import-rate-limit) checks the HTTP contract: status plus JSON Schema per request, including 400/401/404/409/422/429 cases. It needs LocalStack-backed DynamoDB and S3 (the dev server has no in-memory mode). URL imports are tested only with rejected addresses so the suite never reaches the internet. The `production` environment is for the owner to run deliberately.
+`tests/api/nabbit.frcol` (FullyRested; 58 requests in five folders: health, recipes, lists, import, import-rate-limit) checks the HTTP contract: status plus JSON Schema per request, including 400/401/404/409/422/429 cases. It needs LocalStack-backed DynamoDB and S3 (the dev server has no in-memory mode). URL imports are tested only with rejected addresses so the suite never reaches the internet. The `production` environment is for the owner to run deliberately; the 401 body there is API Gateway's `{"message":"Unauthorized"}`, not the local `{error:'unauthorized'}`, and the `health` folder fails there because no `/health` route is deployed.

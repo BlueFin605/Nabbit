@@ -56,17 +56,25 @@ Key builders and the `Db` interface are in `backend/src/db.ts`.
 - **SSRF guard** on URL import: https only, DNS resolved and every address checked, connection pinned to the validated IP, redirects re-validated, size and time capped (`backend/SYSDOC.md`).
 - **Optimistic concurrency** on recipes and lists: writes carry `version`; stale writes get 409 and the UI offers a reload.
 - **Soft delete** for recipes (30-day TTL, restorable); list and list-item deletes are hard (the UI offers Undo by re-creating).
-- **Image path**: the client asks `POST /recipes/images` for a presigned S3 POST (5 MB cap, exact content type), uploads directly, and stores the returned `imageKey` (`{ownerId}/{uuid}.{ext}`). Images are read through CloudFront at `/img/{imageKey}`; the bucket is private.
+- **Image path**: the client asks `POST /recipes/images` for a presigned S3 POST (5 MB cap, exact content type), uploads directly, and stores the returned `imageKey` (`{ownerId}/{uuid}.{ext}`). Images are read through CloudFront at `/img/{imageKey}`; the bucket is private. Image URLs are public capability URLs (see Known gaps and decisions).
 - **Abuse guards**: a per-user import rate limit plus a dedicated import Lambda with reserved concurrency.
 - **Deploy** is manual and lives in the private Home repo; this repo's CI only builds and tests.
 
-## Known gaps
+## Known gaps and decisions
 
 Code and tests exist, but these have not been verified end to end:
 
-- `npm run dev` (Aspire + Docker stack) has never been started end to end; the parts are covered by the API suite and the e2e stack.
-- The deploy script and the manual deploy workflow in Home have never been run.
-- Real Cognito sign-in, the install prompt, the Android share sheet, and S3 presigned upload with its CORS rule are untested on real infrastructure.
+- `npm run dev` (the Aspire stack) has never been started end to end. The LocalStack, init-local, backend and e2e paths it wraps did run.
+- The deploy script and the manual deploy workflow in Home (which now update both the API and import Lambdas) have never been run.
+- Unverified on real infrastructure: the Cognito sign-in and Hosted UI sign-out round trip (the frontend does a real logout and lands on a "signed out" screen), the install prompt, the Android share sheet, S3 presigned upload against the bucket CORS rule, and API Gateway answering CORS preflight itself (the API has no authorized `$default` route).
+- `pinnedFetch` (the real TLS path of `safe-fetch`) has no automated test; the e2e fixture hook bypasses it.
 - The import rate limit is a fixed clock-hour bucket, so a burst of up to 60 is possible across an hour boundary.
 - `GET /health` exists only on the local server; the CDK stack has no health route.
+- A 401 body differs: `{error:'unauthorized'}` locally, `{"message":"Unauthorized"}` from the API Gateway authorizer.
 - `formatQuantity` (display text) omits an ingredient's `note`.
+- Tiny scaled weights round to `0 g` in `recipe-core` metric rounding (e.g. 1 g scaled by 0.25).
+
+Deferred decisions, accepted for the MVP (detail in `infrastructure/SYSDOC.md`):
+
+- Recipe images are public capability URLs (`/img/{sub}/{uuid}.ext` via CloudFront): unguessable UUID, but the key exposes the Cognito `sub`. Alternatives: signed URLs/cookies or an opaque owner hash in the key.
+- CloudFront's distribution-wide 403/404 to `/index.html` 200 rule also covers `/img/*`, so a missing image returns HTML with status 200. Fix idea: SPA fallback on the default behaviour only.
