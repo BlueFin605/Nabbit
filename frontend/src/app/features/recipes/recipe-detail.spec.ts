@@ -211,4 +211,15 @@ describe('RecipeDetail', () => {
       expect(el().querySelector('output')?.textContent).toBe('6');
     });
   });
+
+  it('opens the add-to-list dialog with the scaled ingredients and unit mode', async () => {
+    await setup();
+    await click('[aria-label="More servings"]');
+    await click('[aria-label="More servings"]');
+    const open = jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+    await click('.actions button');
+    const data = open.mock.calls[0][1]?.data as { ingredients: Ingredient[]; mode: string };
+    expect(data.mode).toBe('metric');
+    expect(data.ingredients[0].quantity).toBe(3);
+  });
 });

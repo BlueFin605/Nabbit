@@ -1,6 +1,7 @@
 import { Component, DestroyRef, computed, inject, input, signal, type OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
@@ -10,6 +11,7 @@ import type { Recipe, RecipeInput } from '../../core/api/api.types';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
 import { CONFLICT_MESSAGE, isVersionConflict } from './recipe-editor';
 import { imageUrl } from '../../core/api/image-url';
+import { AddToListDialog, type AddToListData, type AddToListResult } from './add-to-list-dialog';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
 export const MIN_SERVINGS = 1;
@@ -134,6 +136,8 @@ export class RecipeDetail implements OnInit {
   private readonly api = inject(ApiClient);
   private readonly destroyRef = inject(DestroyRef);
   private readonly dialog = inject(MatDialog);
+  private readonly snack = inject(MatSnackBar);
+  private readonly router = inject(Router);
 
   /** Bound from the `:id` route param via withComponentInputBinding. */
   readonly id = input<string>();
@@ -319,8 +323,20 @@ export class RecipeDetail implements OnInit {
     }
   }
 
-  /** Hook for the add-to-list dialog (separate ticket); it will receive `scaledIngredients()`. */
+  /** Opens the add-to-list dialog with the ingredients as currently scaled and in the current unit mode. */
   protected addToList(): void {
-    // Intentionally empty until the add-to-list dialog ticket lands.
+    if (!this.recipe()) return;
+    const data: AddToListData = { ingredients: this.scaledIngredients(), mode: this.mode() };
+    this.dialog
+      .open<AddToListDialog, AddToListData, AddToListResult>(AddToListDialog, { data })
+      .afterClosed()
+      .subscribe((res) => {
+        if (!res) return;
+        const noun = res.count === 1 ? 'item' : 'items';
+        this.snack
+          .open(`Added ${res.count} ${noun} to ${res.listName}`, 'View list', { duration: 8000 })
+          .onAction()
+          .subscribe(() => void this.router.navigate(['/lists']));
+      });
   }
 }
