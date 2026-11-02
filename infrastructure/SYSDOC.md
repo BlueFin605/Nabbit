@@ -14,6 +14,7 @@ What this is: the AWS CDK (C#, .NET 10) app that deploys Nabbit. Deploys are man
 
 - **Images**: private bucket, served only through the SPA CloudFront distribution at `{domain}/img/*` (OAC; a viewer-request function strips the `/img` prefix). Object keys are `{ownerId}/{uuid}`; the API writes them, nothing is signed. Chosen over signed URLs for simplicity and caching.
 - **SPA**: separate private bucket behind CloudFront (OAC); 403/404 fall back to `/index.html`.
+- **Auth**: Cognito app client (public, authorization-code + PKCE) allows callback URLs `https://{domain}/`, `/auth/callback` and `/callback` (the frontend's redirect URI, same as Home's `NG_APP_COGNITO_REDIRECT_URI`); logout URL is `https://{domain}/`.
 - **API**: HTTP API at `api.{domain}`, JWT authorizer (Cognito user pool client) on `$default` and `/{proxy+}`. CORS allows only `https://{domain}` with credentials. The image bucket (only) has a CORS rule: origin `https://{domain}`, `POST`, headers `*`, max age 3000, so the browser can upload via presigned POST. One Lambda (`backend/dist/api`, node24, arm64) gets `TABLE_NAME`, `IMAGE_BUCKET`, `IMAGE_BASE_URL`, `USER_POOL_ID`, `USER_POOL_CLIENT_ID`, `ALLOWED_ORIGIN`.
 - **DNS**: zone is the parent of `domain`; looked up by name, or imported when `hostedZoneId` is set (the example config sets a placeholder so `cdk synth` runs without credentials).
 - **Retention**: table, user pool and buckets use `RETAIN`.

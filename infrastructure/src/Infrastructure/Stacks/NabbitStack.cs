@@ -80,7 +80,7 @@ namespace Infrastructure.Stacks
                 {
                     Flows = new OAuthFlows { AuthorizationCodeGrant = true },
                     Scopes = new[] { OAuthScope.OPENID, OAuthScope.EMAIL, OAuthScope.PROFILE },
-                    CallbackUrls = new[] { $"{origin}/", $"{origin}/auth/callback" },
+                    CallbackUrls = new[] { $"{origin}/", $"{origin}/auth/callback", $"{origin}/callback" },
                     LogoutUrls = new[] { $"{origin}/" },
                 },
                 SupportedIdentityProviders = new[] { UserPoolClientIdentityProvider.COGNITO },

@@ -176,6 +176,8 @@ namespace Infrastructure.Tests
             {
                 { "GenerateSecret", false },
                 { "AllowedOAuthFlows", new[] { "code" } },
+                { "CallbackURLs", new[] { "https://nabbit.example.com/", "https://nabbit.example.com/auth/callback", "https://nabbit.example.com/callback" } },
+                { "LogoutURLs", new[] { "https://nabbit.example.com/" } },
             }));
             t.HasResourceProperties("AWS::Cognito::UserPoolDomain", Match.ObjectLike(new Dictionary<string, object> { { "Domain", "auth.nabbit.example.com" } }));
         }
