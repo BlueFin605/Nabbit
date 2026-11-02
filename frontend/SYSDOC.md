@@ -19,7 +19,7 @@ What this is: the Angular 22 installable PWA (standalone components, signals, zo
 
 Output is `dist/browser/` (`index.html`, `ngsw.json`, hashed chunks), which is what Home's Deploy Nabbit workflow locates and syncs.
 
-Local dev (`ng serve`, `environment.ts`): API `http://localhost:3000`, auth disabled with a JWT-shaped mock token (`mockDevToken` in `auth.ts`, `sub` = the dev user, which the local backend decodes). The `e2e` build configuration swaps in a generated `environment.e2e.ts` (same, other API port); see `../e2e/SYSDOC.md`.
+Local dev (`ng serve`, `environment.ts`; the Angular dev server excludes `@nabbit/recipe-core` from prebundling in `angular.json` because Vite cannot resolve its extensionless TS imports): API `http://localhost:3000`, auth disabled with a JWT-shaped mock token (`mockDevToken` in `auth.ts`, `sub` = the dev user, which the local backend decodes). The `e2e` build configuration swaps in a generated `environment.e2e.ts` (same, other API port); see `../e2e/SYSDOC.md`.
 
 ## Commands
 

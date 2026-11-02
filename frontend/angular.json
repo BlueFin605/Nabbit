@@ -48,7 +48,7 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
-          "options": { "port": 5173, "host": "localhost" },
+          "options": { "port": 5173, "host": "localhost", "prebundle": { "exclude": ["@nabbit/recipe-core"] } },
           "configurations": {
             "production": { "buildTarget": "nabbit-frontend:build:production" },
             "development": { "buildTarget": "nabbit-frontend:build:development" }

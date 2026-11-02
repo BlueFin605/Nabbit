@@ -49,9 +49,13 @@ npm ci
 npm run dev
 ```
 
-`npm run dev` starts an Aspire AppHost (`aspire/Nabbit.AppHost`) that runs LocalStack (DynamoDB + S3, :4566), Cognito Local (:9229) and MailHog (UI :8025), then a one-shot `init-db` step (creates the `nabbit-local-data` table with the same `pk`/`sk` key schema and TTL as the CDK table, plus the image bucket), then the backend (`npm run dev -w backend`, Express on :3000, same Lambda handlers as production) and, once it exists, the frontend (`ng serve` on :5173 with `NG_APP_API_BASE_URL=http://localhost:3000`).
+`npm run dev` runs `start-aspire.ps1` (Windows PowerShell 5.1 or PowerShell 7), which checks that Docker is running, warns (without stopping anything) if a configured port is already taken, sets the Aspire env vars (`ASPIRE_ALLOW_UNSECURED_TRANSPORT`, dashboard on `http://localhost:15888`, OTLP on 4317/4318) and runs the AppHost (`aspire/Nabbit.AppHost`). The AppHost runs LocalStack (DynamoDB + S3, :4566), Cognito Local (:9229) and MailHog (UI :8025, SMTP :1025), then a one-shot `init-db` step (creates the `nabbit-local-data` table with the same `pk`/`sk` key schema and TTL as the CDK table, plus the image bucket), then the backend (`npm run dev -w backend`, Express on :3000, same Lambda handlers as production) and the frontend (`ng serve` on :5173).
 
-Check it: `curl localhost:3000/health` returns `{"status":"ok"}`.
+Every host port can be overridden with an env var, so the stack can run beside other projects that hold the defaults: `NABBIT_BACKEND_PORT` (3000), `NABBIT_LOCALSTACK_PORT` (4566), `NABBIT_COGNITO_PORT` (9229), `NABBIT_MAILHOG_UI_PORT` (8025), `NABBIT_MAILHOG_SMTP_PORT` (1025), `NABBIT_FRONTEND_PORT` (5173), `NABBIT_DASHBOARD_PORT` (15888), `NABBIT_OTLP_GRPC_PORT` (4317), `NABBIT_OTLP_HTTP_PORT` (4318). For example `$env:NABBIT_BACKEND_PORT = 3100; npm run dev`. The frontend's API URL is fixed in `frontend/src/environments/environment.ts` (:3000), so with a non-default backend port use the API directly (or edit that file); the Aspire `NG_APP_API_BASE_URL` is not read by the frontend build.
+
+Stopping: Ctrl+C in the terminal lets Aspire remove its containers. If the AppHost is killed abruptly, its `localstack-*`, `cognito-local-*` and `mailhog-*` containers can be left running; remove those by name with `docker rm -f`.
+
+Check it: `curl localhost:3000/health` returns `{"status":"ok"}`; an authenticated call is `curl -H "X-Dev-Sub: me" localhost:3000/recipes`.
 
 Without Docker you can run just the backend: `npm run dev -w backend` (port 3000; `/health` needs no AWS).
 
@@ -62,7 +66,7 @@ Auth locally: send a Cognito-style JWT as `Authorization: Bearer <jwt>` (the `su
 The backend's HTTP API is covered by a FullyRested collection at `backend/tests/api/nabbit.frcol` (health, recipes, lists, import, import-rate-limit folders; every request has a status plus JSON Schema check, with 400/401/404/409/422/429 cases). It needs the real local stack (DynamoDB + S3 via LocalStack) because the dev server has no in-memory mode.
 
 ```
-npm run dev                      # Aspire: LocalStack + backend on :3000 (or start LocalStack, `npm run init-local -w backend`, then `npm run dev -w backend` with NODE_ENV=development and the AWS_* / TABLE_NAME / IMAGE_BUCKET env from aspire/Nabbit.AppHost/Program.cs)
+npm run dev                      # Aspire (start-aspire.ps1): LocalStack + backend on :3000 (or start LocalStack, `npm run init-local -w backend`, then `npm run dev -w backend` with NODE_ENV=development and the AWS_* / TABLE_NAME / IMAGE_BUCKET env from aspire/Nabbit.AppHost/Program.cs)
 fullyrested run -c backend/tests/api/nabbit.frcol --all -e local
 ```
 

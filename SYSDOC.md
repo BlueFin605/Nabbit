@@ -13,7 +13,7 @@ Tech stack: Angular PWA / Node 24 TypeScript Lambda backend / shared TypeScript 
 | `frontend` | Angular PWA | `frontend/SYSDOC.md` |
 | `infrastructure` | CDK app: two stacks, one Lambda per handler | `infrastructure/SYSDOC.md` |
 | `e2e` | Playwright browser suite with its own local stack | `e2e/SYSDOC.md` |
-| `aspire/Nabbit.AppHost` | `npm run dev` orchestration: LocalStack, Cognito Local, MailHog, init-db, backend, frontend | `README.md` |
+| `aspire/Nabbit.AppHost` + `start-aspire.ps1` | `npm run dev` orchestration (launcher script sets env and ports): LocalStack, Cognito Local, MailHog, init-db, backend, frontend | `README.md` |
 | `config.example.json` | Deployment config shape (the real one lives in the private Home repo) | `README.md` |
 
 npm workspaces: `shared/*`, `backend`, `frontend`, `e2e`. `infrastructure` is .NET, not a workspace.
@@ -64,7 +64,7 @@ Key builders and the `Db` interface are in `backend/src/db.ts`.
 
 Code and tests exist, but these have not been verified end to end:
 
-- `npm run dev` (the Aspire stack) has never been started end to end. The LocalStack, init-local, backend and e2e paths it wraps did run.
+- `npm run dev` (the Aspire stack) was run for real on alternate ports (2026-11-02): containers, `init-db`, backend `/health`, an `X-Dev-Sub` POST/GET round trip and the frontend dev server all worked. Not verified: the Cognito Local sign-in flow, running on the default ports, and a clean Ctrl+C shutdown (the verification run was killed, which orphaned its containers).
 - The deploy script and the manual deploy workflow in Home (which now update both the API and import Lambdas) have never been run.
 - Unverified on real infrastructure: the Cognito sign-in and Hosted UI sign-out round trip (the frontend does a real logout and lands on a "signed out" screen), the install prompt, the Android share sheet, S3 presigned upload against the bucket CORS rule, and API Gateway answering CORS preflight itself (the API has no authorized `$default` route).
 - `pinnedFetch` (the real TLS path of `safe-fetch`) has no automated test; the e2e fixture hook bypasses it.
