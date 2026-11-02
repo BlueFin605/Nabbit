@@ -4,13 +4,17 @@ Recipe import and scaling app: an Angular PWA frontend, a Node.js Lambda backend
 
 ## Layout
 
-- `shared/recipe-core` - shared recipe parsing/scaling code (`@nabbit/recipe-core`)
-- `backend` - Node 24 + TypeScript Lambda handlers, one per `src/handlers/<name>.ts`
+- `shared/recipe-core` - shared recipe parsing/scaling code (`@nabbit/recipe-core`, see `shared/recipe-core/SYSDOC.md`)
+- `backend` - Node 24 + TypeScript Lambda handlers, one per `src/handlers/<name>.ts` (see `backend/SYSDOC.md`)
 - `frontend` - Angular PWA (see `frontend/SYSDOC.md`)
+- `infrastructure` - C# CDK app (see `infrastructure/SYSDOC.md`)
+- `e2e` - Playwright browser suite (see `e2e/README.md`)
+
+Architecture, the data model and key decisions are in `SYSDOC.md`.
 
 ## Configuration
 
-Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment.
+Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment. Optional keys: `hostedZoneId` (import the DNS zone instead of looking it up), `importReservedConcurrency` (default 5), `apiCodePath` and `importCodePath` (override the Lambda bundle locations).
 
 ## Build
 
@@ -18,12 +22,23 @@ Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain
 npm ci
 npm run lint
 npm test
+npm run typecheck
 npm run build -w backend
+npm run build -w frontend
 ```
 
 The backend build bundles each handler with esbuild to `backend/dist/<name>/index.js` (CommonJS, node24).
 
-Deployment is handled by the private Home repo, not this one. CI here only builds and tests.
+## Deploying
+
+Deployment is handled by a private repo, not this one, and is manual: it builds the backend and frontend with the deployment config, runs `cdk deploy` for the infrastructure (see `infrastructure/SYSDOC.md`), and syncs `frontend/dist/browser` to the site bucket. CI here (`.github/workflows/build.yml`) only typechecks, lints, tests and builds.
+
+## Tests
+
+- Unit: `npm test` runs every workspace (Vitest for `shared/recipe-core` and `backend`, Jest for `frontend`).
+- API: the FullyRested suite, below.
+- Browser: the Playwright suite, below.
+- Before merging: `npm run lint` and `npm run typecheck`.
 
 ## Running locally
 

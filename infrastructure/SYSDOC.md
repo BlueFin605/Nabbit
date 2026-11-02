@@ -20,6 +20,9 @@ What this is: the AWS CDK (C#, .NET 10) app that deploys Nabbit. Deploys are man
 - **Retention**: table, user pool and buckets use `RETAIN`.
 - **Import Lambda**: `POST /recipes/import` has its own route (more specific than `/{proxy+}`, same JWT authorizer) and its own Lambda (`backend/dist/import`, `importCodePath`), with `ReservedConcurrentExecutions = importReservedConcurrency` (default 5) so an import flood cannot exhaust the account. It only gets table access. Note the account's unreserved concurrency must stay at 10 or more, so a new account may need a limit increase before deploy. The per-user hourly limit (30) is a DynamoDB counter `RATE#import#{hour}` (TTL 2 h), written by the import handler.
 
+- **No health route**: `backend/src/handlers/health.ts` is built but not wired to any route or Lambda here; `/health` exists only on the local dev server.
+- **Table keys**: `pk`/`sk` with TTL attribute `ttl`; the item layout is in the root `SYSDOC.md`.
+
 ## Running
 
 Build the backend first (`npm run build` at repo root), then from this folder:
