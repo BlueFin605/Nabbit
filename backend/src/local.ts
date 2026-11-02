@@ -9,6 +9,8 @@ import { handler as apiHandler } from './handlers/api.js';
 import { handler as healthHandler } from './handlers/health.js';
 import { fixtureFetchDeps } from './e2e-fixture-fetch.js';
 import { safeFetch } from './import/safe-fetch.js';
+// Importing the module registers POST /recipes/import on the shared router; production serves it from
+// handlers/import.ts, and handlers/api.ts deliberately does not include it.
 import { setImportDeps } from './routes/import.js';
 import { sendLambdaResult, toLambdaEvent, type LocalHandler } from './local-adapter.js';
 

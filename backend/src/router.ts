@@ -74,6 +74,8 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     if (typeof sub !== 'string' || sub === '') return json(401, { error: 'unauthorized' });
 
     const method = event.requestContext.http.method.toUpperCase();
+    // Reject empty segments ('//', trailing '/') so normalization cannot alias one route to another.
+    if (event.rawPath !== '/' && event.rawPath.slice(1).split('/').includes('')) return json(404, { error: 'not_found' });
     const parts = split(event.rawPath);
     for (const r of routes) {
       const params = match(r, method, parts);

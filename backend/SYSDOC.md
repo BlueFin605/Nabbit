@@ -1,10 +1,10 @@
 # Backend — Nabbit
 
-What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. The build bundles each `src/handlers/*.ts` with esbuild (CommonJS) to `dist/<name>/index.js`: `api` (router plus recipes, images, lists), `import` (the import route only, so its own reserved concurrency caps it) and `health`. Depends on `@nabbit/recipe-core`.
+What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. The build bundles each `src/handlers/*.ts` with esbuild (CommonJS) to `dist/<name>/index.js`: `api` (router plus recipes, images, lists; deliberately no import route), `import` (the import route only, so its own reserved concurrency caps it) and `health`. Depends on `@nabbit/recipe-core`.
 
 ## Where things are
 
-- `src/router.ts` — tiny router: `route(method, pattern, handler)` with `{param}` segments; `HttpError(status, message)` becomes `{error}` JSON; 401 when the authorizer `sub` claim is missing. Route modules self-register on import.
+- `src/router.ts` — tiny router: `route(method, pattern, handler)` with `{param}` segments; `HttpError(status, message)` becomes `{error}` JSON; 401 when the authorizer `sub` claim is missing. Route modules self-register on import. Paths with empty segments (`//`, trailing `/`) are 404 so normalization cannot alias routes. The import route is registered only by `handlers/import.ts` and the local dev server (`local.ts`), never by `handlers/api.ts`.
 - `src/routes/` — `recipes.ts`, `images.ts`, `lists.ts`, `import.ts`. The header comment of each is the endpoint contract.
 - `src/db.ts` — the `Db` interface (get, conditional put, delete, query by prefix, atomic counter), key builders and the DynamoDB implementation; `db-memory.ts` is the unit-test double (`setDb`). Key layout: root `SYSDOC.md`.
 - `src/import/` — `safe-fetch.ts`, `extract-structured.ts`, `extract-text.ts`, `import-error.ts`.
