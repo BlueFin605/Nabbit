@@ -366,6 +366,9 @@ export class Lists implements OnInit {
     this.run(() => this.api.patchItem(listId, item.id, { checked: !prev })).subscribe({
       next: (res) => this.bumpVersion(res),
       error: () => {
+        // A double-tap sends this PATCH and the DELETE together; if the item was deleted meanwhile the
+        // PATCH 404s. That is not a failure to report: an error snackbar here would replace the Undo one.
+        if (!this.list()?.items.some((i) => i.id === item.id)) return;
         this.patchLocal(item.id, { checked: prev });
         this.fail("Couldn't update that item");
       },

@@ -7,7 +7,22 @@ import type { Server } from 'node:http';
 import express from 'express';
 import { handler as apiHandler } from './handlers/api.js';
 import { handler as healthHandler } from './handlers/health.js';
+import { fixtureFetchDeps } from './e2e-fixture-fetch.js';
+import { safeFetch } from './import/safe-fetch.js';
+import { setImportDeps } from './routes/import.js';
 import { sendLambdaResult, toLambdaEvent, type LocalHandler } from './local-adapter.js';
+
+/**
+ * Local-dev-only e2e hook (see e2e-fixture-fetch.ts): when NODE_ENV=development and NABBIT_E2E_FIXTURE_FETCH=1,
+ * the importer's safeFetch gets fixture resolver/transport deps. The guard itself is unchanged.
+ * Returns whether the hook was installed. Never called from the Lambda handlers.
+ */
+export function installE2eFixtureFetch(env: NodeJS.ProcessEnv = process.env): boolean {
+  const deps = fixtureFetchDeps(env);
+  if (!deps) return false;
+  setImportDeps({ safeFetch: (u) => safeFetch(u, deps) });
+  return true;
+}
 
 export function createApp(): express.Express {
   const app = express();
@@ -43,6 +58,7 @@ export function start(port = Number(process.env.PORT ?? 3000)): Promise<Server> 
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  installE2eFixtureFetch();
   const server = await start();
   const addr = server.address();
   console.log(`Nabbit API listening on port ${typeof addr === 'object' && addr ? addr.port : addr}`);

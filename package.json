@@ -7,7 +7,8 @@
   "workspaces": [
     "shared/*",
     "backend",
-    "frontend"
+    "frontend",
+    "e2e"
   ],
   "scripts": {
     "lint": "eslint . && npm run lint -w frontend",

@@ -119,6 +119,19 @@ describe('Lists', () => {
     expect(api['addItems']).toHaveBeenCalledWith('L1', [{ name: 'Apples', category: 'Produce' }]);
   });
 
+  it('a toggle that fails because a double-tap already deleted the item does not replace the Undo snackbar', async () => {
+    jest.useFakeTimers();
+    const patch$ = new Subject<ShoppingList>();
+    await setup({ patchItem: jest.fn(() => patch$) });
+    tap('Apples');
+    jest.advanceTimersByTime(DOUBLE_TAP_MS - 50);
+    tap('Apples');
+    patch$.error(new Error('404')); // the toggle's PATCH loses the race with the DELETE
+    expect(labels()).not.toContain('Apples');
+    expect(snackOpen).toHaveBeenCalledTimes(1);
+    expect(snackOpen).toHaveBeenCalledWith('Deleted', 'Undo', { duration: UNDO_MS });
+  });
+
   it('two taps further apart than 300 ms are two toggles', async () => {
     jest.useFakeTimers();
     await setup();

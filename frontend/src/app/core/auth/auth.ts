@@ -16,6 +16,16 @@ const RETURN_URL_KEY = 'auth_return_url';
 
 const MOCK_USER: AuthUser = { userId: 'local-dev-user-id', email: 'dev@example.com', displayName: 'Local Dev User' };
 
+const b64url = (o: object): string => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+/**
+ * Unsigned JWT-shaped token for the disableAuth (local dev / e2e) mode. The local backend only decodes the
+ * `sub` claim (it never verifies the signature), so a bare string would be rejected with 401.
+ */
+export function mockDevToken(sub: string = MOCK_USER.userId): string {
+  return `${b64url({ alg: 'none', typ: 'JWT' })}.${b64url({ sub })}.dev`;
+}
+
 @Injectable({ providedIn: 'root' })
 export class Auth {
   private readonly userPool = inject(USER_POOL);
@@ -44,8 +54,9 @@ export class Auth {
   private async bootstrap(): Promise<void> {
     try {
       if (environment.disableAuth) {
-        localStorage.setItem(ID_TOKEN_KEY, 'mock-jwt-token');
-        localStorage.setItem(ACCESS_TOKEN_KEY, 'mock-jwt-token');
+        const token = mockDevToken();
+        localStorage.setItem(ID_TOKEN_KEY, token);
+        localStorage.setItem(ACCESS_TOKEN_KEY, token);
         this._user.set(MOCK_USER);
         return;
       }
