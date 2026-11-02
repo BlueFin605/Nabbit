@@ -1,0 +1,41 @@
+{
+    "id": "c8e20514-4dc3-4938-9798-1b219c58ab16",
+    "name": "16a add item for suggest ordering",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists/{{listId}}/items",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"name\":\"Mia\",\"category\":\"Pantry\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 201,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"items\"\n  ],\n  \"properties\": {\n    \"items\": {\n      \"type\": \"array\",\n      \"contains\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"name\"\n        ],\n        \"properties\": {\n          \"name\": {\n            \"const\": \"Mia\"\n          }\n        }\n      }\n    }\n  }\n}"
+        }
+    }
+}

@@ -1,0 +1,431 @@
+{
+    "id": "35252e7d-7fe7-43e9-ad96-7f45cd683777",
+    "name": "04a path guards",
+    "verb": "get",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "27f73a41-6078-4e85-99ef-7ed0037330a9",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "695845cf-cb05-4425-9b1a-d6fba1db5066",
+            "name": "empty segment before import",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes//import",
+            "verb": "post",
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"text\":\"Pasta\"}"
+            }
+        },
+        {
+            "id": "8b430aac-ef4e-43a2-9285-6eebb576c373",
+            "name": "trailing slash after import",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/import/",
+            "verb": "post",
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"text\":\"Pasta\"}"
+            }
+        },
+        {
+            "id": "a2afc578-6736-42ed-a6bd-4fd5da5f3693",
+            "name": "trailing slash on id",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/{{recipeId}}/",
+            "verb": "get"
+        },
+        {
+            "id": "a5840f64-2e7e-40c6-b11d-cde26ad2cac9",
+            "name": "id over 100 chars",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "verb": "get"
+        },
+        {
+            "id": "647112c4-ccbf-4647-9e83-4ec5b268ab4a",
+            "name": "id with encoded hash",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/x%23y",
+            "verb": "get"
+        },
+        {
+            "id": "dd68249f-c45b-4d64-b2c0-44b4122eb981",
+            "name": "id with encoded slash",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/x%2Fy",
+            "verb": "get"
+        },
+        {
+            "id": "61d36df3-ba32-4b46-af60-dc7434bab326",
+            "name": "real id with encoded hash suffix",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/{{recipeId}}%23x",
+            "verb": "get"
+        },
+        {
+            "id": "1061c54a-28e2-41cf-8ca4-005265913620",
+            "name": "other owner id with encoded hash suffix",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "{{otherAuthHeader}}",
+                    "active": true,
+                    "id": "8b824fa5-8ebe-4514-82c1-4013a82668a8"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/{{recipeId}}%23x",
+            "verb": "get"
+        },
+        {
+            "id": "a0171d5c-2b60-4032-bd85-11db7e292f83",
+            "name": "other owner id with encoded slash suffix",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "{{otherAuthHeader}}",
+                    "active": true,
+                    "id": "16df07f4-378f-4f28-a488-2a18070ec1da"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "url": "{{baseUrl}}/recipes/{{recipeId}}%2Fx",
+            "verb": "get"
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 404,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+        }
+    }
+}

@@ -1,0 +1,47 @@
+{
+    "id": "98e581af-4ae5-4bdb-a05d-5e8dff577cba",
+    "name": "17a suggest guards",
+    "verb": "get",
+    "protocol": "http",
+    "url": "{{baseUrl}}/items/suggest",
+    "headers": [],
+    "parameters": [
+        {
+            "key": "q",
+            "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "active": true,
+            "id": "cd6aa611-fa9e-4dd0-a68d-1b5ed1d79551"
+        }
+    ],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+        }
+    }
+}

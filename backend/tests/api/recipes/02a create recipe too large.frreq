@@ -1,0 +1,41 @@
+{
+    "id": "79449e33-7e43-4e55-8ffd-771b77dc8963",
+    "name": "02a create recipe too large",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Huge\",\"servings\":1,\"ingredients\":[],\"steps\":[\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\"],\"tags\":[]}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"too_large\"\n    }\n  }\n}"
+        }
+    }
+}
