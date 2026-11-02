@@ -29,7 +29,6 @@ export class App {
   );
 
   protected signOut(): void {
-    this.auth.signOut();
-    void this.router.navigate(['/signin']);
+    if (!this.auth.logout()) void this.router.navigate(['/signin']);
   }
 }

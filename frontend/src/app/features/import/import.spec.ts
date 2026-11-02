@@ -129,7 +129,14 @@ describe('Import', () => {
     expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
     expect(q('summary')?.textContent).toContain('240 ml');
     expect(q('details .original')?.textContent).toContain('1 cup flour');
+    // third-party photo is not loaded automatically and is labelled as unsaved
+    expect(q('img.photo')).toBeNull();
+    expect(q('.photo-note')?.textContent).toContain('Photo not saved');
+    q('.show-original')?.click();
+    fixture.detectChanges();
     expect(q('img.photo')?.getAttribute('src')).toBe('https://example.com/p.jpg');
+    expect(q('.photo-note')?.textContent).toContain('Photo not saved');
+    expect(q('.show-original')).toBeNull();
     expect(q('.banner')).toBeNull();
   });
 

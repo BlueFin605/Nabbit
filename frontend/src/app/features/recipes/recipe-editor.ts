@@ -65,6 +65,12 @@ interface StepRow {
     @if (photoSrc(); as src) {
       <img class="photo" [src]="src" alt="Recipe photo" />
     }
+    @if (previewImage() && !imageKey()) {
+      <p class="photo-note" role="note">Photo not saved — add one in the editor.</p>
+      @if (!showPreview()) {
+        <button mat-button type="button" class="show-original" (click)="showPreview.set(true)">Show original photo</button>
+      }
+    }
     <div class="photo-actions">
       <label class="photo-pick">
         <input type="file" class="photo-input" accept="image/jpeg,image/png,image/webp" (change)="onPhoto($event)" />
@@ -229,9 +235,12 @@ export class RecipeEditor {
   /** True when the form differs from what was loaded. */
   readonly dirty = computed(() => this.snapshot() !== this.baseline());
 
+  /** A third-party preview image is only loaded after an explicit tap (no automatic hot-link / IP leak). */
+  protected readonly showPreview = signal(false);
+
   protected readonly photoSrc = computed(() => {
     const key = this.imageKey();
-    return key ? imageUrl(key) : this.previewImage();
+    return key ? imageUrl(key) : this.showPreview() ? this.previewImage() : undefined;
   });
 
   constructor() {

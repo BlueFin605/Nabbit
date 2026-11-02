@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { environment } from '../../../environments/environment';
 import { Auth } from './auth';
-import { authInterceptor } from './auth-interceptor';
+import { authInterceptor, isApiUrl } from './auth-interceptor';
 
 const API = `${environment.apiBaseUrl}/recipes`;
 
@@ -70,5 +70,23 @@ describe('authInterceptor', () => {
     await Promise.resolve();
     expect(auth.signOut).toHaveBeenCalled();
     expect(error).toHaveBeenCalled();
+  });
+});
+
+describe('isApiUrl', () => {
+  it('matches the API origin and rejects lookalike hosts', () => {
+    const base = environment.apiBaseUrl;
+    expect(isApiUrl(`${base}/recipes`)).toBe(true);
+    expect(isApiUrl(base)).toBe(true);
+    const u = new URL(base);
+    expect(isApiUrl(`${u.protocol}//${u.host}.evil.tld/recipes`)).toBe(false);
+    expect(isApiUrl(`${u.protocol}//${u.hostname}.evil.tld${u.port ? ':' + u.port : ''}/x`)).toBe(false);
+    expect(isApiUrl(`${base}@evil.tld/x`)).toBe(false);
+    expect(isApiUrl('https://bucket.s3.amazonaws.com/')).toBe(false);
+  });
+
+  it('does not treat a relative URL as the API unless the API shares the app origin', () => {
+    expect(isApiUrl('/img/abc.jpg')).toBe(false);
+    expect(isApiUrl('not a url ::')).toBe(false);
   });
 });

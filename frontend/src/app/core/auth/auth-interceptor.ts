@@ -14,9 +14,22 @@ import { Auth } from './auth';
 /** Set on the single retry so a second 401 does not loop back into refresh (fresh context; never mutated). */
 export const RETRIED = new HttpContextToken<boolean>(() => false);
 
+/** True when `url` targets the API: same parsed origin and, if the base has a path, under it (not a string prefix). */
+export function isApiUrl(url: string): boolean {
+  try {
+    const base = new URL(environment.apiBaseUrl, document.baseURI);
+    const target = new URL(url, document.baseURI);
+    if (target.origin !== base.origin) return false;
+    const prefix = base.pathname.replace(/\/+$/, '');
+    return prefix === '' || target.pathname === prefix || target.pathname.startsWith(prefix + '/');
+  } catch {
+    return false;
+  }
+}
+
 /** Attaches `Authorization: Bearer <id token>` to calls to the Nabbit API; on 401 refreshes once, else signs out. */
 export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, next: HttpHandlerFn) => {
-  if (!req.url.startsWith(environment.apiBaseUrl)) return next(req);
+  if (!isApiUrl(req.url)) return next(req);
 
   const auth = inject(Auth);
   const token = auth.getIdToken();

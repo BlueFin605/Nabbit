@@ -14,6 +14,9 @@ import { Auth } from '../../core/auth/auth';
       @if (error()) {
         <p role="alert">{{ error() }}</p>
         <button mat-flat-button type="button" (click)="start()">Try again</button>
+      } @else if (signedOut()) {
+        <p>You have been signed out.</p>
+        <button mat-flat-button type="button" class="signin-btn" (click)="start()">Sign in</button>
       } @else {
         <mat-spinner diameter="40" />
         <p>Taking you to sign in...</p>
@@ -36,12 +39,17 @@ export class Signin {
   private readonly router = inject(Router);
   protected readonly error = signal<string | null>(null);
 
+  /** True right after an explicit sign-out: show a Sign in button instead of bouncing into the Hosted UI. */
+  protected readonly signedOut = signal(false);
+
   constructor() {
-    void this.start();
+    if (this.auth.takeSignedOutFlag()) this.signedOut.set(true);
+    else void this.start();
   }
 
   protected async start(): Promise<void> {
     this.error.set(null);
+    this.signedOut.set(false);
     await this.auth.whenReady();
     if (this.auth.isAuthenticated()) {
       await this.router.navigateByUrl(this.auth.takeReturnUrl(), { replaceUrl: true });

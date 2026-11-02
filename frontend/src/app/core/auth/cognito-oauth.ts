@@ -65,6 +65,16 @@ export async function buildAuthorizeUrl(): Promise<string> {
   return `https://${domain}/oauth2/authorize?${params.toString()}`;
 }
 
+/**
+ * Builds the Cognito Hosted UI /logout URL. `logout_uri` must be one of the app client's allowed LogoutUrls;
+ * the CDK allows `{origin}/` only, so that is what we send.
+ */
+export function buildLogoutUrl(origin: string = window.location.origin): string {
+  const { domain, clientId } = assertConfigured();
+  const params = new URLSearchParams({ client_id: clientId, logout_uri: `${origin}/` });
+  return `https://${domain}/logout?${params.toString()}`;
+}
+
 export async function redirectToLogin(): Promise<void> {
   window.location.href = await buildAuthorizeUrl();
 }

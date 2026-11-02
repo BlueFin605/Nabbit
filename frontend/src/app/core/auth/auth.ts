@@ -1,8 +1,8 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, InjectionToken, computed, inject, signal } from '@angular/core';
 import { CognitoUser, type CognitoUserSession } from 'amazon-cognito-identity-js';
 import { environment } from '../../../environments/environment';
 import { USER_POOL } from './cognito-config';
-import { handleOAuthCallback, redirectToLogin as cognitoRedirectToLogin } from './cognito-oauth';
+import { buildLogoutUrl, handleOAuthCallback, redirectToLogin as cognitoRedirectToLogin } from './cognito-oauth';
 
 export interface AuthUser {
   userId: string;
@@ -13,6 +13,13 @@ export interface AuthUser {
 const ID_TOKEN_KEY = 'idToken';
 const ACCESS_TOKEN_KEY = 'accessToken';
 const RETURN_URL_KEY = 'auth_return_url';
+const SIGNED_OUT_KEY = 'nabbit.signedOut';
+
+/** Full-page navigation; injectable so tests can observe the Hosted UI logout redirect. */
+export const BROWSER_NAVIGATE = new InjectionToken<(url: string) => void>('BROWSER_NAVIGATE', {
+  providedIn: 'root',
+  factory: () => (url: string) => window.location.assign(url),
+});
 
 const MOCK_USER: AuthUser = { userId: 'local-dev-user-id', email: 'dev@example.com', displayName: 'Local Dev User' };
 
@@ -29,6 +36,7 @@ export function mockDevToken(sub: string = MOCK_USER.userId): string {
 @Injectable({ providedIn: 'root' })
 export class Auth {
   private readonly userPool = inject(USER_POOL);
+  private readonly navigate = inject(BROWSER_NAVIGATE);
 
   private readonly _user = signal<AuthUser | null>(null);
   private readonly _isLoading = signal(true);
@@ -113,6 +121,34 @@ export class Auth {
     this._user.set(null);
   }
 
+  /**
+   * Explicit user sign-out: clears local state, then ends the Hosted UI session (otherwise its cookie would sign
+   * the user straight back in). Returns true when the browser is being redirected to the Hosted UI logout, which
+   * lands back on `{origin}/`; false in disableAuth mode (no redirect; the caller routes to /signin itself).
+   */
+  logout(): boolean {
+    this.signOut();
+    try {
+      sessionStorage.setItem(SIGNED_OUT_KEY, '1');
+    } catch {
+      /* storage unavailable: worst case the sign-in page auto-redirects */
+    }
+    if (environment.disableAuth) return false;
+    this.navigate(buildLogoutUrl());
+    return true;
+  }
+
+  /** True once if the user just signed out explicitly (consumed on read), so /signin waits for a tap. */
+  takeSignedOutFlag(): boolean {
+    try {
+      const v = sessionStorage.getItem(SIGNED_OUT_KEY) === '1';
+      sessionStorage.removeItem(SIGNED_OUT_KEY);
+      return v;
+    } catch {
+      return false;
+    }
+  }
+
   /** Remembers where the user was heading so the OAuth callback can send them back (e.g. a share-target URL). */
   rememberReturnUrl(url: string): void {
     sessionStorage.setItem(RETURN_URL_KEY, url);
@@ -126,6 +162,14 @@ export class Auth {
   }
 
   redirectToLogin(): Promise<void> {
+    if (environment.disableAuth) {
+      // Dev / e2e: no Hosted UI; just restore the mock session.
+      const token = mockDevToken();
+      localStorage.setItem(ID_TOKEN_KEY, token);
+      localStorage.setItem(ACCESS_TOKEN_KEY, token);
+      this._user.set(MOCK_USER);
+      return Promise.resolve();
+    }
     return cognitoRedirectToLogin();
   }
 
