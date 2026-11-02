@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { safeFetch, isBlockedAddress } from '../src/import/safe-fetch.js';
+import { request as httpRequest } from 'node:http';
+import { createServer, type AddressInfo } from 'node:net';
+import { Readable } from 'node:stream';
+import { safeFetch, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
 import { ImportError } from '../src/import/import-error.js';
 
 const PUBLIC = '93.184.216.34';
@@ -253,5 +256,147 @@ describe('safeFetch', () => {
       };
       expect(await codeOf(safeFetch('https://example.com/', { resolve: resolvePublic, fetchImpl: fetchImpl as never }))).toBe('bad_status');
     });
+  });
+});
+
+describe('responseFromIncoming (hostile upstream status)', () => {
+  const incoming = (statusCode: number | undefined, body = 'x') =>
+    Object.assign(Readable.from([Buffer.from(body)]), { statusCode, headers: { 'content-type': 'text/html', 'set-cookie': ['a=1', 'b=2'] } });
+
+  it.each([100, 101, 199, 600, 601, 999])('maps status %i to 502 without throwing', (status) => {
+    const res = responseFromIncoming(incoming(status) as never);
+    expect(res.status).toBe(502);
+  });
+  it('maps a missing status to 502', () => {
+    expect(responseFromIncoming(incoming(undefined) as never).status).toBe(502);
+  });
+  it('never throws for any status 100-999', () => {
+    for (let s = 100; s <= 999; s++) {
+      const res = responseFromIncoming(incoming(s) as never);
+      expect(res.status).toBe(s >= 200 && s <= 599 ? s : 502);
+    }
+  });
+  it('keeps real statuses and headers, null body for 204/304', async () => {
+    const ok = responseFromIncoming(incoming(200, 'hello') as never);
+    expect(ok.status).toBe(200);
+    expect(await ok.text()).toBe('hello');
+    expect(ok.headers.getSetCookie()).toEqual(['a=1', 'b=2']);
+    expect(responseFromIncoming(incoming(204) as never).body).toBeNull();
+    expect(responseFromIncoming(incoming(304) as never).body).toBeNull();
+  });
+
+  it('a real node http client receiving "HTTP/1.1 999" yields a 502, not a throw', async () => {
+    const server = createServer((sock) => {
+      sock.end('HTTP/1.1 999 Hostile\r\ncontent-type: text/html\r\ncontent-length: 2\r\nconnection: close\r\n\r\nhi');
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const res = await new Promise<Response>((resolve, reject) => {
+        const req = httpRequest({ host: '127.0.0.1', port }, (r) => {
+          try {
+            resolve(responseFromIncoming(r));
+          } catch (e) {
+            reject(e);
+          }
+        });
+        req.on('error', reject);
+        req.end();
+      });
+      expect(res.status).toBe(502);
+      void res.body?.cancel();
+    } finally {
+      server.close();
+    }
+  });
+
+  it('safeFetch reports a 502 upstream as bad_status', async () => {
+    const res = responseFromIncoming(incoming(999) as never);
+    expect(await codeOf(safeFetch('https://example.com/', { resolve: resolvePublic, fetchImpl: (async () => res) as never }))).toBe('bad_status');
+  });
+});
+
+describe('connectInOrder', () => {
+  it('returns the first success and stops', async () => {
+    const tried: string[] = [];
+    const out = await connectInOrder(['a', 'b', 'c'], async (x) => {
+      tried.push(x);
+      return x;
+    });
+    expect(out).toBe('a');
+    expect(tried).toEqual(['a']);
+  });
+  it('falls back to the next address on failure, in order', async () => {
+    const tried: string[] = [];
+    const out = await connectInOrder(['a', 'b', 'c'], async (x) => {
+      tried.push(x);
+      if (x !== 'c') throw new Error('ENETUNREACH');
+      return x;
+    });
+    expect(out).toBe('c');
+    expect(tried).toEqual(['a', 'b', 'c']);
+  });
+  it('throws the last error when all fail', async () => {
+    await expect(
+      connectInOrder(['a', 'b'], async (x) => {
+        throw new Error(`fail-${x}`);
+      }),
+    ).rejects.toThrow('fail-b');
+  });
+  it('stops trying once the signal is aborted', async () => {
+    const ac = new AbortController();
+    const tried: string[] = [];
+    await expect(
+      connectInOrder(
+        ['a', 'b'],
+        async (x) => {
+          tried.push(x);
+          ac.abort();
+          throw new Error('boom');
+        },
+        ac.signal,
+      ),
+    ).rejects.toThrow('boom');
+    expect(tried).toEqual(['a']);
+  });
+});
+
+describe('address ordering and validation', () => {
+  const V6 = '2606:4700:4700::1111';
+  const fetchWith = () => vi.fn(async () => html());
+  const initOf = (f: ReturnType<typeof fetchWith>) => f.mock.calls[0] as unknown as [string, Record<string, unknown>];
+
+  it('orders IPv4 before IPv6, stably', () => {
+    expect(orderAddresses([V6, '8.8.8.8', '2001:4860:4860::8888', '1.1.1.1'])).toEqual(['8.8.8.8', '1.1.1.1', V6, '2001:4860:4860::8888']);
+  });
+  it('passes all validated addresses to the transport, IPv4 first, pinnedAddress = first', async () => {
+    const f = fetchWith();
+    await safeFetch('https://example.com/', { resolve: async () => [V6, PUBLIC], fetchImpl: f as never });
+    const init = initOf(f)[1];
+    expect(init.pinnedAddresses).toEqual([PUBLIC, V6]);
+    expect(init.pinnedAddress).toBe(PUBLIC);
+    expect(initOf(f)[0]).toBe('https://example.com/'); // hostname kept for SNI/Host
+  });
+  it('a blocked address anywhere in the answer blocks the host (no connect)', async () => {
+    for (const answer of [[PUBLIC, V6, '10.0.0.1'], ['fe80::1', PUBLIC], [V6, '::ffff:127.0.0.1', PUBLIC]]) {
+      const f = fetchWith();
+      expect(await codeOf(safeFetch('https://example.com/', { resolve: async () => answer, fetchImpl: f as never }))).toBe('blocked_address');
+      expect(f).not.toHaveBeenCalled();
+    }
+  });
+  it('re-resolves and re-validates every hop with its own address list', async () => {
+    const f = vi
+      .fn()
+      .mockResolvedValueOnce(redirect('https://other.example/x'))
+      .mockResolvedValueOnce(html());
+    const resolve = vi.fn(async (h: string) => (h === 'example.com' ? [V6, PUBLIC] : ['8.8.8.8', V6]));
+    await safeFetch('https://example.com/', { resolve, fetchImpl: f as never });
+    expect((f.mock.calls[0] as unknown[])[1]).toMatchObject({ pinnedAddresses: [PUBLIC, V6] });
+    expect((f.mock.calls[1] as unknown[])[1]).toMatchObject({ pinnedAddresses: ['8.8.8.8', V6] });
+  });
+  it('an IP-literal host yields a single pinned address', async () => {
+    const f = fetchWith();
+    await safeFetch(`https://[${V6}]/`, { fetchImpl: f as never });
+    expect(initOf(f)[1].pinnedAddresses).toEqual([V6]);
   });
 });

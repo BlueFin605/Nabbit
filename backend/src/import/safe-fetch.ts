@@ -1,4 +1,5 @@
 import { lookup } from 'node:dns/promises';
+import type { IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
@@ -18,7 +19,8 @@ export interface SafeFetchDeps {
   resolve?: (host: string) => Promise<string[]>;
   /**
    * Transport. Called once per hop with `redirect: 'manual'` and a `pinnedAddress` extra init field:
-   * the already-validated IP the connection MUST be made to (the URL host is kept for SNI/Host only).
+   * the already-validated IP the connection MUST be made to (the URL host is kept for SNI/Host only),
+   * plus `pinnedAddresses`: every validated IP in connect order (IPv4 first) for fallback.
    * The default implementation honours it; an injected one (tests) can assert on it.
    */
   fetchImpl?: typeof fetch;
@@ -160,12 +162,23 @@ function isLocalName(host: string): boolean {
   return h === 'localhost' || h.endsWith('.localhost');
 }
 
-/** Validate the hop's host and return the single IP to connect to. */
-async function validatedAddress(u: URL, resolve: (h: string) => Promise<string[]>): Promise<string> {
+/**
+ * IPv4 first (stable), then IPv6: Lambda without a VPC has no IPv6 egress, so an AAAA sorted first
+ * by the resolver would otherwise fail dual-stack hosts.
+ */
+export function orderAddresses(addrs: string[]): string[] {
+  return [...addrs.filter((a) => isIP(a) === 4), ...addrs.filter((a) => isIP(a) !== 4)];
+}
+
+/**
+ * Validate the hop's host and return the validated IPs to connect to, in connect order (IPv4 first).
+ * ANY blocked address in the answer blocks the whole host.
+ */
+async function validatedAddresses(u: URL, resolve: (h: string) => Promise<string[]>): Promise<string[]> {
   const host = u.hostname.startsWith('[') ? u.hostname.slice(1, -1) : u.hostname;
   if (isIP(host)) {
     if (isBlockedAddress(host)) throw new ImportError('blocked_address', 'Address is not allowed');
-    return host;
+    return [host];
   }
   if (isLocalName(host)) throw new ImportError('blocked_address', 'Address is not allowed');
   let addrs: string[];
@@ -177,48 +190,109 @@ async function validatedAddress(u: URL, resolve: (h: string) => Promise<string[]
   if (!Array.isArray(addrs) || addrs.length === 0) throw new ImportError('bad_url', 'Host could not be resolved');
   // ANY blocked address poisons the whole host (defends mixed A/AAAA answers).
   if (addrs.some(isBlockedAddress)) throw new ImportError('blocked_address', 'Address is not allowed');
-  return addrs[0]!;
+  return orderAddresses(addrs);
 }
 
 // ---------------------------------------------------------------------------
 // Default transport: HTTPS to a pinned IP, TLS verified against the original hostname
 // ---------------------------------------------------------------------------
 
-type PinnedInit = Omit<RequestInit, 'headers'> & { pinnedAddress?: string; headers?: Record<string, string> };
+type PinnedInit = Omit<RequestInit, 'headers'> & {
+  /** First (preferred) validated address; kept for transports that only take one. */
+  pinnedAddress?: string;
+  /** All validated addresses in connect order (IPv4 first). The default transport falls back through them. */
+  pinnedAddresses?: string[];
+  headers?: Record<string, string>;
+};
 
-const pinnedFetch = ((input: string | URL, init: PinnedInit = {}): Promise<Response> =>
-  new Promise<Response>((resolve, reject) => {
+/**
+ * Try each (already validated) address in order until one yields a response. Stops at once if the
+ * signal is aborted. Throws the last error if every address fails.
+ */
+export async function connectInOrder<T>(
+  addresses: string[],
+  tryConnect: (address: string) => Promise<T>,
+  signal?: AbortSignal | null,
+): Promise<T> {
+  let lastError: unknown = new Error('No addresses to connect to');
+  for (const address of addresses) {
+    if (signal?.aborted) throw lastError;
+    try {
+      return await tryConnect(address);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
+
+/** Convert a node IncomingMessage to a fetch Response. Never throws for any status 100-999. */
+export function responseFromIncoming(res: Readable & Pick<IncomingMessage, 'statusCode' | 'headers'>): Response {
+  const headers = new Headers();
+  for (const [k, v] of Object.entries(res.headers)) {
+    try {
+      if (Array.isArray(v)) v.forEach((x) => headers.append(k, x));
+      else if (v !== undefined) headers.set(k, v);
+    } catch {
+      /* skip a header fetch refuses to represent */
+    }
+  }
+  const status = res.statusCode ?? 0;
+  const nullBody = status === 204 || status === 205 || status === 304 || status < 200;
+  // Response only accepts 200-599; anything else from a hostile upstream becomes 502.
+  const safeStatus = status < 200 || status > 599 ? 502 : status;
+  if (nullBody) res.destroy();
+  return new Response(nullBody ? null : (Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>), {
+    status: safeStatus,
+    headers,
+  });
+}
+
+export interface PinnedTlsOptions {
+  /** Test-only: extra trusted CA. Never set in production; verification stays on. */
+  ca?: string | Buffer;
+  /** Test-only port override. */
+  port?: number;
+}
+
+function requestOnce(input: string | URL, init: PinnedInit, address: string, tls: PinnedTlsOptions): Promise<Response> {
+  return new Promise<Response>((resolve, reject) => {
     const u = new URL(String(input));
     const hostname = u.hostname.startsWith('[') ? u.hostname.slice(1, -1) : u.hostname;
     const req = httpsRequest(
       {
-        host: init.pinnedAddress ?? hostname,
-        port: 443,
+        host: address,
+        port: tls.port ?? 443,
         servername: isIP(hostname) ? undefined : hostname, // SNI + certificate name check
         method: 'GET',
         path: u.pathname + u.search,
         headers: { ...(init.headers ?? {}), host: u.host },
         signal: init.signal ?? undefined,
+        ...(tls.ca ? { ca: tls.ca } : {}),
       },
       (res) => {
-        const headers = new Headers();
-        for (const [k, v] of Object.entries(res.headers)) {
-          if (Array.isArray(v)) v.forEach((x) => headers.append(k, x));
-          else if (v !== undefined) headers.set(k, v);
+        try {
+          resolve(responseFromIncoming(res));
+        } catch (e) {
+          res.destroy();
+          reject(e);
         }
-        const status = res.statusCode ?? 0;
-        const nullBody = status === 204 || status === 205 || status === 304 || status < 200;
-        resolve(
-          new Response(nullBody ? null : (Readable.toWeb(res) as unknown as ReadableStream<Uint8Array>), {
-            status: status < 200 ? 502 : status,
-            headers,
-          }),
-        );
       },
     );
     req.on('error', reject);
     req.end();
-  })) as unknown as typeof fetch;
+  });
+}
+
+export function createPinnedFetch(tls: PinnedTlsOptions = {}): typeof fetch {
+  return ((input: string | URL, init: PinnedInit = {}): Promise<Response> => {
+    const hostname = new URL(String(input)).hostname;
+    const addresses = init.pinnedAddresses?.length ? init.pinnedAddresses : [init.pinnedAddress ?? hostname];
+    return connectInOrder(addresses, (a) => requestOnce(input, init, a, tls), init.signal);
+  }) as unknown as typeof fetch;
+}
+
+const pinnedFetch = createPinnedFetch();
 
 async function defaultResolve(host: string): Promise<string[]> {
   return (await lookup(host, { all: true })).map((r) => r.address);
@@ -264,7 +338,7 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
   try {
     let current = parseSafeUrl(rawUrl);
     for (let hop = 0; ; hop++) {
-      const address = await guard(validatedAddress(current, resolve));
+      const addresses = await guard(validatedAddresses(current, resolve));
 
       let res: Response;
       try {
@@ -272,7 +346,8 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
           method: 'GET',
           redirect: 'manual',
           signal: controller.signal,
-          pinnedAddress: address,
+          pinnedAddress: addresses[0]!,
+          pinnedAddresses: addresses,
           headers: {
             'user-agent': USER_AGENT,
             accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
