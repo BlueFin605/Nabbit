@@ -6,7 +6,7 @@ export interface RequestCtx {
   query: Record<string, string>;
   body: unknown;
 }
-export type RouteHandler = (ctx: RequestCtx) => Promise<{ status: number; body?: unknown }>;
+export type RouteHandler = (ctx: RequestCtx) => Promise<{ status: number; body?: unknown; headers?: Record<string, string> }>;
 type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export class HttpError extends Error {
@@ -59,9 +59,9 @@ function match(r: Route, method: string, parts: string[]): Record<string, string
   return params;
 }
 
-const json = (statusCode: number, body?: unknown): APIGatewayProxyStructuredResultV2 => ({
+const json = (statusCode: number, body?: unknown, headers?: Record<string, string>): APIGatewayProxyStructuredResultV2 => ({
   statusCode,
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', ...headers },
   ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
 
@@ -89,7 +89,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       }
       const query = Object.fromEntries(new URLSearchParams(event.rawQueryString ?? ''));
       const result = await r.handler({ ownerId: sub, params, query, body });
-      return json(result.status, result.body);
+      return json(result.status, result.body, result.headers);
     }
     return json(404, { error: 'not_found' });
   } catch (err) {

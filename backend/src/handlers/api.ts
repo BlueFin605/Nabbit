@@ -3,5 +3,7 @@
 import '../routes/recipes.js';
 import '../routes/images.js';
 import '../routes/lists.js';
+// Also registered here for local dev; in AWS POST /recipes/import has its own route and Lambda (handlers/import.ts).
+import '../routes/import.js';
 
 export { handler } from '../router.js';

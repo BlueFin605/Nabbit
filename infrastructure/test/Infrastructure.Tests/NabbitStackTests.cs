@@ -17,7 +17,11 @@ namespace Infrastructure.Tests
             Directory.CreateDirectory(codeDir);
             File.WriteAllText(Path.Combine(codeDir, "index.js"), "exports.handler = async () => ({});");
 
-            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir };
+            var importDir = Path.Combine(Path.GetTempPath(), "nabbit-test-import");
+            Directory.CreateDirectory(importDir);
+            File.WriteAllText(Path.Combine(importDir, "index.js"), "exports.handler = async () => ({});");
+
+            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir };
             var app = new App();
             var certs = new NabbitCertStack(app, "Certs", new StackProps { Env = Env("us-east-1"), CrossRegionReferences = true }, config);
             var stack = new NabbitStack(app, "Nabbit", new StackProps { Env = Env(config.Region), CrossRegionReferences = true }, config, certs.GlobalCertificate);
@@ -128,6 +132,34 @@ namespace Infrastructure.Tests
                     })
                 },
             }));
+        }
+
+        [Fact]
+        public void ImportLambda_HasReservedConcurrency_AndOwnAuthorizedRoute()
+        {
+            var t = Synth();
+            t.HasResourceProperties("AWS::Lambda::Function", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "FunctionName", "nabbit-import-production" },
+                { "ReservedConcurrentExecutions", 5 },
+            }));
+            t.HasResourceProperties("AWS::ApiGatewayV2::Route", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "RouteKey", "POST /recipes/import" },
+                { "AuthorizationType", "JWT" },
+            }));
+            // The general API function must not be capped.
+            var api = Resources(t, "AWS::Lambda::Function").Single(f =>
+                f.Value.GetProperty("Properties").TryGetProperty("FunctionName", out var n) && n.GetString() == "nabbit-api-production");
+            Assert.False(api.Value.GetProperty("Properties").TryGetProperty("ReservedConcurrentExecutions", out _));
+        }
+
+        [Fact]
+        public void ImportConcurrency_ComesFromConfig()
+        {
+            var cfg = new NabbitConfig { Domain = "nabbit.example.com", ImportReservedConcurrency = 3 };
+            Assert.Equal(3, cfg.ImportReservedConcurrency);
+            Assert.Equal(5, new NabbitConfig().ImportReservedConcurrency);
         }
 
         [Fact]

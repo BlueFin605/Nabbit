@@ -15,11 +15,14 @@ namespace Infrastructure
         /// <summary>Optional. When set the zone is imported by id instead of looked up (lets synth run without AWS credentials).</summary>
         public string HostedZoneId { get; set; }
 
-        /// <summary>Reserved concurrency cap for the import function (consumed by NAB-5).</summary>
-        public int ImportReservedConcurrency { get; set; } = 2;
+        /// <summary>Reserved concurrency cap for the dedicated import Lambda.</summary>
+        public int ImportReservedConcurrency { get; set; } = 5;
 
         /// <summary>Folder holding the built API router (index.js). Relative to the cdk working directory.</summary>
         public string ApiCodePath { get; set; } = "../backend/dist/api";
+
+        /// <summary>Folder holding the built import Lambda (index.js). Relative to the cdk working directory.</summary>
+        public string ImportCodePath { get; set; } = "../backend/dist/import";
 
         public string ApiDomain => $"api.{Domain}";
         public string AuthDomain => $"auth.{Domain}";
@@ -57,6 +60,7 @@ namespace Infrastructure
                 Domain = Str("domain", null),
                 HostedZoneId = Str("hostedZoneId", null),
                 ApiCodePath = Str("apiCodePath", "../backend/dist/api"),
+                ImportCodePath = Str("importCodePath", "../backend/dist/import"),
             };
             if (s.TryGetProperty("importReservedConcurrency", out var c) && c.ValueKind == JsonValueKind.Number)
                 cfg.ImportReservedConcurrency = c.GetInt32();

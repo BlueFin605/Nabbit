@@ -5,7 +5,7 @@ What this is: the AWS CDK (C#, .NET 10) app that deploys Nabbit. Deploys are man
 ## Where things are
 
 - `src/Infrastructure/Program.cs` — entry point; reads the `nabbit` section of `config.json` (`-c configFile=...`, default `../config.json`) and creates both stacks.
-- `src/Infrastructure/NabbitConfig.cs` — config model (`prefix`, `region`, `environment`, `domain`, optional `hostedZoneId`, `importReservedConcurrency`, `apiCodePath`).
+- `src/Infrastructure/NabbitConfig.cs` — config model (`prefix`, `region`, `environment`, `domain`, optional `hostedZoneId`, `importReservedConcurrency`, `apiCodePath`, `importCodePath`).
 - `src/Infrastructure/Stacks/NabbitStack.cs` — the single stack: DynamoDB, Cognito, S3 buckets, CloudFront, HTTP API, Lambda, Route53 records, API certificate.
 - `src/Infrastructure/Stacks/NabbitCertStack.cs` — tiny us-east-1 companion holding the one certificate (SPA + `auth.` domains) that CloudFront and the Cognito custom domain require. Cross-region references link it to `NabbitStack`.
 - `test/Infrastructure.Tests` — `dotnet test src/Infrastructure.slnx` runs CDK assertions (TTL + PITR, public access blocked, JWT authorizer on every route, no wildcard bucket policy, CORS (API and image bucket), auth domain, DNS).
@@ -17,7 +17,7 @@ What this is: the AWS CDK (C#, .NET 10) app that deploys Nabbit. Deploys are man
 - **API**: HTTP API at `api.{domain}`, JWT authorizer (Cognito user pool client) on `$default` and `/{proxy+}`. CORS allows only `https://{domain}` with credentials. The image bucket (only) has a CORS rule: origin `https://{domain}`, `POST`, headers `*`, max age 3000, so the browser can upload via presigned POST. One Lambda (`backend/dist/api`, node24, arm64) gets `TABLE_NAME`, `IMAGE_BUCKET`, `IMAGE_BASE_URL`, `USER_POOL_ID`, `USER_POOL_CLIENT_ID`, `ALLOWED_ORIGIN`.
 - **DNS**: zone is the parent of `domain`; looked up by name, or imported when `hostedZoneId` is set (the example config sets a placeholder so `cdk synth` runs without credentials).
 - **Retention**: table, user pool and buckets use `RETAIN`.
-- **Import concurrency**: `importReservedConcurrency` is exposed on the stack and as an output; the import Lambda that applies it arrives in NAB-5.
+- **Import Lambda**: `POST /recipes/import` has its own route (more specific than `/{proxy+}`, same JWT authorizer) and its own Lambda (`backend/dist/import`, `importCodePath`), with `ReservedConcurrentExecutions = importReservedConcurrency` (default 5) so an import flood cannot exhaust the account. It only gets table access. Note the account's unreserved concurrency must stay at 10 or more, so a new account may need a limit increase before deploy. The per-user hourly limit (30) is a DynamoDB counter `RATE#import#{hour}` (TTL 2 h), written by the import handler.
 
 ## Running
 

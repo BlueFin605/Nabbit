@@ -6,6 +6,7 @@
  *   recipe item   pk=OWNER#{ownerId}  sk=RECIPE#{id}
  *   list          pk=OWNER#{ownerId}  sk=LIST#{id}
  *   item memory   pk=OWNER#{ownerId}  sk=MEM#{lowercased name}
+ *   import rate   pk=OWNER#{ownerId}  sk=RATE#import#{epoch hour}  (count, ttl)
  * Helpers `ownerPk` / `recipeSk` build keys so every item is scoped to its owner by construction.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -15,6 +16,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  UpdateCommand,
 } from '@aws-sdk/lib-dynamodb';
 
 /** A stored item: key attributes plus arbitrary attributes. */
@@ -46,6 +48,8 @@ export interface Db {
   deleteItem(pk: string, sk: string): Promise<void>;
   /** All items in a partition whose sk starts with `skPrefix` (follows pagination). */
   queryItems(pk: string, skPrefix: string): Promise<Item[]>;
+  /** Atomically add 1 to the item's `count` (creating it), set `ttl` (epoch seconds), return the new count. */
+  incrementCounter(pk: string, sk: string, ttl: number): Promise<number>;
 }
 
 export const ownerPk = (ownerId: string): string => `OWNER#${ownerId}`;
@@ -56,6 +60,8 @@ export const LIST_SK_PREFIX = 'LIST#';
 /** Item memory is keyed by the lowercased item name. */
 export const memSk = (lowerName: string): string => `MEM#${lowerName}`;
 export const MEM_SK_PREFIX = 'MEM#';
+/** Per-owner rate-limit counter for `kind` in the given epoch hour. */
+export const rateSk = (kind: string, hour: number): string => `RATE#${kind}#${hour}`;
 
 /** DynamoDB-backed implementation. `AWS_ENDPOINT_URL` (local dev) is honoured by the SDK itself. */
 export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?: DynamoDBDocumentClient): Db {
@@ -101,6 +107,19 @@ export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?
     },
     async deleteItem(pk, sk) {
       await doc.send(new DeleteCommand({ TableName: tableName, Key: { pk, sk } }));
+    },
+    async incrementCounter(pk, sk, ttl) {
+      const res = await doc.send(
+        new UpdateCommand({
+          TableName: tableName,
+          Key: { pk, sk },
+          UpdateExpression: 'ADD #c :one SET #t = :ttl',
+          ExpressionAttributeNames: { '#c': 'count', '#t': 'ttl' },
+          ExpressionAttributeValues: { ':one': 1, ':ttl': ttl },
+          ReturnValues: 'UPDATED_NEW',
+        }),
+      );
+      return Number(res.Attributes?.count ?? 1);
     },
     async queryItems(pk, skPrefix) {
       const items: Item[] = [];

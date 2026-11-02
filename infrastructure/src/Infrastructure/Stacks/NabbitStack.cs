@@ -28,8 +28,9 @@ namespace Infrastructure.Stacks
         public Distribution Distribution { get; }
         public Apigw.HttpApi Api { get; }
         public Amazon.CDK.AWS.Lambda.Function ApiFunction { get; }
+        public Amazon.CDK.AWS.Lambda.Function ImportFunction { get; }
 
-        /// <summary>Reserved concurrency for the import function; applied by NAB-5.</summary>
+        /// <summary>Reserved concurrency applied to the import function.</summary>
         public int ImportReservedConcurrency { get; }
 
         public NabbitStack(Construct scope, string id, IStackProps props, NabbitConfig config, ICertificate globalCert) : base(scope, id, props)
@@ -128,6 +129,32 @@ namespace Infrastructure.Stacks
                 },
             });
             DataTable.GrantReadWriteData(ApiFunction);
+
+            // Dedicated import Lambda: fetches arbitrary URLs, so it gets its own reserved-concurrency cap
+            // (a flood cannot exhaust the account) and only the table (no image bucket, no user pool).
+            var importLogs = new LogGroup(this, "ImportLogs", new LogGroupProps
+            {
+                LogGroupName = $"/aws/lambda/{config.Name("import")}",
+                Retention = RetentionDays.ONE_MONTH,
+                RemovalPolicy = RemovalPolicy.DESTROY,
+            });
+            ImportFunction = new Amazon.CDK.AWS.Lambda.Function(this, "ImportFunction", new Amazon.CDK.AWS.Lambda.FunctionProps
+            {
+                FunctionName = config.Name("import"),
+                Runtime = Runtime.NODEJS_24_X,
+                Architecture = Architecture.ARM_64,
+                Handler = "index.handler",
+                Code = Code.FromAsset(config.ImportCodePath),
+                MemorySize = 512,
+                Timeout = Duration.Seconds(29),
+                ReservedConcurrentExecutions = config.ImportReservedConcurrency,
+                LogGroup = importLogs,
+                Environment = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "TABLE_NAME", DataTable.TableName },
+                },
+            });
+            DataTable.GrantReadWriteData(ImportFunction);
             ImageBucket.GrantReadWrite(ApiFunction);
 
             var authorizer = new HttpUserPoolAuthorizer("JwtAuthorizer", UserPool, new HttpUserPoolAuthorizerProps
@@ -172,6 +199,15 @@ namespace Infrastructure.Stacks
                 Path = "/{proxy+}",
                 Methods = new[] { Apigw.HttpMethod.GET, Apigw.HttpMethod.POST, Apigw.HttpMethod.PUT, Apigw.HttpMethod.PATCH, Apigw.HttpMethod.DELETE },
                 Integration = new HttpLambdaIntegration("ProxyIntegration", ApiFunction),
+                Authorizer = authorizer,
+            });
+
+            // The more specific route wins over /{proxy+}, sending imports to their own capped Lambda.
+            Api.AddRoutes(new Apigw.AddRoutesOptions
+            {
+                Path = "/recipes/import",
+                Methods = new[] { Apigw.HttpMethod.POST },
+                Integration = new HttpLambdaIntegration("ImportIntegration", ImportFunction),
                 Authorizer = authorizer,
             });
 

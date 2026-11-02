@@ -24,6 +24,12 @@ export function createMemoryDb(): Db & { items: Map<string, Item> } {
     async deleteItem(pk, sk) {
       items.delete(key(pk, sk));
     },
+    async incrementCounter(pk, sk, ttl) {
+      const k = key(pk, sk);
+      const count = ((items.get(k)?.count as number | undefined) ?? 0) + 1;
+      items.set(k, { pk, sk, count, ttl });
+      return count;
+    },
     async queryItems(pk, skPrefix) {
       return [...items.values()].filter((i) => i.pk === pk && i.sk.startsWith(skPrefix)).map((i) => structuredClone(i));
     },
