@@ -37,3 +37,7 @@ cdk.out/
 /e2e/playwright-report/
 /frontend/src/environments/environment.e2e.ts
 /e2e/.stack/
+
+# Cognito Local runtime state (generated)
+/aspire/cognito-local-data/config.json
+/aspire/cognito-local-data/db/

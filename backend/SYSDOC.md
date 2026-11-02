@@ -9,7 +9,7 @@ What this is: Node 24 + TypeScript Lambda code behind an API Gateway HTTP API. T
 - `src/db.ts` — the `Db` interface (get, conditional put, delete, query by prefix, atomic counter, atomic `bumpItemMemory`), key builders and the DynamoDB implementation; `db-memory.ts` is the unit-test double (`setDb`). Key layout: root `SYSDOC.md`.
 - `src/import/` — `safe-fetch.ts`, `extract-structured.ts`, `extract-text.ts`, `import-error.ts`.
 - `src/local.ts`, `src/local-adapter.ts` — Express dev server wrapping the same handlers; `src/e2e-fixture-fetch.ts` — dev-only fixture hook for e2e (`../e2e/SYSDOC.md`).
-- `scripts/init-local.mjs` creates the local table and image bucket; `scripts/build.mjs` is the bundler.
+- `scripts/seed-local.mjs` (`npm run seed`) seeds a dev user's sample recipes and shopping list through the HTTP API (idempotent, `--reset`; see README "Running locally"); `test/seed-local.test.ts` runs it against the real handlers so it cannot drift from the route validators. `scripts/init-local.mjs` creates the local table and image bucket; `scripts/build.mjs` is the bundler.
 - `test/` — Vitest unit and handler tests. `tests/api/` — the FullyRested API suite.
 
 ## HTTP endpoints

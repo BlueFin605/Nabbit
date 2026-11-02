@@ -57,6 +57,8 @@ Stopping: Ctrl+C in the terminal lets Aspire remove its containers. If the AppHo
 
 Check it: `curl localhost:3000/health` returns `{"status":"ok"}`; an authenticated call is `curl -H "X-Dev-Sub: me" localhost:3000/recipes`.
 
+Seeding: with the backend running, `npm run seed` adds sample data for the dev user `dev-user` through the HTTP API: six recipes (metric, US units, ranges, "to taste", tags, notes, a source URL) and a "Shopping" list of 11 items across five aisles with two checked (which also builds item memory for autocomplete). It is idempotent (recipes matched by title, the list by name; existing ones are left alone), and `npm run seed -- --reset` first deletes the seeded recipes and list, then recreates them. Target a non-default backend with `NABBIT_API_URL` (or `--api-url`, default `http://localhost:3000`) and another user with `NABBIT_SEED_SUB` (or `--sub`). It is not wired into the Aspire AppHost: run it by hand once the backend is up (keeping it manual avoids silently re-creating data you deleted on every `npm run dev`, and the AppHost has no clean post-start hook for a one-shot that needs the backend healthy).
+
 Without Docker you can run just the backend: `npm run dev -w backend` (port 3000; `/health` needs no AWS).
 
 Auth locally: send a Cognito-style JWT as `Authorization: Bearer <jwt>` (the `sub` claim becomes `ownerId`; the signature is not checked), or, because `NODE_ENV=development`, just send `X-Dev-Sub: <ownerId>`. The `X-Dev-Sub` header is ignored in any other environment.
