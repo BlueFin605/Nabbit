@@ -1,0 +1,41 @@
+{
+    "id": "9daa26d0-5c78-4b14-9f7b-3d434e11f2ff",
+    "name": "02 over limit",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"text\":\"Pancakes\\n\\nIngredients\\n200 g flour\\n2 eggs\\n300 ml milk\\n\\nMethod\\n1. Mix everything.\\n2. Fry in a pan.\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "httpCode": 429,
+        "body": "JsonSchema",
+        "headers": [],
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"rate_limited\"\n    }\n  }\n}"
+        }
+    }
+}

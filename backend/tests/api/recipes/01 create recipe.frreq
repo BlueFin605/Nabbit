@@ -1,0 +1,55 @@
+{
+    "id": "bda45ea6-5c99-421e-b85b-5eeeca469289",
+    "name": "01 create recipe",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Pancakes\",\"servings\":4,\"ingredients\":[{\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix everything.\",\"Fry in a pan.\"],\"tags\":[\"breakfast\"]}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 201,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"servings\",\n    \"ingredients\",\n    \"steps\",\n    \"tags\",\n    \"version\",\n    \"createdAt\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"const\": \"Pancakes\"\n    },\n    \"servings\": {\n      \"type\": \"number\",\n      \"exclusiveMinimum\": 0\n    },\n    \"ingredients\": {\n      \"type\": \"array\",\n      \"minItems\": 2,\n      \"maxItems\": 2\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"tags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"version\": {\n      \"const\": 1\n    },\n    \"createdAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "recipeId",
+            "from": "body",
+            "path": "$.id",
+            "id": "7a2027e8-b57a-439a-b0d1-ab126df57d20"
+        },
+        {
+            "variable": "recipeVersion",
+            "from": "body",
+            "path": "$.version",
+            "id": "a10aa4bd-a8b2-4167-bf65-f02ca79a0a6e"
+        }
+    ]
+}

@@ -1,0 +1,55 @@
+{
+    "id": "86ee213c-5587-4e00-8a9a-fe3b168be04b",
+    "name": "01 create list",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"name\":\"Weekly shop\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 201,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"name\",\n    \"items\",\n    \"version\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"name\": {\n      \"const\": \"Weekly shop\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"category\",\n          \"checked\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"category\": {\n            \"type\": \"string\"\n          },\n          \"checked\": {\n            \"type\": \"boolean\"\n          }\n        }\n      },\n      \"maxItems\": 0\n    },\n    \"version\": {\n      \"const\": 1\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "listId",
+            "from": "body",
+            "path": "$.id",
+            "id": "f2b72481-8012-452c-a678-f06fe73a024f"
+        },
+        {
+            "variable": "listVersion",
+            "from": "body",
+            "path": "$.version",
+            "id": "d97e8f10-1d98-4b0a-a0f3-a996d4e9d8ff"
+        }
+    ]
+}

@@ -1,0 +1,37 @@
+{
+    "id": "4a3dbfcf-ce52-495a-b0d9-9dd27403614a",
+    "name": "19 cleanup image recipe",
+    "verb": "delete",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{imageRecipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "ResponseCode",
+        "headers": [],
+        "body": "None",
+        "httpCode": 204
+    }
+}

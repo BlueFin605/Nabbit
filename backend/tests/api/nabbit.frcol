@@ -1,0 +1,154 @@
+{
+    "collectionGuid": "ed749d35-94e8-4393-a66d-0e38672b7eca",
+    "collectionEnvironment": {
+        "name": "",
+        "id": "",
+        "variables": [],
+        "secrets": [],
+        "auth": {
+            "authentication": "inherit",
+            "awsSig": {
+                "signUrl": false,
+                "accessKey": "",
+                "secretKey": "",
+                "sessionToken": "",
+                "awsRegion": "eu-central-1",
+                "serviceName": ""
+            },
+            "basicAuth": {
+                "userName": "",
+                "password": ""
+            },
+            "bearerToken": {
+                "token": ""
+            }
+        },
+        "headers": [
+            {
+                "key": "Authorization",
+                "value": "{{authHeader}}",
+                "active": true,
+                "id": "96ee8a9c-2ee3-46d3-ae29-2919373c3afa"
+            }
+        ]
+    },
+    "environments": [
+        {
+            "name": "local",
+            "id": "cce202a2-65b2-41f5-9d4f-4adb37444353",
+            "variables": [
+                {
+                    "variable": "baseUrl",
+                    "value": "http://localhost:3000",
+                    "active": true,
+                    "id": "4b9b6fd9-64f9-4a75-b9f4-6efaa9e4bea8"
+                },
+                {
+                    "variable": "authHeader",
+                    "value": "Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJuYWJiaXQtYXBpLXVzZXItYSJ9.local",
+                    "active": true,
+                    "id": "6d6f08a9-6308-43d0-b877-afb50f6ef032"
+                },
+                {
+                    "variable": "otherAuthHeader",
+                    "value": "Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJuYWJiaXQtYXBpLXVzZXItYiJ9.local",
+                    "active": true,
+                    "id": "b24873fe-4a6b-4454-81d2-5d1d60e3d2d5"
+                },
+                {
+                    "variable": "rlAuthHeader",
+                    "value": "Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJuYWJiaXQtYXBpLXJhdGVsaW1pdCJ9.local",
+                    "active": true,
+                    "id": "736e517e-0d42-4f57-ae34-aed0ebf3c1bb"
+                }
+            ],
+            "secrets": [],
+            "auth": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "headers": []
+        },
+        {
+            "name": "production",
+            "id": "aa96d0c2-fd92-4118-8d4a-44e5459d6015",
+            "variables": [
+                {
+                    "variable": "baseUrl",
+                    "value": "https://api.nabbit.example.com",
+                    "active": true,
+                    "id": "579bad58-ca2e-4be8-aa47-a0c040181958"
+                },
+                {
+                    "variable": "authHeader",
+                    "value": "Bearer {{$token}}",
+                    "active": true,
+                    "id": "9f7e97be-7590-4aad-b0ba-e5d35bdee038"
+                },
+                {
+                    "variable": "otherAuthHeader",
+                    "value": "Bearer {{$otherToken}}",
+                    "active": true,
+                    "id": "8a5eaea9-5e4e-40aa-ad39-b7c0a6a54645"
+                },
+                {
+                    "variable": "rlAuthHeader",
+                    "value": "Bearer {{$rlToken}}",
+                    "active": true,
+                    "id": "24f96959-8373-4942-8d25-2628b53fb4a3"
+                }
+            ],
+            "secrets": [
+                {
+                    "$secret": "token",
+                    "active": true,
+                    "id": "809c2805-ef1d-4f1e-9b78-54aa971dca47"
+                },
+                {
+                    "$secret": "otherToken",
+                    "active": true,
+                    "id": "6e637556-972b-4ad6-990b-be72f012fe83"
+                },
+                {
+                    "$secret": "rlToken",
+                    "active": true,
+                    "id": "f29f50d2-5611-498c-8e6b-0f47383c8190"
+                }
+            ],
+            "auth": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "headers": []
+        }
+    ],
+    "selectedEnvironmentId": "cce202a2-65b2-41f5-9d4f-4adb37444353"
+}

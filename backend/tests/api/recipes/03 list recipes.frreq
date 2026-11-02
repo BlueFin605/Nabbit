@@ -1,0 +1,244 @@
+{
+    "id": "6d5012e6-23c2-4ed2-b6f1-14f9e23f37c3",
+    "name": "03 list recipes",
+    "verb": "get",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "f2688dc8-2936-4baa-b68e-f77e525e142f",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"id\",\n      \"title\",\n      \"tags\",\n      \"servings\",\n      \"updatedAt\"\n    ],\n    \"properties\": {\n      \"id\": {\n        \"type\": \"string\"\n      },\n      \"title\": {\n        \"type\": \"string\"\n      },\n      \"tags\": {\n        \"type\": \"array\"\n      },\n      \"servings\": {\n        \"type\": \"number\"\n      },\n      \"updatedAt\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"minItems\": 1\n}"
+                }
+            }
+        },
+        {
+            "id": "d7032810-3e1d-476c-8da4-db4ac9c84732",
+            "name": "search by title",
+            "parameters": [
+                {
+                    "key": "q",
+                    "value": "pancake",
+                    "active": true,
+                    "id": "794af580-fd0a-4d4f-a53f-2d26c860693e"
+                }
+            ],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"id\",\n      \"title\",\n      \"tags\",\n      \"servings\",\n      \"updatedAt\"\n    ],\n    \"properties\": {\n      \"id\": {\n        \"type\": \"string\"\n      },\n      \"title\": {\n        \"type\": \"string\"\n      },\n      \"tags\": {\n        \"type\": \"array\"\n      },\n      \"servings\": {\n        \"type\": \"number\"\n      },\n      \"updatedAt\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"minItems\": 1\n}"
+                }
+            }
+        },
+        {
+            "id": "11a4ef14-0f26-411e-b843-14ecb509fc8d",
+            "name": "tag with no recipes",
+            "parameters": [
+                {
+                    "key": "tag",
+                    "value": "no-such-tag",
+                    "active": true,
+                    "id": "1e3c7818-1734-4fcd-82ae-5404c65a03f4"
+                }
+            ],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"id\",\n      \"title\",\n      \"tags\",\n      \"servings\",\n      \"updatedAt\"\n    ],\n    \"properties\": {\n      \"id\": {\n        \"type\": \"string\"\n      },\n      \"title\": {\n        \"type\": \"string\"\n      },\n      \"tags\": {\n        \"type\": \"array\"\n      },\n      \"servings\": {\n        \"type\": \"number\"\n      },\n      \"updatedAt\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"maxItems\": 0\n}"
+                }
+            }
+        },
+        {
+            "id": "1037ac91-1b27-4ab7-bb23-61d85ec6b2ef",
+            "name": "other owner sees none",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "{{otherAuthHeader}}",
+                    "active": true,
+                    "id": "e12bb3a5-61b7-42d9-9a1c-52a6e90cbb45"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"id\",\n      \"title\",\n      \"tags\",\n      \"servings\",\n      \"updatedAt\"\n    ],\n    \"properties\": {\n      \"id\": {\n        \"type\": \"string\"\n      },\n      \"title\": {\n        \"type\": \"string\"\n      },\n      \"tags\": {\n        \"type\": \"array\"\n      },\n      \"servings\": {\n        \"type\": \"number\"\n      },\n      \"updatedAt\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"maxItems\": 0\n}"
+                }
+            }
+        },
+        {
+            "id": "87e6b03d-8f11-4188-b994-50d700ba2701",
+            "name": "no auth",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "Bearer not-a-valid-token",
+                    "active": true,
+                    "id": "d2aa9b8c-3f0b-4140-b73e-49568f4292e5"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 401,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"minProperties\": 1\n}"
+                }
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"array\",\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"id\",\n      \"title\",\n      \"tags\",\n      \"servings\",\n      \"updatedAt\"\n    ],\n    \"properties\": {\n      \"id\": {\n        \"type\": \"string\"\n      },\n      \"title\": {\n        \"type\": \"string\"\n      },\n      \"tags\": {\n        \"type\": \"array\"\n      },\n      \"servings\": {\n        \"type\": \"number\"\n      },\n      \"updatedAt\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"minItems\": 1\n}"
+        }
+    }
+}

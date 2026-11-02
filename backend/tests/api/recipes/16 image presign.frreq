@@ -1,0 +1,49 @@
+{
+    "id": "75ceeb5a-59d9-479a-a633-863936abdd1f",
+    "name": "16 image presign",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/images",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"contentType\":\"image/png\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"imageKey\",\n    \"url\",\n    \"fields\",\n    \"expiresIn\"\n  ],\n  \"properties\": {\n    \"imageKey\": {\n      \"type\": \"string\",\n      \"pattern\": \"^[^/]+/[^/]+\\\\.png$\"\n    },\n    \"url\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"fields\": {\n      \"type\": \"object\"\n    },\n    \"expiresIn\": {\n      \"const\": 300\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "imageKey",
+            "from": "body",
+            "path": "$.imageKey",
+            "id": "2cb9fca2-4fd0-49ce-9378-94c82358182d"
+        }
+    ]
+}

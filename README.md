@@ -41,3 +41,14 @@ Check it: `curl localhost:3000/health` returns `{"status":"ok"}`.
 Without Docker you can run just the backend: `npm run dev -w backend` (port 3000; `/health` needs no AWS).
 
 Auth locally: send a Cognito-style JWT as `Authorization: Bearer <jwt>` (the `sub` claim becomes `ownerId`; the signature is not checked), or, because `NODE_ENV=development`, just send `X-Dev-Sub: <ownerId>`. The `X-Dev-Sub` header is ignored in any other environment.
+
+## API tests
+
+The backend's HTTP API is covered by a FullyRested collection at `backend/tests/api/nabbit.frcol` (health, recipes, lists, import, import-rate-limit folders; every request has a status plus JSON Schema check, with 400/401/404/409/422/429 cases). It needs the real local stack (DynamoDB + S3 via LocalStack) because the dev server has no in-memory mode.
+
+```
+npm run dev                      # Aspire: LocalStack + backend on :3000 (or start LocalStack, `npm run init-local -w backend`, then `npm run dev -w backend` with NODE_ENV=development and the AWS_* / TABLE_NAME / IMAGE_BUCKET env from aspire/Nabbit.AppHost/Program.cs)
+fullyrested run -c backend/tests/api/nabbit.frcol --all -e local
+```
+
+(or `run` via the FullyRested MCP / desktop app). The `local` environment sends unsigned dev JWTs for three fixed users (A, B for cross-owner cases, and a rate-limit user). The `import-rate-limit` folder burns that user's 30/hour import quota, so it asserts the 429 and can be re-run freely. URL imports are only tested for rejected addresses (`blocked_address`, `bad_url`) so the suite never reaches the internet. The `production` environment uses secret references `token`, `otherToken` and `rlToken` (Cognito ID tokens for three users; set with `fullyrested secret set`) and a placeholder `baseUrl`; running it is the maintainer's call.
