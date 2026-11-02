@@ -1,0 +1,65 @@
+:host {
+  display: block;
+  padding-bottom: 32px;
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepper output {
+  min-width: 2ch;
+  text-align: center;
+  font-size: 1.25rem;
+}
+
+.ingredients {
+  list-style: none;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.ingredients li.fixed .qty::after {
+  content: ' (not scaled)';
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.note {
+  opacity: 0.7;
+}
+
+.steps {
+  padding-left: 1.5em;
+  font-size: 1.25rem;
+  line-height: 1.6;
+}
+
+.steps li {
+  margin-bottom: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
