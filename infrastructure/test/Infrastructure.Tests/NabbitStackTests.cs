@@ -86,18 +86,80 @@ namespace Infrastructure.Tests
         }
 
         [Fact]
-        public void EveryRoute_UsesJwtAuthorizer()
+        public void EveryNonOptionsRoute_UsesJwtAuthorizer()
         {
             var t = Synth();
             var routes = Resources(t, "AWS::ApiGatewayV2::Route").ToList();
             Assert.NotEmpty(routes);
-            Assert.All(routes, r =>
+            Assert.All(routes.Where(r => !RouteKey(r).StartsWith("OPTIONS ")), r =>
             {
                 var p = r.Value.GetProperty("Properties");
                 Assert.Equal("JWT", p.GetProperty("AuthorizationType").GetString());
                 Assert.True(p.TryGetProperty("AuthorizerId", out _));
             });
             t.HasResourceProperties("AWS::ApiGatewayV2::Authorizer", Match.ObjectLike(new Dictionary<string, object> { { "AuthorizerType", "JWT" } }));
+        }
+
+        // API Gateway HTTP APIs only answer CORS preflight themselves when no route matches OPTIONS.
+        // A $default route (or ANY route) with an authorizer matches OPTIONS and would 401 the browser's unauthenticated preflight.
+        [Fact]
+        public void NoRoute_CanMatchOptions_SoBuiltInCorsAnswersPreflight()
+        {
+            var t = Synth();
+            var routes = Resources(t, "AWS::ApiGatewayV2::Route").Select(RouteKey).ToList();
+            Assert.DoesNotContain("$default", routes);
+            Assert.DoesNotContain(routes, k => k.StartsWith("ANY "));
+            Assert.All(routes, k => Assert.Contains(k.Split(' ')[0], new[] { "GET", "POST", "PUT", "PATCH", "DELETE" }));
+            t.HasResourceProperties("AWS::ApiGatewayV2::Api", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "CorsConfiguration", Match.ObjectLike(new Dictionary<string, object>
+                    {
+                        { "AllowHeaders", Match.ArrayWith(new object[] { "Authorization" }) },
+                        { "AllowMethods", Match.ArrayWith(new object[] { "OPTIONS" }) },
+                    })
+                },
+            }));
+        }
+
+        private static string RouteKey(JsonProperty r) => r.Value.GetProperty("Properties").GetProperty("RouteKey").GetString();
+
+        private static List<JsonElement> AllowStatementsFor(Template t, string roleLogicalIdPrefix) =>
+            Resources(t, "AWS::IAM::Policy")
+                .Where(p => p.Value.GetProperty("Properties").GetProperty("Roles").ToString().Contains(roleLogicalIdPrefix))
+                .SelectMany(p => p.Value.GetProperty("Properties").GetProperty("PolicyDocument").GetProperty("Statement").EnumerateArray())
+                .Where(st => st.GetProperty("Effect").GetString() == "Allow").ToList();
+
+        private static List<string> Actions(JsonElement st) =>
+            st.GetProperty("Action").ValueKind == JsonValueKind.Array
+                ? st.GetProperty("Action").EnumerateArray().Select(e => e.GetString()).ToList()
+                : new List<string> { st.GetProperty("Action").GetString() };
+
+        [Fact]
+        public void ImportRole_CanOnlyUpdateItemOnTable()
+        {
+            var tableActions = AllowStatementsFor(Synth(), "ImportFunctionServiceRole")
+                .Where(st => st.GetProperty("Resource").ToString().Contains("DataTable"))
+                .SelectMany(Actions).ToList();
+            Assert.Equal(new[] { "dynamodb:UpdateItem" }, tableActions.Distinct().ToArray());
+        }
+
+        [Fact]
+        public void ApiRole_CanOnlyPutObjectsInImageBucket()
+        {
+            var s3Actions = AllowStatementsFor(Synth(), "ApiFunctionServiceRole")
+                .Where(st => Actions(st).Any(a => a.StartsWith("s3:")))
+                .SelectMany(Actions).ToList();
+            // GrantPut also adds PutObject* variants and Abort*; nothing may read, list or delete.
+            Assert.Contains("s3:PutObject", s3Actions);
+            Assert.All(s3Actions, a =>
+            {
+                Assert.StartsWith("s3:", a);
+                Assert.DoesNotContain("Get", a);
+                Assert.DoesNotContain("List", a);
+                Assert.DoesNotContain("Delete", a);
+                Assert.NotEqual("s3:*", a);
+                Assert.True(a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a);
+            });
         }
 
         [Fact]

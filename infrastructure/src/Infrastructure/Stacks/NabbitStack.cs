@@ -6,6 +6,7 @@ using Amazon.CDK.AWS.CloudFront;
 using Amazon.CDK.AWS.CloudFront.Origins;
 using Amazon.CDK.AWS.Cognito;
 using Amazon.CDK.AWS.DynamoDB;
+using Amazon.CDK.AWS.IAM;
 using Amazon.CDK.AWS.Lambda;
 using Amazon.CDK.AWS.Logs;
 using Distribution = Amazon.CDK.AWS.CloudFront.Distribution;
@@ -154,8 +155,15 @@ namespace Infrastructure.Stacks
                     { "TABLE_NAME", DataTable.TableName },
                 },
             });
-            DataTable.GrantReadWriteData(ImportFunction);
-            ImageBucket.GrantReadWrite(ApiFunction);
+            // The import Lambda only bumps the per-user rate counter, so it gets UpdateItem and nothing else.
+            ImportFunction.AddToRolePolicy(new PolicyStatement(new PolicyStatementProps
+            {
+                Effect = Effect.ALLOW,
+                Actions = new[] { "dynamodb:UpdateItem" },
+                Resources = new[] { DataTable.TableArn },
+            }));
+            // Presigned POST uploads only need s3:PutObject; the API never reads or deletes image objects itself.
+            ImageBucket.GrantPut(ApiFunction);
 
             var authorizer = new HttpUserPoolAuthorizer("JwtAuthorizer", UserPool, new HttpUserPoolAuthorizerProps
             {
@@ -177,8 +185,9 @@ namespace Infrastructure.Stacks
             Api = new Apigw.HttpApi(this, "HttpApi", new Apigw.HttpApiProps
             {
                 ApiName = config.Name("api"),
-                DefaultAuthorizer = authorizer,
-                DefaultIntegration = new HttpLambdaIntegration("ApiIntegration", ApiFunction),
+                // Deliberately NO DefaultIntegration/DefaultAuthorizer: a $default route with an authorizer also matches
+                // OPTIONS, so the browser's unauthenticated preflight would get 401 with no CORS headers. With only explicit
+                // non-OPTIONS routes, API Gateway answers preflight itself from CorsPreflight below.
                 DefaultDomainMapping = new Apigw.DomainMappingOptions { DomainName = apiDomain },
                 CorsPreflight = new Apigw.CorsPreflightOptions
                 {
@@ -193,7 +202,7 @@ namespace Infrastructure.Stacks
                     MaxAge = Duration.Hours(1),
                 },
             });
-            // Explicit proxy route so every method carries the authorizer; $default (from DefaultIntegration) is authorized too.
+            // Explicit proxy route (no OPTIONS) so every routed method carries the authorizer and OPTIONS falls through to CorsPreflight.
             Api.AddRoutes(new Apigw.AddRoutesOptions
             {
                 Path = "/{proxy+}",
