@@ -6,7 +6,7 @@ Recipe import and scaling app: an Angular PWA frontend, a Node.js Lambda backend
 
 - `shared/recipe-core` - shared recipe parsing/scaling code (`@nabbit/recipe-core`)
 - `backend` - Node 24 + TypeScript Lambda handlers, one per `src/handlers/<name>.ts`
-- `frontend` - Angular PWA (added later)
+- `frontend` - Angular PWA (see `frontend/SYSDOC.md`)
 
 ## Configuration
 
