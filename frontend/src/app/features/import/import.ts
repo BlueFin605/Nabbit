@@ -41,6 +41,45 @@ export function toImportRequest(value: string): ImportRequest {
   return v.toLowerCase().startsWith('https://') ? { url: v } : { text: v };
 }
 
+const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'instagr.am']);
+
+/** True for a URL whose hostname is exactly instagram.com / www.instagram.com / instagr.am. */
+export function isInstagramUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    return INSTAGRAM_HOSTS.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/** Appends items of `extra` whose lower-cased text is not already in `base`. */
+function appendNew<T>(base: T[], extra: T[], key: (t: T) => string): T[] {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const seen = new Set(base.map((t) => norm(key(t))));
+  const out = [...base];
+  for (const t of extra) {
+    const k = norm(key(t));
+    if (k && !seen.has(k)) {
+      seen.add(k);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+/** Adds the ingredients and steps of `extra` to `base`, skipping duplicates (same lower-cased text). */
+export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft {
+  return {
+    ...base,
+    recipe: {
+      ...base.recipe,
+      ingredients: appendNew(base.recipe.ingredients, extra.recipe.ingredients, (i) => i.original ?? i.name),
+      steps: appendNew(base.recipe.steps, extra.recipe.steps, (st) => st),
+    },
+  };
+}
+
 /**
  * Recipe import and Web Share Target landing page (GET /import?title=&text=&url=).
  * Paste a link or text, preview the parsed draft, then save (POST /recipes) or discard.
@@ -52,6 +91,9 @@ export function toImportRequest(value: string): ImportRequest {
     :host { display: block; }
     .box { width: 100%; }
     .banner { padding: 12px 16px; border-radius: 12px; margin: 12px 0; background: var(--mat-sys-tertiary-container, #fde7b0); }
+    .info { padding: 12px 16px; border-radius: 12px; margin: 8px 0; background: var(--mat-sys-secondary-container, #e8def8); }
+    .comment-appender { margin: 16px 0; }
+    .comment-appender summary { cursor: pointer; margin-bottom: 8px; }
     .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
     .loading { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
   `,
@@ -60,9 +102,13 @@ export function toImportRequest(value: string): ImportRequest {
 
     @if (!draft()) {
       <mat-form-field class="box" appearance="outline">
-        <mat-label>Paste a link or recipe text</mat-label>
+        <mat-label>{{ needsText() ? 'Paste the caption' : 'Paste a link or recipe text' }}</mat-label>
         <textarea #box matInput rows="4" [value]="value()" (input)="onInput($event)"></textarea>
       </mat-form-field>
+
+      @if (info(); as i) {
+        <p class="info" role="status">{{ i }}</p>
+      }
 
       @if (error(); as e) {
         <p class="error" role="alert">{{ e }}</p>
@@ -83,8 +129,26 @@ export function toImportRequest(value: string): ImportRequest {
         @if (d.confidence === 'heuristic') {
           <p class="banner" role="note">Check this one carefully — we guessed at the layout of this page.</p>
         }
+        @if (d.confidence === 'ai') {
+          <p class="banner" role="note">AI-assisted - check the ingredients</p>
+        }
         @if (isEmpty()) {
           <p class="banner" role="note">We couldn't find a recipe there. Fill it in yourself — the source link is kept.</p>
+        }
+        @if (igSource()) {
+          <details class="comment-appender">
+            <summary>Recipe in a comment? Paste it here to add it</summary>
+            <mat-form-field class="box" appearance="outline">
+              <mat-label>Paste the comment</mat-label>
+              <textarea matInput rows="4" [value]="comment()" (input)="onComment($event)"></textarea>
+            </mat-form-field>
+            <button mat-stroked-button type="button" class="add-comment" [disabled]="loading() || !comment().trim()" (click)="addComment()">
+              Add and re-import
+            </button>
+            @if (error(); as e) {
+              <p class="error" role="alert">{{ e }}</p>
+            }
+          </details>
         }
         <app-recipe-editor
           [recipe]="d.recipe"
@@ -125,7 +189,19 @@ export class Import implements OnInit {
     return !!d && d.recipe.ingredients.length === 0 && d.recipe.steps.length === 0;
   });
 
+  /** Non-error guidance shown above the box (the needs_text paste prompt). */
+  protected readonly info = signal<string | null>(null);
+  /** True after a needs_text response: the box now expects the pasted caption. */
+  protected readonly needsText = signal(false);
+  /** True when the import came from an Instagram URL or a needs_text flow: offer the comment appender. */
+  protected readonly igSource = signal(false);
+  protected readonly comment = signal('');
+
   private sourceUrl: string | undefined;
+  /** URL remembered across a needs_text round trip, applied as sourceUrl once the pasted text imports. */
+  private pendingUrl: string | undefined;
+  /** Caption the user pasted (needs_text or paste flow); unknown when the server auto-fetched it. */
+  private caption: string | undefined;
   /** Key returned by images/import for a candidate, kept so a Save retry does not re-fetch. */
   private fetched: { candidate: string; imageKey: string } | undefined;
 
@@ -153,25 +229,68 @@ export class Import implements OnInit {
   protected doImport(): void {
     const v = this.value().trim();
     if (!v || this.loading()) return;
-    const request = toImportRequest(v);
-    this.sourceUrl = request.url;
+    // After needs_text the box holds a caption: always send it as text, even if it starts with https://.
+    const request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
+    this.sourceUrl = request.url ?? this.pendingUrl;
+    this.caption = request.text;
+    this.igSource.set(isInstagramUrl(request.url) || this.needsText());
+    this.run(request, false);
+  }
+
+  private run(request: ImportRequest, merge: boolean): void {
     this.error.set(null);
+    this.info.set(null);
     this.loading.set(true);
     this.api.importRecipe(request).subscribe({
-      next: (res) => this.onResult(res),
+      next: (res) => {
+        this.needsText.set(false);
+        this.onResult(res, merge);
+      },
       error: (err: unknown) => {
         this.loading.set(false);
-        this.error.set(this.messageFor(err));
-        setTimeout(() => this.box()?.nativeElement.focus());
+        if (!merge && this.isNeedsText(err)) {
+          this.pendingUrl = request.url ?? this.pendingUrl;
+          this.needsText.set(true);
+          this.value.set('');
+          this.info.set(IMPORT_ERROR_MESSAGES.needs_text);
+        } else {
+          this.error.set(this.messageFor(err));
+        }
+        if (!merge) setTimeout(() => this.box()?.nativeElement.focus());
       },
     });
   }
 
-  private onResult(res: ImportResult): void {
+  protected onComment(e: Event): void {
+    this.comment.set(this.val(e));
+  }
+
+  /**
+   * Re-imports caption + comment (or just the comment when the caption was auto-fetched server-side and
+   * is not available here) and ALWAYS merges the result into the existing preview: new ingredients and
+   * steps are appended, duplicates (same lower-cased text) skipped. One code path for both cases.
+   */
+  protected addComment(): void {
+    const c = this.comment().trim();
+    if (!c || this.loading()) return;
+    this.run({ text: this.caption ? `${this.caption}
+
+${c}` : c }, true);
+  }
+
+  private isNeedsText(err: unknown): boolean {
+    return err instanceof HttpErrorResponse && err.status === 422 && (err.error as { error?: string } | null)?.error === 'needs_text';
+  }
+
+  private onResult(res: ImportResult, merge: boolean): void {
     this.loading.set(false);
-    const recipe = { ...res.draft.recipe };
+    const existing = this.draft();
+    const incoming = merge && existing ? mergeDrafts(existing, res.draft) : res.draft;
+    const recipe = { ...incoming.recipe };
     if (this.sourceUrl && !recipe.sourceUrl) recipe.sourceUrl = this.sourceUrl;
-    this.draft.set({ ...res.draft, recipe });
+    this.draft.set({ ...incoming, recipe });
+    this.comment.set('');
+    if (merge) return; // keep the photo choice the user already has
     // Always offer the found photo(s) so they can be re-picked after declining.
     this.candidates.set(res.candidates?.length ? res.candidates : res.imageUrl ? [res.imageUrl] : []);
     this.fetched = undefined;

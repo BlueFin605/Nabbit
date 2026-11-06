@@ -36,6 +36,7 @@ describe('Import', () => {
   let fixture: ComponentFixture<Import>;
 
   async function setup(inputs: Record<string, string> = {}, impl: (r: unknown) => unknown = () => of(result())) {
+    TestBed.resetTestingModule();
     importRecipe = jest.fn(impl);
     createRecipe = jest.fn(() => of({ id: 'new1' } as Recipe));
     importImage = jest.fn(() => of({ imageKey: 'o/img.jpg' }));
@@ -277,6 +278,139 @@ describe('Import', () => {
       expect(importImage).toHaveBeenCalledTimes(2);
       expect(importImage).toHaveBeenLastCalledWith(cands[1]);
       expect((createRecipe.mock.calls[1] as [RecipeInput])[0].imageKey).toBe('o/img2.jpg');
+    });
+  });
+
+  describe('AI import', () => {
+    const IG = 'https://www.instagram.com/reel/abc/';
+    const needsText = () => httpErr(422, { error: 'needs_text' });
+    const onlyOnce = (first: () => unknown, then: () => unknown) => {
+      let n = 0;
+      return () => (n++ === 0 ? first() : then());
+    };
+    const withIng = (original: string, name: string): Ingredient => ({ ...ing(), id: name, original, name });
+
+    it('needs_text shows an info panel (not the alert), keeps the URL and focuses a "Paste the caption" textarea', async () => {
+      jest.useFakeTimers();
+      try {
+        await setup({}, needsText);
+        document.body.appendChild(el());
+        type(IG);
+        q('.import-btn')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        expect(q('[role="alert"]')).toBeNull();
+        expect(q('.info')?.textContent).toContain(IMPORT_ERROR_MESSAGES.needs_text);
+        expect(q('mat-label')?.textContent).toContain('Paste the caption');
+        expect(q<HTMLTextAreaElement>('textarea')?.value).toBe('');
+        expect(document.activeElement).toBe(q('textarea'));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('pasting the caption sends {text} and sets sourceUrl to the remembered URL', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: IG }));
+    });
+
+    it('other 422 codes still show the red alert', async () => {
+      await setup({}, () => httpErr(422, { error: 'bad_status' }));
+      type(IG);
+      await tapImport();
+      expect(q('[role="alert"]')?.textContent).toContain("wouldn't let us read the page");
+      expect(q('.info')).toBeNull();
+    });
+
+    it('shows the AI banner only for confidence ai', async () => {
+      await setup({}, () => of(result({ confidence: 'ai' })));
+      type('x');
+      await tapImport();
+      expect(q('.banner')?.textContent).toContain('AI-assisted - check the ingredients');
+      await setup({}, () => of(result({ confidence: 'structured' })));
+      type('x');
+      await tapImport();
+      expect(q('.banner')).toBeNull();
+    });
+
+    it('offers the comment appender for Instagram URLs and needs_text only', async () => {
+      await setup({}, () => of(result()));
+      type('https://example.com/r');
+      await tapImport();
+      expect(q('.comment-appender')).toBeNull();
+
+      for (const host of ['instagram.com', 'www.instagram.com', 'instagr.am']) {
+        await setup({}, () => of(result()));
+        type(`https://${host}/p/x/`);
+        await tapImport();
+        expect(q('.comment-appender')).not.toBeNull();
+      }
+
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('caption');
+      await tapImport();
+      expect(q('.comment-appender')).not.toBeNull();
+    });
+
+    it('does not treat lookalike hosts as Instagram', async () => {
+      await setup({}, () => of(result()));
+      type('https://notinstagram.com/p/x');
+      await tapImport();
+      expect(q('.comment-appender')).toBeNull();
+    });
+
+    it('re-imports caption + comment and merges, skipping duplicates', async () => {
+      const comment = result({
+        recipe: {
+          title: 'Other',
+          servings: 2,
+          ingredients: [withIng('1 CUP flour', 'flour'), withIng('2 eggs', 'eggs')],
+          steps: ['mix', 'Bake'],
+          tags: [],
+        },
+      });
+      await setup({}, onlyOnce(needsText, onlyOnce(() => of(result()), () => of(comment))));
+      type(IG);
+      await tapImport();
+      type('the caption');
+      await tapImport();
+      const area = q<HTMLTextAreaElement>('.comment-appender textarea') as HTMLTextAreaElement;
+      area.value = 'the comment';
+      area.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      q('.add-comment')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment' });
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+      expect(el().querySelectorAll('.ingredient')).toHaveLength(2);
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      const body = (createRecipe.mock.calls[0] as [RecipeInput])[0];
+      expect(body.ingredients.map((i) => i.name)).toEqual(['flour', 'eggs']);
+      expect(body.steps).toEqual(['Mix', 'Fry', 'Bake']);
+    });
+
+    it('sends just the comment when the caption came from the server auto-fetch', async () => {
+      await setup({}, () => of(result()));
+      type(IG);
+      await tapImport();
+      const area = q<HTMLTextAreaElement>('.comment-appender textarea') as HTMLTextAreaElement;
+      area.value = 'the comment';
+      area.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      q('.add-comment')?.click();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment' });
     });
   });
 
