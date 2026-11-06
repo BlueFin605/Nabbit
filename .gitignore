@@ -46,3 +46,6 @@ cdk.out/
 /config.json
 /infrastructure/cdk.context.json
 /frontend/src/environments/environment.production.ts
+
+# test
+*.frrun
