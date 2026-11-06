@@ -404,6 +404,65 @@ describe('LLM fallback and Instagram needs_text', () => {
       expect(hourCount()).toBe(1);
     });
 
+    const REEL_HTML = readFileSync(new URL('./fixtures/instagram-reel.html', import.meta.url), 'utf8');
+
+    it('realistic reel fixture: heuristic draft, parser not called, photo candidates from og:image', async () => {
+      const html = REEL_HTML.replace('</head>', '<meta property="og:image" content="https://scontent.cdninstagram.com/v/t51/pic.jpg"></head>');
+      page = async () => ({ url: 'https://www.instagram.com/reel/EXAMPLE1/', html });
+      const res = await call({ url: 'https://www.instagram.com/reel/EXAMPLE1/' });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(res.json.draft.recipe.ingredients).toHaveLength(4);
+      expect(res.json.draft.recipe.steps).toHaveLength(3);
+      expect(parsed).toHaveLength(0);
+      expect(res.json.imageUrl).toBe('https://scontent.cdninstagram.com/v/t51/pic.jpg');
+      expect(res.json.candidates).toEqual(['https://scontent.cdninstagram.com/v/t51/pic.jpg']);
+    });
+
+    it('share params are dropped: fetch, sourceUrl and LLM ctx use the canonical url', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      const shared = 'https://instagram.com/p/abc/?igsh=xyz&utm_source=ig_web_copy_link#f';
+      const res = await call({ url: shared });
+      expect(fetched).toEqual([IG]);
+      expect(res.json.draft.recipe.sourceUrl).toBe(IG);
+      result = async () => ({ ...aiRecipe, ingredients: [1, 2, 3].map((n) => ({ name: 'tomato' + n, quantity: 1, unit: 'g' })) });
+      await call({ url: shared });
+      expect(parsed[0].sourceUrl).toBe(IG);
+    });
+
+    it('daily LLM cap used up: auto-fetched low-confidence caption -> heuristic draft, no error, parser not called', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      db.items.set('OWNER#u1\u0000RATE#llm#2026-11-02', { count: 30 } as never);
+      const res = await call({ url: IG });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(parsed).toHaveLength(0);
+    });
+
+    it.each([
+      'https://www.instagram.com/accounts/login/?next=%2Fp%2Fabc%2F',
+      'https://www.instagram.com/challenge/?next=/p/abc/',
+      'https://www.instagram.com/privacy/checks/?next=/p/abc/',
+    ])('redirect to %s with generic html -> needs_text', async (final) => {
+      page = async () => ({ url: final, html: REEL_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('redirect to a non-Instagram host -> needs_text', async () => {
+      page = async () => ({ url: 'https://evil.example.com/p/abc/', html: REEL_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+    });
+
+    it('instagr.am redirecting to www.instagram.com is fine', async () => {
+      page = async () => ({ url: 'https://www.instagram.com/p/abc/', html: REEL_HTML });
+      expect((await call({ url: 'https://instagr.am/p/abc' })).status).toBe(200);
+    });
+
     it('INSTAGRAM_AUTOFETCH=0 -> needs_text, safeFetch not called, counted', async () => {
       process.env.INSTAGRAM_AUTOFETCH = '0';
       const res = await call({ url: IG });

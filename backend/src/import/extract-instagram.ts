@@ -22,6 +22,26 @@ export function isInstagramUrl(rawUrl: string, env: NodeJS.ProcessEnv = process.
   }
 }
 
+const POST_PATH = /^\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)\/?$/;
+
+/**
+ * Canonical form of an Instagram URL: a post URL becomes https://www.instagram.com/{p|reel|reels|tv}/{id}/ (share params,
+ * fragment and a leading /{user}/ dropped); any other URL just loses its query string and fragment. Unparseable input is returned as is.
+ */
+export function canonicalInstagramUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
+    const m = POST_PATH.exec(u.pathname);
+    if (m && INSTAGRAM_HOSTS.includes(host)) return `https://www.instagram.com/${m[1]}/${m[2]}/`;
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
+}
+
 // Same style of budgets as extract-structured.ts: bounded work on hostile pages, nothing is executed.
 const MAX_HTML = 5_000_000;
 const MAX_JSON_BLOCKS = 25;
@@ -44,18 +64,39 @@ function meta(root: HTMLElement, attr: 'property' | 'name', key: string): string
   return undefined;
 }
 
+/** Generic text Instagram shows on its login/signup interstitials instead of a caption. */
+const GENERIC_WALL_TEXT = /create an account or log ?in to instagram|^\s*log ?in to instagram|^\s*sign up (?:for|to) instagram/i;
+
 function isLoginWall(root: HTMLElement): boolean {
   const title = root.querySelector('title')?.text ?? '';
   const url = meta(root, 'property', 'og:url') ?? '';
-  return /login/i.test(title) && /\/accounts\/login/i.test(url);
+  return /^\s*(?:log ?in|sign ?up)\b/i.test(title) || /\/accounts\/(?:login|emailsignup)|\/challenge\b/i.test(url);
 }
 
-/** Drop the "N likes, M comments - user on date:" (or "Name on Instagram:") wrapper and the surrounding quotes. */
+const WRAPPERS: readonly RegExp[] = [
+  // "1,781 likes, 28 comments - Display Name on May 11, 2024: "caption"" (the name may contain ':' or quotes)
+  /^\d[\d,.]*[KkMm]?\s+likes?,[^\n]{0,300}?\bon\b[^\n]{0,200}?:\s*["“]/,
+  // "Name on Instagram: "caption"" (og:title)
+  /^[^\n"“]{0,200}?\bon Instagram:\s*["“]/,
+  // "name on May 11, 2024: "caption""
+  /^[^\n"“]{0,200}?\bon [A-Za-z]+ \d{1,2}, \d{4}:\s*["“]/,
+];
+
+/** Drop the "N likes, M comments - user on date:" (or "Name on Instagram:") wrapper and, only then, the surrounding quote. */
 function clean(raw: string): string {
-  let t = raw.replace(/\r\n?/g, '\n').trim();
-  t = t.replace(/^[^:"\n]{0,200}?\bon (?:[A-Za-z]+ \d{1,2}, \d{4}|Instagram):\s*["“]?/, '');
-  t = t.replace(/["”]\.?\s*$/, '');
-  t = t.split('\n').map((l) => l.replace(/[ \t]+$/, '')).join('\n');
+  // Bound the work first: nothing past the cap (plus a margin for the wrapper) is ever kept.
+  let t = raw.slice(0, MAX_CAPTION + 1_000).replace(/\r\n?/g, '\n').trim();
+  let stripped = false;
+  for (const re of WRAPPERS) {
+    const m = re.exec(t);
+    if (m) {
+      t = t.slice(m[0].length);
+      stripped = true;
+      break;
+    }
+  }
+  if (stripped) t = t.replace(/["”]\.?\s*$/, '');
+  t = t.split('\n').map((l) => l.trimEnd()).join('\n');
   t = t.replace(/\n{3,}/g, '\n\n').trim();
   return t.slice(0, MAX_CAPTION);
 }
@@ -63,7 +104,7 @@ function clean(raw: string): string {
 function usable(text: string | undefined): string | undefined {
   if (text === undefined) return undefined;
   const t = clean(text);
-  if (t.length < MIN_CAPTION || /(\.\.\.|…)$/.test(t)) return undefined;
+  if (GENERIC_WALL_TEXT.test(text.trim()) || GENERIC_WALL_TEXT.test(t) || t.length < MIN_CAPTION || /(\.\.\.|…)$/.test(t)) return undefined;
   return t;
 }
 

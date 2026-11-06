@@ -55,6 +55,27 @@ export function isInstagramUrl(url: string | undefined): boolean {
   }
 }
 
+const IG_POST_PATH = /^\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)\/?$/;
+
+/**
+ * Canonical form of an Instagram URL so share params (igsh, igshid, utm_source, rpxt, srtk...) are never sent or saved:
+ * a post URL becomes https://www.instagram.com/{p|reel|reels|tv}/{id}/, any other URL loses its query and fragment.
+ * Mirrors the backend `canonicalInstagramUrl`.
+ */
+export function canonicalInstagramUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
+    const m = IG_POST_PATH.exec(u.pathname);
+    if (m && INSTAGRAM_HOSTS.has(host)) return `https://www.instagram.com/${m[1]}/${m[2]}/`;
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 /** Appends items of `extra` whose lower-cased text is not already in `base`. */
 function appendNew<T>(base: T[], extra: T[], key: (t: T) => string): T[] {
   const norm = (s: string) => s.trim().toLowerCase();
@@ -245,7 +266,8 @@ export class Import implements OnInit {
       this.needsText.set(false);
       this.pendingUrl = undefined;
     }
-    const request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
+    let request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
+    if (request.url && isInstagramUrl(request.url)) request = { url: canonicalInstagramUrl(request.url) };
     this.sourceUrl = request.url ?? this.pendingUrl;
     this.caption = request.text;
     this.igSource.set(isInstagramUrl(request.url) || this.needsText());

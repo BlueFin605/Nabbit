@@ -6,7 +6,7 @@ import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -320,6 +320,24 @@ describe('Import', () => {
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
       expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: IG }));
+    });
+
+    it('share params are stripped from the request and from the saved sourceUrl', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type('https://www.instagram.com/reel/XyZ/?igsh=abc&utm_source=ig_web_copy_link&rpxt=1#f');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: 'https://www.instagram.com/reel/XyZ/' });
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://www.instagram.com/reel/XyZ/' }));
+    });
+
+    it('canonicalInstagramUrl reduces posts and drops query/fragment elsewhere', () => {
+      expect(canonicalInstagramUrl('https://instagram.com/someone/p/AbC/?igshid=1')).toBe('https://www.instagram.com/p/AbC/');
+      expect(canonicalInstagramUrl('https://www.instagram.com/tv/Q9?srtk=1')).toBe('https://www.instagram.com/tv/Q9/');
+      expect(canonicalInstagramUrl('https://www.instagram.com/someone/?hl=en#x')).toBe('https://www.instagram.com/someone/');
     });
 
     it('other 422 codes still show the red alert', async () => {

@@ -16,7 +16,7 @@
 import { ownerPk, rateSk, llmDaySk, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
-import { extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
+import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
 import { getLlmParser } from '../import/llm-parse.js';
@@ -63,6 +63,16 @@ async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, s
   }
 }
 
+/** After redirects the page must still be on an Instagram host and not on a login/challenge/privacy interstitial. */
+function isInstagramFinalPage(finalUrl: string): boolean {
+  if (!isInstagramUrl(finalUrl)) return false;
+  try {
+    return !/^\/(?:accounts\/login|challenge|privacy\/checks)(?:\/|$)/i.test(new URL(finalUrl).pathname);
+  } catch {
+    return false;
+  }
+}
+
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Increment the shared per-hour counter; returns a 429 result when over the limit. */
@@ -94,19 +104,28 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     const text = body.text as string;
     return { status: 200, body: { draft: await maybeLlm(ownerId, text, extractFromText(text)) } };
   }
-  const url = (body.url as string).trim();
-  if (isInstagramUrl(url)) {
+  const rawUrl = (body.url as string).trim();
+  if (isInstagramUrl(rawUrl)) {
+    const url = canonicalInstagramUrl(rawUrl);
     const needsText = { status: 422, body: { error: 'needs_text' } };
     if (process.env.INSTAGRAM_AUTOFETCH === '0') return needsText;
     let caption: string | undefined;
+    let images = {};
     try {
-      caption = extractInstagramCaption((await deps.safeFetch(url)).html);
+      const page = await deps.safeFetch(url);
+      if (!isInstagramFinalPage(page.url)) return needsText;
+      caption = extractInstagramCaption(page.html);
+      if (caption) {
+        const candidates = extractImageCandidates(page.html, page.url);
+        if (candidates.length) images = { imageUrl: candidates[0], candidates };
+      }
     } catch {
       return needsText;
     }
     if (!caption) return needsText;
-    return { status: 200, body: { draft: await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url) } };
+    return { status: 200, body: { draft: await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url), ...images } };
   }
+  const url = rawUrl;
 
   try {
     const page = await deps.safeFetch(url);

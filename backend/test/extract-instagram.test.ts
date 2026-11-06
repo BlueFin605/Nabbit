@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { extractInstagramCaption, INSTAGRAM_HOSTS, isInstagramUrl } from '../src/import/extract-instagram.js';
+import { canonicalInstagramUrl, extractInstagramCaption, INSTAGRAM_HOSTS, isInstagramUrl } from '../src/import/extract-instagram.js';
 
 const fx = (n: string) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');
 
@@ -40,6 +40,56 @@ describe('extractInstagramCaption', () => {
     const html = `<meta property="og:description" content="1 like - a on May 1, 2024: &quot;${'word '.repeat(10_000)}end&quot;">`;
     expect(extractInstagramCaption(html)!.length).toBeLessThanOrEqual(20_000);
   });
+});
+
+describe('extractInstagramCaption hardening', () => {
+  const body = 'Lemon pasta\n\nINGREDIENTS:\n- 200 g spaghetti\n- 1 lemon\n\nMETHOD:\n1. Boil.\n2. Toss.';
+  const og = (c: string) => `<meta property="og:description" content="${c}">`;
+  it('treats a generic login description as a wall even without title/og:url', () => {
+    expect(extractInstagramCaption(og('Create an account or log in to Instagram - Share what you&#039;re into with the people who get you, in photos, videos and messages.'))).toBeUndefined();
+    expect(extractInstagramCaption(og('Log in to Instagram to see photos and videos from your friends and discover other accounts you will love.'))).toBeUndefined();
+  });
+  it('treats a login-ish title alone, or an og:url on /accounts/login alone, as a wall', () => {
+    const d = og(`1 like, 0 comments - a on May 1, 2024: &quot;${body}&quot;`);
+    expect(extractInstagramCaption('<title>Login • Instagram</title>' + d)).toBeUndefined();
+    expect(extractInstagramCaption('<meta property="og:url" content="https://www.instagram.com/accounts/login/?next=/p/x/">' + d)).toBeUndefined();
+  });
+  it('is linear on 80k trailing spaces then x (inside a wrapped caption)', () => {
+    const t0 = Date.now();
+    extractInstagramCaption(og(`1 like, 0 comments - a on May 1, 2024: &quot;${body}${' '.repeat(80_000)}x`));
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+  it('is fast on 80k spaces + x on a line of its own', () => {
+    const t0 = Date.now();
+    extractInstagramCaption(og(`${body}\n${' '.repeat(80_000)}x`));
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+  it('strips a wrapper whose display name contains a colon', () => {
+    const c = extractInstagramCaption(og(`12 likes, 3 comments - Chef Bob: The Cook on May 11, 2024: &quot;${body}&quot;.`))!;
+    expect(c.startsWith('Lemon pasta')).toBe(true);
+    expect(c.endsWith('2. Toss.')).toBe(true);
+  });
+  it('strips a wrapper whose display name contains a quote', () => {
+    const c = extractInstagramCaption(og(`12 likes, 3 comments - Bob &quot;The Chef&quot; on May 11, 2024: &quot;${body}&quot;.`))!;
+    expect(c.startsWith('Lemon pasta')).toBe(true);
+  });
+  it('keeps a legitimate trailing quote when no wrapper was stripped', () => {
+    const cap = body + '\nAs they say: "enjoy"';
+    expect(extractInstagramCaption(og(cap.replace(/"/g, '&quot;')))!.endsWith('"enjoy"')).toBe(true);
+  });
+});
+
+describe('canonicalInstagramUrl', () => {
+  it.each([
+    ['https://www.instagram.com/p/AbC_1-x/?igsh=abc&utm_source=ig_web_copy_link#frag', 'https://www.instagram.com/p/AbC_1-x/'],
+    ['https://instagram.com/reel/XyZ/?igshid=1&rpxt=2&srtk=3', 'https://www.instagram.com/reel/XyZ/'],
+    ['https://www.instagram.com/reels/XyZ', 'https://www.instagram.com/reels/XyZ/'],
+    ['https://m.instagram.com/tv/Q9/?x=1', 'https://www.instagram.com/tv/Q9/'],
+    ['https://www.instagram.com/someone/reel/XyZ/?igsh=1', 'https://www.instagram.com/reel/XyZ/'],
+    ['https://instagr.am/p/abc?utm_source=x', 'https://www.instagram.com/p/abc/'],
+    ['https://www.instagram.com/someone/?hl=en#a', 'https://www.instagram.com/someone/'],
+  ])('%s -> %s', (i, o) => expect(canonicalInstagramUrl(i)).toBe(o));
+  it('returns garbage unchanged', () => expect(canonicalInstagramUrl('not a url')).toBe('not a url'));
 });
 
 describe('isInstagramUrl e2e host override', () => {
