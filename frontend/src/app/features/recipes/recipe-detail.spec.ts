@@ -41,6 +41,7 @@ describe('RecipeDetail', () => {
   let deleteRecipe: jest.Mock;
   let addItems: jest.Mock;
   let deleteItem: jest.Mock;
+  let getList: jest.Mock;
   let resolve: jest.Mock;
   let remember: jest.Mock;
   let fixture: ComponentFixture<RecipeDetail>;
@@ -64,12 +65,13 @@ describe('RecipeDetail', () => {
       of({ id: 'L1', name: 'Shopping', items: [{ id: 'old', name: 'milk' }, { id: 'new1', name: items[0].name }], version: 2, updatedAt: '' }),
     );
     deleteItem = jest.fn(() => of(undefined));
+    getList = jest.fn(() => of({ id: 'L1', name: 'Shopping', items: [{ id: 'old', name: 'milk' }], version: 1, updatedAt: '' }));
     resolve = jest.fn(() => of({ id: 'L1', name: 'Shopping' }));
     remember = jest.fn();
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: ApiClient, useValue: { getRecipe, updateRecipe, deleteRecipe, restoreRecipe: jest.fn(), addItems, deleteItem } },
+        { provide: ApiClient, useValue: { getRecipe, updateRecipe, deleteRecipe, restoreRecipe: jest.fn(), addItems, deleteItem, getList } },
         { provide: ListTarget, useValue: { resolve, remember } },
       ],
     });
@@ -302,6 +304,20 @@ describe('RecipeDetail', () => {
       await settle();
       expect(deleteItem).toHaveBeenCalledWith('L1', 'new1');
       expect(addBtn(0).textContent).not.toContain('✓');
+    });
+
+    it('merge onto an existing item: says Already on, offers no Undo, deletes nothing', async () => {
+      await setup();
+      stubSnack();
+      const same = { id: 'L1', name: 'Shopping', items: [{ id: 'old', name: 'flour (480 ml)' }], version: 1, updatedAt: '' };
+      getList.mockReturnValue(of(same));
+      addItems.mockReturnValue(of(same));
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(snackOpen).toHaveBeenCalledWith('Already on Shopping', 'OK', { duration: 5000 });
+      expect(snackOpen).not.toHaveBeenCalledWith(expect.anything(), 'Undo', expect.anything());
+      action.next();
+      await settle();
+      expect(deleteItem).not.toHaveBeenCalled();
     });
 
     it('check resets on servings change and on unit mode change', async () => {

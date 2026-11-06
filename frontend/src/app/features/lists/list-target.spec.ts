@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import { DEFAULT_LIST_NAME, LAST_LIST_KEY, ListTarget } from './list-target';
 
@@ -46,6 +46,23 @@ describe('ListTarget', () => {
     setup([]);
     expect(resolved()).toEqual({ id: 'new', name: 'Shopping' });
     expect(createList).toHaveBeenCalledWith('Shopping');
+  });
+
+  it('shares one in-flight resolve so concurrent callers create one list', () => {
+    setup([]);
+    const lists = new Subject<ReturnType<typeof row>[]>();
+    listLists.mockReturnValue(lists);
+    const out: unknown[] = [];
+    target.resolve().subscribe((v) => out.push(v));
+    target.resolve().subscribe((v) => out.push(v));
+    lists.next([]);
+    lists.complete();
+    expect(listLists).toHaveBeenCalledTimes(1);
+    expect(createList).toHaveBeenCalledTimes(1);
+    expect(out).toEqual([{ id: 'new', name: 'Shopping' }, { id: 'new', name: 'Shopping' }]);
+    listLists.mockReturnValue(of([row('l1', 'Shopping')]));
+    target.resolve().subscribe();
+    expect(listLists).toHaveBeenCalledTimes(2);
   });
 
   it('remember stores the id and readLast returns it', () => {

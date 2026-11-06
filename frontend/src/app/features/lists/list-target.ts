@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { type Observable, map, of, switchMap } from 'rxjs';
+import { type Observable, finalize, map, of, shareReplay, switchMap } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 
 export const LAST_LIST_KEY = 'nabbit.lastListId';
@@ -15,7 +15,20 @@ export interface ListChoice {
 export class ListTarget {
   private readonly api = inject(ApiClient);
 
+  private inflight: Observable<ListChoice> | null = null;
+
+  /** Concurrent callers share one in-flight lookup so an empty account gets a single Shopping list. */
   resolve(): Observable<ListChoice> {
+    if (!this.inflight) {
+      this.inflight = this.lookup().pipe(
+        finalize(() => (this.inflight = null)),
+        shareReplay({ bufferSize: 1, refCount: false }),
+      );
+    }
+    return this.inflight;
+  }
+
+  private lookup(): Observable<ListChoice> {
     return this.api.listLists().pipe(
       switchMap((rows) =>
         rows.length > 0

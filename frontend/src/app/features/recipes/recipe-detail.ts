@@ -358,18 +358,33 @@ export class RecipeDetail implements OnInit {
     this.adding.add(ingredientId);
     this.listTarget
       .resolve()
-      .pipe(switchMap((list) => this.api.addItems(list.id, [{ name }]).pipe(map((res) => ({ list, res })))))
+      .pipe(
+        switchMap((list) =>
+          this.api.getList(list.id).pipe(
+            switchMap((before) =>
+              this.api.addItems(list.id, [{ name }]).pipe(
+                map((res) => {
+                  const known = new Set(before.items.map((it) => it.id));
+                  return { list, created: res.items.find((it) => !known.has(it.id)) };
+                }),
+              ),
+            ),
+          ),
+        ),
+      )
       .subscribe({
-        next: ({ list, res }) => {
+        next: ({ list, created }) => {
           this.adding.delete(ingredientId);
           this.listTarget.remember(list.id);
           this.setAdded(ingredientId, true);
+          if (!created) {
+            this.snack.open(`Already on ${list.name}`, 'OK', { duration: 5000 });
+            return;
+          }
           this.snack
             .open(`Added to ${list.name}`, 'Undo', { duration: 5000 })
             .onAction()
             .subscribe(() => {
-              const created = [...res.items].reverse().find((it) => it.name === name);
-              if (!created) return;
               this.api.deleteItem(list.id, created.id).subscribe({
                 next: () => this.setAdded(ingredientId, false),
                 error: () => this.snack.open("Couldn't undo that", 'OK', { duration: 5000 }),
