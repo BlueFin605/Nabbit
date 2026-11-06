@@ -12,6 +12,24 @@ Recipe import and scaling app: an Angular PWA frontend, a Node.js Lambda backend
 
 Architecture, the data model and key decisions are in `SYSDOC.md`.
 
+## What import can read
+
+Nabbit fetches the page's HTML (it does not run JavaScript) and tries these in order, stopping at the first that yields a usable recipe:
+
+1. **schema.org `Recipe` as JSON-LD** (`<script type="application/ld+json">`), including a Recipe nested in `@graph`, `mainEntity` or a list. Most recipe sites publish this, and it gives the best result.
+2. **schema.org `Recipe` as microdata** (`itemtype="https://schema.org/Recipe"` with `itemprop` fields), used only when there is no JSON-LD Recipe.
+3. **Page text.** A heuristic parser reads the visible text. If that finds fewer than 2 ingredients or fewer than 2 steps, an LLM (Bedrock) reads the text instead, when `llmModelId` is configured.
+
+Pasted text skips step 1 and 2 and goes straight to step 3.
+
+Not supported:
+
+- **RDFa**, and recipes in a PDF or an image.
+- **Pages that build the recipe with JavaScript** after loading (some single-page apps, for example `recipes.co.nz`). The HTML Nabbit receives is an empty shell, so there is nothing to read. Copy the recipe text from the page and paste it into Nabbit instead.
+- **Instagram** posts are fetched anonymously for the caption only. When Instagram blocks that, Nabbit asks you to paste the caption; a recipe in a comment is always pasted.
+
+To check whether a site will work, view its page source (not the inspected DOM) and search for `ld+json` and `recipeIngredient`. If they are there, it will import.
+
 ## Configuration
 
 Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment. Optional keys: `hostedZoneId` (import the DNS zone instead of looking it up), `importReservedConcurrency` (default 5), `llmModelId` (enables the import Lambda LLM fallback: sets LLM_MODEL_ID and grants bedrock:InvokeModel on that model only), `llmGlobalDailyLimit` (app-wide LLM calls per UTC day across all users; default 300, 0 = none), `apiCodePath` and `importCodePath` (override the Lambda bundle locations).
