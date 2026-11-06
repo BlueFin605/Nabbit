@@ -60,6 +60,8 @@ builder.AddJavaScriptApp("backend", "../../backend", "dev")
     .WithEnvironment("USER_POOL_CLIENT_ID", "local-client-id")
     .WithEnvironment("COGNITO_ENDPOINT", cognitoUrl)
     .WithEnvironment("ALLOWED_ORIGIN", frontendUrl)
+    // The API suite must never reach instagram.com: request 07 expects needs_text, which only holds with auto-fetch off.
+    .WithEnvironment("INSTAGRAM_AUTOFETCH", "0")
     .WithHttpEndpoint(port: backendPort, env: "PORT")
     .WithExternalHttpEndpoints();
 
