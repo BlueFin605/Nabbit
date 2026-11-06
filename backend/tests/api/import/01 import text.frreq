@@ -1,0 +1,41 @@
+{
+    "id": "03db250c-deda-4da0-be96-1ca00c8d5cae",
+    "name": "01 import text",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"text\":\"Pancakes\\n\\nIngredients\\n200 g flour\\n2 eggs\\n300 ml milk\\n\\nMethod\\n1. Mix everything.\\n2. Fry in a pan.\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"draft\"\n  ],\n  \"properties\": {\n    \"draft\": {\n      \"type\": \"object\",\n      \"required\": [\n        \"recipe\"\n      ],\n      \"properties\": {\n        \"confidence\": {\n          \"type\": \"string\"\n        },\n        \"recipe\": {\n          \"type\": \"object\",\n          \"required\": [\n            \"title\",\n            \"servings\",\n            \"ingredients\",\n            \"steps\",\n            \"tags\"\n          ],\n          \"properties\": {\n            \"title\": {\n              \"const\": \"Pancakes\"\n            },\n            \"ingredients\": {\n              \"type\": \"array\",\n              \"minItems\": 3,\n              \"maxItems\": 3\n            },\n            \"steps\": {\n              \"type\": \"array\",\n              \"minItems\": 2,\n              \"maxItems\": 2\n            }\n          }\n        }\n      }\n    }\n  }\n}"
+        }
+    }
+}

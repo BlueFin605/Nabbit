@@ -1,0 +1,41 @@
+{
+    "id": "77d189da-8a1f-4209-aff1-48806a9780f2",
+    "name": "06a update recipe too large",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{recipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Huge\",\"servings\":1,\"ingredients\":[],\"steps\":[\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\",\"{{bigStep}}\"],\"tags\":[],\"version\":{{recipeVersion}}}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"too_large\"\n    }\n  }\n}"
+        }
+    }
+}

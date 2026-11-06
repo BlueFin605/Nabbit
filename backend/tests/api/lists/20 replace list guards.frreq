@@ -1,0 +1,247 @@
+{
+    "id": "391cb9e4-ef73-4eb8-bd9f-4571f68e88d6",
+    "name": "20 replace list guards",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists/{{listId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"name\":\"Weekly shop v2\",\"items\":[{\"name\":\"Tea\",\"category\":\"Pantry\"}],\"version\":1}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "27d08bdb-d6c0-474a-a5f6-dc3d85d722b3",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 409,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"version_conflict\"\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "d40dd7ec-4812-4642-9d3d-6997ead54094",
+            "name": "missing version",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"name\":\"x\",\"items\":[]}"
+            }
+        },
+        {
+            "id": "6f92c78d-84d6-482e-be70-12b0a5ca9547",
+            "name": "items not an array",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"name\":\"x\",\"items\":\"nope\",\"version\":1}"
+            }
+        },
+        {
+            "id": "c2d07914-2b6c-475a-acca-88133b9906ef",
+            "name": "other owner",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "{{otherAuthHeader}}",
+                    "active": true,
+                    "id": "e12bb3a5-61b7-42d9-9a1c-52a6e90cbb45"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"name\":\"Weekly shop v2\",\"items\":[{\"name\":\"Tea\",\"category\":\"Pantry\"}],\"version\":1}"
+            }
+        },
+        {
+            "id": "950beead-c8dc-4b7d-b592-0cdac5499dcb",
+            "name": "no auth",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "Bearer not-a-valid-token",
+                    "active": true,
+                    "id": "d2aa9b8c-3f0b-4140-b73e-49568f4292e5"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 401,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"minProperties\": 1\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"name\":\"Weekly shop v2\",\"items\":[{\"name\":\"Tea\",\"category\":\"Pantry\"}],\"version\":1}"
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 409,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"version_conflict\"\n    }\n  }\n}"
+        }
+    }
+}

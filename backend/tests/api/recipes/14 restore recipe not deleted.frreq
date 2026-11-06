@@ -1,0 +1,40 @@
+{
+    "id": "4b723ad9-1ef3-45f2-999d-f1742fb2ddc2",
+    "name": "14 restore recipe not deleted",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{recipeId}}/restore",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 404,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+        }
+    }
+}

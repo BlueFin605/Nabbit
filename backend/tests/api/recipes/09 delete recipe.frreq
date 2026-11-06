@@ -1,0 +1,37 @@
+{
+    "id": "4aca442a-aa15-462b-949a-5a5ec9785f51",
+    "name": "09 delete recipe",
+    "verb": "delete",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{recipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "ResponseCode",
+        "headers": [],
+        "body": "None",
+        "httpCode": 204
+    }
+}

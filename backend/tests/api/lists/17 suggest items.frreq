@@ -1,0 +1,209 @@
+{
+    "id": "5a4c00f1-021e-4493-8d24-9d6cd389ac7a",
+    "name": "17 suggest items",
+    "verb": "get",
+    "protocol": "http",
+    "url": "{{baseUrl}}/items/suggest",
+    "headers": [],
+    "parameters": [
+        {
+            "key": "q",
+            "value": "mi",
+            "active": true,
+            "id": "3d996a08-fb66-499a-98bc-69eeab66e8ae"
+        }
+    ],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "f767d386-eee3-420b-a0d6-79a8b6d6b1a7",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"maxItems\": 8,\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"name\",\n      \"category\"\n    ],\n    \"properties\": {\n      \"name\": {\n        \"type\": \"string\"\n      },\n      \"category\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"contains\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"name\"\n    ],\n    \"properties\": {\n      \"name\": {\n        \"const\": \"milk\"\n      },\n      \"category\": {\n        \"const\": \"Dairy\"\n      }\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "1adddd88-03a3-43dd-ab28-346a6f7fca3c",
+            "name": "other owner sees none",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "{{otherAuthHeader}}",
+                    "active": true,
+                    "id": "e12bb3a5-61b7-42d9-9a1c-52a6e90cbb45"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"maxItems\": 0,\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"name\",\n      \"category\"\n    ],\n    \"properties\": {\n      \"name\": {\n        \"type\": \"string\"\n      },\n      \"category\": {\n        \"type\": \"string\"\n      }\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "3c77d095-4fe6-4a7f-b761-b605a0c721af",
+            "name": "no match",
+            "parameters": [
+                {
+                    "key": "q",
+                    "value": "zzzzzz",
+                    "active": true,
+                    "id": "b3f184e8-19e5-4a9f-8e7c-be1818f830c8"
+                }
+            ],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 200,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"array\",\n  \"maxItems\": 0,\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"name\",\n      \"category\"\n    ],\n    \"properties\": {\n      \"name\": {\n        \"type\": \"string\"\n      },\n      \"category\": {\n        \"type\": \"string\"\n      }\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "baa01cd9-29bb-4c6e-b322-7cd10df6ea58",
+            "name": "no auth",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "Bearer not-a-valid-token",
+                    "active": true,
+                    "id": "d2aa9b8c-3f0b-4140-b73e-49568f4292e5"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 401,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"minProperties\": 1\n}"
+                }
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"array\",\n  \"maxItems\": 8,\n  \"items\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"name\",\n      \"category\"\n    ],\n    \"properties\": {\n      \"name\": {\n        \"type\": \"string\"\n      },\n      \"category\": {\n        \"type\": \"string\"\n      }\n    }\n  },\n  \"contains\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"name\"\n    ],\n    \"properties\": {\n      \"name\": {\n        \"const\": \"milk\"\n      },\n      \"category\": {\n        \"const\": \"Dairy\"\n      }\n    }\n  }\n}"
+        }
+    }
+}

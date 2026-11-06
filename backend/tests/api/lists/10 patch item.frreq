@@ -1,0 +1,41 @@
+{
+    "id": "3bb94da9-9c8f-4de0-9fd5-227fff5885fb",
+    "name": "10 patch item",
+    "verb": "patch",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists/{{listId}}/items/{{itemId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"checked\":true}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"name\",\n    \"items\",\n    \"version\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"name\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"category\",\n          \"checked\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"category\": {\n            \"type\": \"string\"\n          },\n          \"checked\": {\n            \"type\": \"boolean\"\n          }\n        }\n      },\n      \"contains\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"name\"\n        ],\n        \"properties\": {\n          \"name\": {\n            \"const\": \"Milk\"\n          },\n          \"checked\": {\n            \"const\": true\n          }\n        }\n      }\n    },\n    \"version\": {\n      \"type\": \"integer\",\n      \"minimum\": 1\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    }\n  }\n}"
+        }
+    }
+}

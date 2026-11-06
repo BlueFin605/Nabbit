@@ -1,0 +1,47 @@
+{
+    "id": "6e7ad13f-7af4-4057-b7c2-21b1ffcc9278",
+    "name": "17b suggest ordered by uses",
+    "verb": "get",
+    "protocol": "http",
+    "url": "{{baseUrl}}/items/suggest",
+    "headers": [],
+    "parameters": [
+        {
+            "key": "q",
+            "value": "mi",
+            "active": true,
+            "id": "8736412f-6b8e-4855-a75f-e15b67fddca2"
+        }
+    ],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"array\",\n  \"minItems\": 2,\n  \"prefixItems\": [\n    {\n      \"type\": \"object\",\n      \"properties\": {\n        \"name\": {\n          \"const\": \"milk\"\n        }\n      }\n    },\n    {\n      \"type\": \"object\",\n      \"properties\": {\n        \"name\": {\n          \"const\": \"mia\"\n        }\n      }\n    }\n  ]\n}"
+        }
+    }
+}

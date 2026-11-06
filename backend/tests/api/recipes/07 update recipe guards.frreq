@@ -1,0 +1,247 @@
+{
+    "id": "a1d06fe9-3e90-4644-aa17-05711af9cb2a",
+    "name": "07 update recipe guards",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{recipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Stale\",\"servings\":1,\"ingredients\":[],\"steps\":[],\"tags\":[],\"version\":1}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "143c2a00-c405-436e-8815-df230fe2add5",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 409,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"version_conflict\"\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "1854ee49-8e03-4101-971d-b383faed45fc",
+            "name": "missing version",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"Stale\",\"servings\":1,\"ingredients\":[],\"steps\":[],\"tags\":[]}"
+            }
+        },
+        {
+            "id": "6f3dab6b-1906-46bc-99f8-9cbbedc91193",
+            "name": "empty title",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"\",\"servings\":1,\"ingredients\":[],\"steps\":[],\"tags\":[],\"version\":1}"
+            }
+        },
+        {
+            "id": "be2cf224-3a19-4165-bbda-45fd23c30a3c",
+            "name": "other owner",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "{{otherAuthHeader}}",
+                    "active": true,
+                    "id": "e12bb3a5-61b7-42d9-9a1c-52a6e90cbb45"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 404,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"not_found\"\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"Stale\",\"servings\":1,\"ingredients\":[],\"steps\":[],\"tags\":[],\"version\":1}"
+            }
+        },
+        {
+            "id": "cf892be0-2645-4590-a6bc-7d2bc5cdc379",
+            "name": "no auth",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "Bearer not-a-valid-token",
+                    "active": true,
+                    "id": "d2aa9b8c-3f0b-4140-b73e-49568f4292e5"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 401,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"minProperties\": 1\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"Stale\",\"servings\":1,\"ingredients\":[],\"steps\":[],\"tags\":[],\"version\":1}"
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 409,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"version_conflict\"\n    }\n  }\n}"
+        }
+    }
+}

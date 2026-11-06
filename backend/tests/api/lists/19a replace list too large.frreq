@@ -1,0 +1,41 @@
+{
+    "id": "a3b2de04-eb29-4807-99c0-982f8ca960e9",
+    "name": "19a replace list too large",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists/{{listId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"name\":\"Weekly shop v2\",\"items\":[{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}},{{bigItem}}],\"version\":{{listVersion}}}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"const\": \"too_large\"\n    }\n  }\n}"
+        }
+    }
+}

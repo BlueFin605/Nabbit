@@ -1,0 +1,201 @@
+{
+    "id": "43930c48-8f98-4599-8368-0051922f267d",
+    "name": "02 create recipe invalid",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"\",\"servings\":4,\"ingredients\":[{\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix everything.\",\"Fry in a pan.\"],\"tags\":[\"breakfast\"]}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "947cb9de-5806-4fda-915e-a499529daf56",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            }
+        },
+        {
+            "id": "7c25c7c1-ffae-4b93-b762-94b91f2e3960",
+            "name": "foreign imageKey",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"Pancakes\",\"servings\":4,\"ingredients\":[{\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix everything.\",\"Fry in a pan.\"],\"tags\":[\"breakfast\"],\"imageKey\":\"someone-else/abc.png\"}"
+            }
+        },
+        {
+            "id": "cdb9fb19-c9ec-4eb5-a7f4-5faee5f2dd11",
+            "name": "missing servings",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"No servings\",\"ingredients\":[],\"steps\":[]}"
+            }
+        },
+        {
+            "id": "6e8c9262-4517-4a31-8f12-feb0ffbc531b",
+            "name": "no auth",
+            "parameters": [],
+            "headers": [
+                {
+                    "key": "Authorization",
+                    "value": "Bearer not-a-valid-token",
+                    "active": true,
+                    "id": "d2aa9b8c-3f0b-4140-b73e-49568f4292e5"
+                }
+            ],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 401,
+                "jsonSchema": {
+                    "schema": "{\n  \"type\": \"object\",\n  \"minProperties\": 1\n}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"title\":\"Pancakes\",\"servings\":4,\"ingredients\":[{\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix everything.\",\"Fry in a pan.\"],\"tags\":[\"breakfast\"]}"
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+        }
+    }
+}

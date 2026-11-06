@@ -1,0 +1,49 @@
+{
+    "id": "3a8ccf3e-135c-4215-b542-abaae7f0ff16",
+    "name": "06 add item",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists/{{listId}}/items",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"name\":\"Milk\",\"category\":\"Dairy\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 201,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"name\",\n    \"items\",\n    \"version\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"name\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"category\",\n          \"checked\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"category\": {\n            \"type\": \"string\"\n          },\n          \"checked\": {\n            \"type\": \"boolean\"\n          }\n        }\n      },\n      \"minItems\": 1,\n      \"maxItems\": 1,\n      \"contains\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"name\"\n        ],\n        \"properties\": {\n          \"name\": {\n            \"const\": \"Milk\"\n          },\n          \"category\": {\n            \"const\": \"Dairy\"\n          },\n          \"checked\": {\n            \"const\": false\n          }\n        }\n      }\n    },\n    \"version\": {\n      \"const\": 2\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "itemId",
+            "from": "body",
+            "path": "$.items[0].id",
+            "id": "8cffa738-30f9-4463-bd21-e89bb84ffc4d"
+        }
+    ]
+}

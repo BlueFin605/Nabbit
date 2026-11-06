@@ -1,0 +1,31 @@
+{
+    "folderId": "3c4d7f76-d91d-4e5d-96c6-0607a1980f34",
+    "variables": [],
+    "secrets": [],
+    "auth": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "headers": [
+        {
+            "key": "Authorization",
+            "value": "{{rlAuthHeader}}",
+            "active": true,
+            "id": "a0602786-6519-4032-a690-21f699333819"
+        }
+    ]
+}

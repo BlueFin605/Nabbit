@@ -1,0 +1,49 @@
+{
+    "id": "767663a9-5b99-405e-b79b-8bdf9acb714f",
+    "name": "19 replace list",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/lists/{{listId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"name\":\"Weekly shop v2\",\"items\":[{\"name\":\"Tea\",\"category\":\"Pantry\"}],\"version\":{{listVersion}}}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"name\",\n    \"items\",\n    \"version\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"name\": {\n      \"const\": \"Weekly shop v2\"\n    },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"category\",\n          \"checked\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"category\": {\n            \"type\": \"string\"\n          },\n          \"checked\": {\n            \"type\": \"boolean\"\n          }\n        }\n      },\n      \"minItems\": 1,\n      \"maxItems\": 1,\n      \"contains\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"name\"\n        ],\n        \"properties\": {\n          \"name\": {\n            \"const\": \"Tea\"\n          },\n          \"category\": {\n            \"const\": \"Pantry\"\n          }\n        }\n      }\n    },\n    \"version\": {\n      \"type\": \"integer\",\n      \"minimum\": 1\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "listVersion",
+            "from": "body",
+            "path": "$.version",
+            "id": "1cd9e75d-e684-40db-8a9b-cda83f8b8161"
+        }
+    ]
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@nabbit/frontend",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "ng": "ng",
+    "start": "node scripts/serve.mjs",
+    "prebuild": "node scripts/build-env.mjs",
+    "build": "ng build --configuration production",
+    "build:dev": "ng build --configuration development",
+    "icons": "node scripts/generate-icons.mjs",
+    "test": "jest",
+    "lint": "ng lint",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.spec.json"
+  },
+  "dependencies": {
+    "@angular/cdk": "^22.2.1",
+    "@angular/common": "^22.2.1",
+    "@angular/compiler": "^22.2.1",
+    "@angular/core": "^22.2.1",
+    "@angular/material": "^22.2.1",
+    "@angular/platform-browser": "^22.2.1",
+    "@angular/router": "^22.2.1",
+    "@angular/service-worker": "^22.2.1",
+    "@nabbit/recipe-core": "^0.0.0",
+    "amazon-cognito-identity-js": "^6.3.16",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^22.2.2",
+    "@angular/cli": "^22.2.2",
+    "@angular/compiler-cli": "^22.2.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@types/jest": "^30.0.0",
+    "angular-eslint": "22.5.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "jest-preset-angular": "^17.0.2"
+  }
+}

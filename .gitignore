@@ -1,5 +1,5 @@
 # Angular specific
-/dist/
+dist/
 /out-tsc/
 /tmp/
 /coverage/
@@ -8,8 +8,7 @@
 .angular/
 
 # Node modules and dependency files
-/node_modules/
-/package-lock.json
+node_modules/
 /yarn.lock
 
 # Environment files
@@ -26,3 +25,24 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Build output
+bin/
+obj/
+cdk.out/
+
+# e2e (generated)
+/e2e/.dist/
+/e2e/test-results/
+/e2e/playwright-report/
+/frontend/src/environments/environment.e2e.ts
+/e2e/.stack/
+
+# Cognito Local runtime state (generated)
+/aspire/cognito-local-data/config.json
+/aspire/cognito-local-data/db/
+
+# Environment-specific / generated (never commit)
+/config.json
+/infrastructure/cdk.context.json
+/frontend/src/environments/environment.production.ts

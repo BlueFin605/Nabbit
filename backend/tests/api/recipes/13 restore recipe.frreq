@@ -1,0 +1,40 @@
+{
+    "id": "9dcddcb6-78ea-4791-8b45-203b56d47bc4",
+    "name": "13 restore recipe",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{recipeId}}/restore",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"servings\",\n    \"ingredients\",\n    \"steps\",\n    \"tags\",\n    \"version\",\n    \"createdAt\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"const\": \"Pancakes v2\"\n    },\n    \"servings\": {\n      \"type\": \"number\",\n      \"exclusiveMinimum\": 0\n    },\n    \"ingredients\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"unit\",\n          \"scalable\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"unit\": {\n            \"type\": \"string\"\n          },\n          \"scalable\": {\n            \"type\": \"boolean\"\n          },\n          \"quantity\": {\n            \"type\": [\n              \"number\",\n              \"null\"\n            ]\n          }\n        }\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"tags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"version\": {\n      \"const\": 3\n    },\n    \"createdAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    },\n    \"deletedAt\": false\n  }\n}"
+        }
+    }
+}

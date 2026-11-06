@@ -1,0 +1,29 @@
+{
+  "name": "nabbit",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "shared/*",
+    "backend",
+    "frontend",
+    "e2e"
+  ],
+  "scripts": {
+    "lint": "eslint . && npm run lint -w frontend",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ./start-aspire.ps1",
+    "seed": "npm run seed -w backend --"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.14.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
+  }
+}

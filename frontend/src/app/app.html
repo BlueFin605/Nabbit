@@ -1,0 +1,26 @@
+<main class="content">
+  <router-outlet />
+</main>
+
+@if (showNav()) {
+  <nav class="bottom-nav" aria-label="Primary">
+    <a class="nav-item" routerLink="/recipes" routerLinkActive="active">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="currentColor">
+        <path d="M4 4h12a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2V4zm2 2v12h10V6H6zm2 2h6v2H8V8zm0 4h6v2H8v-2z" />
+      </svg>
+      <span>Recipes</span>
+    </a>
+    <a class="nav-item" routerLink="/lists" routerLinkActive="active">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="currentColor">
+        <path d="M3 5h2v2H3V5zm4 0h14v2H7V5zM3 11h2v2H3v-2zm4 0h14v2H7v-2zM3 17h2v2H3v-2zm4 0h14v2H7v-2z" />
+      </svg>
+      <span>Lists</span>
+    </a>
+    <button type="button" class="nav-item" (click)="signOut()">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="currentColor">
+        <path d="M5 3h8v2H5v14h8v2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm11 4 5 5-5 5-1.4-1.4L17.2 13H9v-2h8.2l-2.6-2.6L16 7z" />
+      </svg>
+      <span>Sign out</span>
+    </button>
+  </nav>
+}

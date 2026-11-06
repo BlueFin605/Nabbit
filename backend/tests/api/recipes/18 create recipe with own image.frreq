@@ -1,0 +1,49 @@
+{
+    "id": "a83b3a9e-b734-4d52-bc04-67953815b206",
+    "name": "18 create recipe with own image",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"With image\",\"servings\":2,\"ingredients\":[],\"steps\":[],\"tags\":[],\"imageKey\":\"{{imageKey}}\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 201,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"servings\",\n    \"ingredients\",\n    \"steps\",\n    \"tags\",\n    \"version\",\n    \"createdAt\",\n    \"updatedAt\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"servings\": {\n      \"type\": \"number\",\n      \"exclusiveMinimum\": 0\n    },\n    \"ingredients\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"unit\",\n          \"scalable\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"unit\": {\n            \"type\": \"string\"\n          },\n          \"scalable\": {\n            \"type\": \"boolean\"\n          },\n          \"quantity\": {\n            \"type\": [\n              \"number\",\n              \"null\"\n            ]\n          }\n        }\n      }\n    },\n    \"steps\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"tags\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      }\n    },\n    \"version\": {\n      \"type\": \"integer\",\n      \"minimum\": 1\n    },\n    \"createdAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    },\n    \"updatedAt\": {\n      \"type\": \"string\",\n      \"format\": \"date-time\"\n    },\n    \"imageKey\": {\n      \"type\": \"string\",\n      \"minLength\": 3\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "imageRecipeId",
+            "from": "body",
+            "path": "$.id",
+            "id": "af55fe4f-3298-4827-983e-77bf6534b10b"
+        }
+    ]
+}

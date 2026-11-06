@@ -1,0 +1,43 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.content {
+  flex: 1;
+  padding: 16px;
+  padding-bottom: calc(80px + env(safe-area-inset-bottom));
+}
+
+.bottom-nav {
+  position: fixed;
+  inset: auto 0 0 0;
+  display: flex;
+  background: var(--mat-sys-surface-container, #f3f3f3);
+  border-top: 1px solid var(--mat-sys-outline-variant, #ddd);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--mat-sys-on-surface-variant, #555);
+  text-decoration: none;
+  cursor: pointer;
+
+  &.active {
+    color: var(--mat-sys-primary, #2e7d32);
+    font-weight: 600;
+  }
+}
