@@ -18,6 +18,9 @@ namespace Infrastructure
         /// <summary>Reserved concurrency cap for the dedicated import Lambda. 0 = no reservation (needed while the account Lambda quota is 50, since AWS requires 50 unreserved).</summary>
         public int ImportReservedConcurrency { get; set; } = 5;
 
+        /// <summary>Optional Bedrock model id or cross-region inference-profile id (e.g. "us.anthropic...") for the import Lambda's LLM fallback parser. Unset = feature off: no LLM_MODEL_ID env var, no Bedrock permission.</summary>
+        public string LlmModelId { get; set; }
+
         /// <summary>Folder holding the built API router (index.js). Relative to the cdk working directory.</summary>
         public string ApiCodePath { get; set; } = "../backend/dist/api";
 
@@ -63,6 +66,7 @@ namespace Infrastructure
                 HostedZoneId = Str("hostedZoneId", null),
                 ApiCodePath = Str("apiCodePath", "../backend/dist/api"),
                 ImportCodePath = Str("importCodePath", "../backend/dist/import"),
+                LlmModelId = Str("llmModelId", null),
             };
             if (s.TryGetProperty("importReservedConcurrency", out var c) && c.ValueKind == JsonValueKind.Number)
                 cfg.ImportReservedConcurrency = c.GetInt32();

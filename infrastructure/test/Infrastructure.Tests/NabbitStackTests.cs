@@ -11,7 +11,7 @@ namespace Infrastructure.Tests
 {
     public class NabbitStackTests
     {
-        private static Template Synth()
+        private static Template Synth(string llmModelId = null)
         {
             var codeDir = Path.Combine(Path.GetTempPath(), "nabbit-test-api");
             Directory.CreateDirectory(codeDir);
@@ -21,7 +21,7 @@ namespace Infrastructure.Tests
             Directory.CreateDirectory(importDir);
             File.WriteAllText(Path.Combine(importDir, "index.js"), "exports.handler = async () => ({});");
 
-            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir };
+            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir, LlmModelId = llmModelId };
             var app = new App();
             var globalCert = Amazon.CDK.AWS.CertificateManager.Certificate.FromCertificateArn(app, "GlobalCert",
                 "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000");
@@ -178,6 +178,65 @@ namespace Infrastructure.Tests
             var import = Resources(t, "AWS::Lambda::Function").Single(f =>
                 f.Value.GetProperty("Properties").TryGetProperty("FunctionName", out var n) && n.GetString() == "nabbit-import-production");
             Assert.True(import.Value.GetProperty("Properties").GetProperty("Environment").GetProperty("Variables").TryGetProperty("IMAGE_BUCKET", out _));
+        }
+
+        private static Dictionary<string, JsonElement> EnvOf(Template t, string functionName)
+        {
+            var fn = Resources(t, "AWS::Lambda::Function").Single(f =>
+                f.Value.GetProperty("Properties").TryGetProperty("FunctionName", out var n) && n.GetString() == functionName);
+            return fn.Value.GetProperty("Properties").GetProperty("Environment").GetProperty("Variables")
+                .EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
+        }
+
+        private static List<JsonElement> BedrockStatements(Template t, string rolePrefix) =>
+            AllowStatementsFor(t, rolePrefix).Where(st => Actions(st).Any(a => a.StartsWith("bedrock:"))).ToList();
+
+        private static List<string> ResourceStrings(JsonElement st) =>
+            st.GetProperty("Resource").ValueKind == JsonValueKind.Array
+                ? st.GetProperty("Resource").EnumerateArray().Select(e => e.ToString()).ToList()
+                : new List<string> { st.GetProperty("Resource").ToString() };
+
+        [Fact]
+        public void LlmModelId_Set_PlainModel_GrantsInvokeModelOnFoundationModelOnly()
+        {
+            var t = Synth("anthropic.claude-3-5-haiku-20241022-v1:0");
+            Assert.Equal("anthropic.claude-3-5-haiku-20241022-v1:0", EnvOf(t, "nabbit-import-production")["LLM_MODEL_ID"].GetString());
+            var st = Assert.Single(BedrockStatements(t, "ImportFunctionServiceRole"));
+            Assert.Equal(new[] { "bedrock:InvokeModel" }, Actions(st).ToArray());
+            var res = ResourceStrings(st);
+            Assert.Equal(new[] { "arn:aws:bedrock:ap-southeast-2::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0" }, res.ToArray());
+        }
+
+        [Fact]
+        public void LlmModelId_Set_InferenceProfile_GrantsProfileAndFoundationModelArns()
+        {
+            var t = Synth("us.anthropic.claude-3-5-haiku-20241022-v1:0");
+            Assert.Equal("us.anthropic.claude-3-5-haiku-20241022-v1:0", EnvOf(t, "nabbit-import-production")["LLM_MODEL_ID"].GetString());
+            var st = Assert.Single(BedrockStatements(t, "ImportFunctionServiceRole"));
+            Assert.Equal(new[] { "bedrock:InvokeModel" }, Actions(st).ToArray());
+            var res = ResourceStrings(st);
+            Assert.Equal(2, res.Count);
+            Assert.Contains(res, r => r.Contains(":inference-profile/us.anthropic.claude-3-5-haiku-20241022-v1:0") && r.StartsWith("arn:aws:bedrock:ap-southeast-2:"));
+            Assert.Contains(res, r => r == "arn:aws:bedrock:*::foundation-model/anthropic.claude-3-5-haiku-20241022-v1:0");
+            Assert.DoesNotContain(res, r => r == "*");
+        }
+
+        [Fact]
+        public void LlmModelId_Set_ApiLambdaHasNoBedrockActionOrEnv()
+        {
+            var t = Synth("us.anthropic.claude-3-5-haiku-20241022-v1:0");
+            Assert.Empty(BedrockStatements(t, "ApiFunctionServiceRole"));
+            Assert.False(EnvOf(t, "nabbit-api-production").ContainsKey("LLM_MODEL_ID"));
+        }
+
+        [Fact]
+        public void LlmModelId_Unset_NoBedrockPermissionOrEnvAnywhere()
+        {
+            var t = Synth();
+            Assert.Empty(BedrockStatements(t, "ImportFunctionServiceRole"));
+            Assert.Empty(BedrockStatements(t, "ApiFunctionServiceRole"));
+            Assert.False(EnvOf(t, "nabbit-import-production").ContainsKey("LLM_MODEL_ID"));
+            Assert.False(EnvOf(t, "nabbit-api-production").ContainsKey("LLM_MODEL_ID"));
         }
 
         [Fact]
