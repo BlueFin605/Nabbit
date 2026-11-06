@@ -16,12 +16,12 @@ import { Observable, Subject, catchError, debounceTime, of, retry, switchMap, th
 import { ApiClient } from '../../core/api/api-client';
 import type { ItemSuggestion, ListSummary, ShoppingList } from '../../core/api/api.types';
 import { ConfirmDialog } from '../../shared/confirm-dialog';
+import { DEFAULT_LIST_NAME, ListTarget } from './list-target';
 
 export const SUGGEST_DEBOUNCE_MS = 250;
 export const DOUBLE_TAP_MS = 300;
 export const LONG_PRESS_MS = 500;
 export const UNDO_MS = 5000;
-export const DEFAULT_LIST_NAME = 'Shopping';
 
 /** Dialog for picking a category (long-press on an item). Closes with the chosen category. */
 @Component({
@@ -173,6 +173,7 @@ const isConflict = (e: unknown): boolean => e instanceof HttpErrorResponse && e.
 })
 export class Lists implements OnInit {
   private readonly api = inject(ApiClient);
+  private readonly target = inject(ListTarget);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
   private readonly quick = viewChild<ElementRef<HTMLInputElement>>('quick');
@@ -241,7 +242,8 @@ export class Lists implements OnInit {
         }
         this.summaries.set(rows);
         this.status.set('ok');
-        this.open((rows.find((r) => r.name === DEFAULT_LIST_NAME) ?? rows[0]).id);
+        const last = this.target.readLast();
+        this.open((rows.find((r) => r.id === last) ?? rows.find((r) => r.name === DEFAULT_LIST_NAME) ?? rows[0]).id);
       },
       error: () => this.status.set('error'),
     });
@@ -249,7 +251,10 @@ export class Lists implements OnInit {
 
   protected open(id: string): void {
     this.api.getList(id).subscribe({
-      next: (l) => this.list.set(l),
+      next: (l) => {
+        this.list.set(l);
+        this.target.remember(l.id);
+      },
       error: () => this.fail("Couldn't open that list"),
     });
   }

@@ -133,6 +133,30 @@ describe('RecipeEdit', () => {
     expect(nav).toHaveBeenLastCalledWith(['/recipes', 'r1']);
   });
 
+  it('disables Save and Delete while the delete is in flight', async () => {
+    await setup();
+    const pending = new Subject<void>();
+    api.deleteRecipe.mockReturnValue(pending);
+    jest.spyOn(TestBed.inject(MatSnackBar), 'open').mockReturnValue({ onAction: () => new Subject() } as never);
+    stubDialog(true);
+    q('.delete')?.click();
+    await settle();
+    expect(q<HTMLButtonElement>('.delete')?.disabled).toBe(true);
+    q('.save')?.click();
+    expect(api.updateRecipe).not.toHaveBeenCalled();
+    pending.next();
+    pending.complete();
+  });
+
+  it('re-enables Delete when the delete fails', async () => {
+    await setup();
+    api.deleteRecipe.mockReturnValue(throwError(() => new Error('x')));
+    stubDialog(true);
+    q('.delete')?.click();
+    await settle();
+    expect(q<HTMLButtonElement>('.delete')?.disabled).toBe(false);
+  });
+
   it('cancelling the delete dialog does nothing', async () => {
     await setup();
     stubDialog(false);

@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
 import { registerImportRoutes, setImportDeps, IMPORT_LIMIT_PER_HOUR } from '../src/routes/import.js';
 import { setDb } from '../src/db.js';
 import { createMemoryDb } from '../src/db-memory.js';
 import { ImportError } from '../src/import/import-error.js';
+import { setImagePutter } from '../src/routes/images.js';
 
 function event(sub: string, body?: unknown): APIGatewayProxyEventV2 {
   return {
@@ -71,6 +72,37 @@ describe('POST /recipes/import', () => {
     expect(fetched).toEqual(['https://example.com/r']);
     const keys = [...db.items.values()].map((i) => i.sk);
     expect(keys.filter((k) => !k.startsWith('RATE#'))).toEqual([]);
+  });
+
+  it('structured import returns ranked candidates with imageUrl first', async () => {
+    page = async () => ({
+      url: 'https://example.com/r',
+      html: LD_HTML.replace('</head>', '<meta property="og:image" content="/og.jpg"></head>'),
+    });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.candidates).toEqual(['https://example.com/p.jpg', 'https://example.com/og.jpg']);
+    expect(res.json.imageUrl).toBe(res.json.candidates[0]);
+  });
+
+  it('heuristic fallback returns candidates from og:image and the DOM', async () => {
+    page = async () => ({
+      url: 'https://example.com/r',
+      html: PLAIN_HTML.replace('<body>', '<head><meta property="og:image" content="https://example.com/og.jpg"></head><body><img src="/big.jpg" width="600" height="400">'),
+    });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(res.json.candidates).toEqual(['https://example.com/og.jpg', 'https://example.com/big.jpg']);
+    expect(res.json.imageUrl).toBe('https://example.com/og.jpg');
+  });
+
+  it('omits imageUrl and candidates when the page has no images, and for text imports', async () => {
+    page = async () => ({ url: 'https://example.com/r', html: PLAIN_HTML });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json).not.toHaveProperty('candidates');
+    expect(res.json).not.toHaveProperty('imageUrl');
+    const t = await call({ text: 'Toast\n\nIngredients\n2 slices bread\n\nMethod\n1. Toast.' });
+    expect(t.json).not.toHaveProperty('candidates');
+    expect(t.json).not.toHaveProperty('imageUrl');
   });
 
   it('page without structured data falls back to heuristic', async () => {
@@ -165,5 +197,89 @@ describe('import rate limit', () => {
     const item = db.items.get(`OWNER#u1\u0000RATE#import#${hour}`);
     expect(item?.count).toBe(1);
     expect(item?.ttl).toBe(Math.floor(nowMs / 1000) + 7200);
+  });
+});
+
+describe('POST /recipes/images/import', () => {
+  let imageUrls: string[];
+  let image: () => Promise<{ url: string; contentType: 'image/jpeg' | 'image/png' | 'image/webp'; bytes: Uint8Array }>;
+  let puts: { key: string; contentType: string; bytes: Uint8Array }[];
+  const callImg = async (body: unknown, sub: string | null = 'u1') => {
+    const ev = event(sub ?? 'x', body) as unknown as { rawPath: string; requestContext: { http: { path: string }; authorizer?: unknown } };
+    ev.rawPath = '/recipes/images/import';
+    ev.requestContext.http.path = '/recipes/images/import';
+    if (sub === null) delete ev.requestContext.authorizer;
+    const res = (await handler(ev as unknown as APIGatewayProxyEventV2)) as { statusCode: number; body?: string; headers?: Record<string, string> };
+    return { status: res.statusCode, json: res.body ? JSON.parse(res.body) : undefined, headers: res.headers ?? {} };
+  };
+  beforeEach(() => {
+    imageUrls = [];
+    puts = [];
+    image = async () => ({ url: 'https://example.com/p.jpg', contentType: 'image/jpeg', bytes: new Uint8Array([0xff, 0xd8, 0xff]) });
+    setImportDeps({
+      fetchImage: async (u) => {
+        imageUrls.push(u);
+        return image();
+      },
+      now: () => nowMs,
+    });
+    setImagePutter(async (r) => {
+      puts.push(r);
+    });
+  });
+  afterEach(() => setImagePutter(undefined));
+
+  it('fetches, stores under the owner prefix and returns imageKey', async () => {
+    const res = await callImg({ url: ' https://example.com/p.jpg ' });
+    expect(res.status).toBe(200);
+    expect(res.json.imageKey).toMatch(/^u1\/[0-9a-f-]{36}\.jpg$/);
+    expect(imageUrls).toEqual(['https://example.com/p.jpg']);
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.key).toBe(res.json.imageKey);
+    expect(puts[0]!.contentType).toBe('image/jpeg');
+  });
+
+  it('scopes the key to the caller', async () => {
+    const res = await callImg({ url: 'https://example.com/p.jpg' }, 'someone-else');
+    expect(res.json.imageKey.startsWith('someone-else/')).toBe(true);
+  });
+
+  it.each([{}, { url: '' }, { url: 5 }, { url: 'http://example.com/p.jpg' }, { url: 'ftp://x/y.png' }, 'str'])(
+    'rejects %j with 400 and does not fetch or count',
+    async (b) => {
+      expect((await callImg(b)).status).toBe(400);
+      expect(imageUrls).toEqual([]);
+      expect([...db.items.values()].filter((i) => i.sk.startsWith('RATE#'))).toEqual([]);
+    },
+  );
+
+  it('401 without a sub', async () => {
+    expect((await callImg({ url: 'https://example.com/p.jpg' }, null)).status).toBe(401);
+    expect(imageUrls).toEqual([]);
+  });
+
+  it.each(['not_image', 'blocked_address'] as const)('maps ImportError %s to 422', async (code) => {
+    image = async () => {
+      throw new ImportError(code);
+    };
+    const res = await callImg({ url: 'https://example.com/p.jpg' });
+    expect(res.status).toBe(422);
+    expect(res.json).toEqual({ error: code });
+    expect(puts).toEqual([]);
+  });
+
+  it('shares the import rate limit: counts, and 429s the 31st call', async () => {
+    for (let i = 0; i < 30; i++) expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(200);
+    const res = await callImg({ url: 'https://example.com/p.jpg' });
+    expect(res.status).toBe(429);
+    expect(res.json).toEqual({ error: 'rate_limited' });
+    expect(res.headers['retry-after']).toBe(String(45 * 60));
+    expect(imageUrls).toHaveLength(30);
+  });
+
+  it('counts against the same counter as /recipes/import', async () => {
+    for (let i = 0; i < 29; i++) await call({ text: 'Soup' });
+    expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(200);
+    expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(429);
   });
 });

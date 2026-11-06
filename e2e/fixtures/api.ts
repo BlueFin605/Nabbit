@@ -15,6 +15,7 @@ export interface ApiRecipe {
   title: string;
   servings: number;
   version: number;
+  imageKey?: string;
   ingredients: { name: string; quantity: number | null; unit: string }[];
 }
 
@@ -37,12 +38,12 @@ export class Api {
    * Save the Fluffy Pancakes recipe straight through POST /recipes (not the importer, so seeding does not
    * burn the 30 imports/hour rate limit). Same shape the importer produces for pancakes.txt.
    */
-  async seedRecipe(): Promise<ApiRecipe> {
+  async seedRecipe(title = 'Fluffy Pancakes'): Promise<ApiRecipe> {
     const ing = (id: string, name: string, quantity: number | null, unit: string, extra: object = {}) => ({
       id, name, quantity, unit, scalable: quantity !== null, ...extra,
     });
     const recipe = {
-      title: 'Fluffy Pancakes',
+      title,
       servings: 4,
       tags: [],
       steps: ['Whisk the flour and milk together.', 'Cook in a hot pan at 176°C until golden.'],

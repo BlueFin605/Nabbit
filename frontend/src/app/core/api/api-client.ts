@@ -74,6 +74,11 @@ export class ApiClient {
     return this.http.post<void>(upload.url, form);
   }
 
+  /** Asks the server to fetch a third-party image into S3 (SSRF-guarded); returns the stored imageKey. */
+  importImage(url: string): Observable<{ imageKey: string }> {
+    return this.http.post<{ imageKey: string }>(this.url('/recipes/images/import'), { url });
+  }
+
   // ---- import ----
 
   /** Parses a recipe from a URL or pasted text. Nothing is saved; preview the draft then call createRecipe. */

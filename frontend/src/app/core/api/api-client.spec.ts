@@ -74,6 +74,12 @@ describe('ApiClient', () => {
     expect(ctrl.expectOne({ method: 'POST', url: `${B}/recipes/import` }).request.body).toEqual({ text: 'Eggs' });
   });
 
+  it('imports an image by url', () => {
+    api.importImage('https://example.com/p.jpg').subscribe();
+    const r = ctrl.expectOne({ method: 'POST', url: `${B}/recipes/images/import` });
+    expect(r.request.body).toEqual({ url: 'https://example.com/p.jpg' });
+  });
+
   it('covers the list and item routes', () => {
     api.listLists().subscribe();
     ctrl.expectOne({ method: 'GET', url: `${B}/lists` });

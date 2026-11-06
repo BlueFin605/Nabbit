@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router, provideRouter } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
@@ -16,27 +17,32 @@ const ing = (): Ingredient => ({
   scalable: true,
   metric: { quantity: 240, unit: 'ml' },
 });
-const result = (over: Partial<ImportResult['draft']> = {}, imageUrl?: string): ImportResult => ({
+const result = (over: Partial<ImportResult['draft']> = {}, imageUrl?: string, candidates?: string[]): ImportResult => ({
   draft: {
     confidence: 'structured',
     recipe: { title: 'Pancakes', servings: 4, ingredients: [ing()], steps: ['Mix', 'Fry'], tags: [] },
     ...over,
   },
   ...(imageUrl ? { imageUrl } : {}),
+  ...(candidates ? { candidates } : {}),
 });
 const httpErr = (status: number, error?: unknown) => throwError(() => new HttpErrorResponse({ status, error }));
 
 describe('Import', () => {
   let importRecipe: jest.Mock;
   let createRecipe: jest.Mock;
+  let importImage: jest.Mock;
+  let snack: jest.SpyInstance;
   let fixture: ComponentFixture<Import>;
 
   async function setup(inputs: Record<string, string> = {}, impl: (r: unknown) => unknown = () => of(result())) {
     importRecipe = jest.fn(impl);
     createRecipe = jest.fn(() => of({ id: 'new1' } as Recipe));
+    importImage = jest.fn(() => of({ imageKey: 'o/img.jpg' }));
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: ApiClient, useValue: { importRecipe, createRecipe } }],
+      providers: [provideRouter([]), { provide: ApiClient, useValue: { importRecipe, createRecipe, importImage } }],
     });
+    snack = jest.spyOn(TestBed.inject(MatSnackBar), 'open').mockReturnValue(undefined as never);
     fixture = TestBed.createComponent(Import);
     for (const [k, v] of Object.entries(inputs)) fixture.componentRef.setInput(k, v);
     fixture.detectChanges();
@@ -131,12 +137,12 @@ describe('Import', () => {
     expect(q('details .original')?.textContent).toContain('1 cup flour');
     // third-party photo is not loaded automatically and is labelled as unsaved
     expect(q('img.photo')).toBeNull();
-    expect(q('.photo-note')?.textContent).toContain('Photo not saved');
-    q('.show-original')?.click();
+    expect(q('.photo-note')?.textContent).toContain('Photo found, will be saved');
+    q('.show-options')?.click();
     fixture.detectChanges();
     expect(q('img.photo')?.getAttribute('src')).toBe('https://example.com/p.jpg');
-    expect(q('.photo-note')?.textContent).toContain('Photo not saved');
-    expect(q('.show-original')).toBeNull();
+    expect(q('.photo-note')?.textContent).toContain('Photo found, will be saved');
+    expect(q('.show-options')).toBeNull();
     expect(q('.banner')).toBeNull();
   });
 
@@ -159,8 +165,8 @@ describe('Import', () => {
     expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://example.com/r' }));
   });
 
-  it('save posts the (edited) recipe without an image and navigates to it', async () => {
-    await setup({}, () => of(result({}, 'https://example.com/p.jpg')));
+  it('save posts the (edited) recipe and navigates to it', async () => {
+    await setup({}, () => of(result()));
     const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     type('https://example.com/r');
     await tapImport();
@@ -173,6 +179,105 @@ describe('Import', () => {
     expect(body.imageKey).toBeUndefined();
     expect(body.sourceUrl).toBe('https://example.com/r');
     expect(nav).toHaveBeenCalledWith(['/recipes', 'new1']);
+  });
+
+  describe('photo fetch on save', () => {
+    const cands = ['https://a.example/1.jpg', 'https://a.example/2.jpg'];
+    async function ready(res: ImportResult) {
+      await setup({}, () => of(res));
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      type('https://example.com/r');
+      await tapImport();
+    }
+    const savedBody = () => (createRecipe.mock.calls[0] as [RecipeInput])[0];
+
+    it('imports the first candidate then creates the recipe with the returned key', async () => {
+      await ready(result({}, 'https://example.com/p.jpg', cands));
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledWith(cands[0]);
+      expect(savedBody().imageKey).toBe('o/img.jpg');
+    });
+
+    it('imports the candidate the user chose', async () => {
+      await ready(result({}, undefined, cands));
+      q('.show-options')?.click();
+      fixture.detectChanges();
+      q<HTMLButtonElement>('.candidate:nth-child(2)')?.click();
+      fixture.detectChanges();
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledWith(cands[1]);
+    });
+
+    it('falls back to imageUrl when there are no candidates', async () => {
+      await ready(result({}, 'https://example.com/p.jpg'));
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledWith('https://example.com/p.jpg');
+    });
+
+    it('still creates the recipe and shows a snackbar when the image import fails', async () => {
+      await ready(result({}, undefined, cands));
+      importImage.mockReturnValue(httpErr(422, { error: 'not_image' }));
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      expect(savedBody().imageKey).toBeUndefined();
+      expect(snack).toHaveBeenCalledWith(expect.stringContaining('Saved without a photo - add one in the editor.'), 'OK', expect.anything());
+    });
+
+    it('makes no importImage call without candidates or imageUrl', async () => {
+      await ready(result());
+      q('.save')?.click();
+      expect(importImage).not.toHaveBeenCalled();
+      expect(createRecipe).toHaveBeenCalled();
+    });
+
+    it('declining the found photo saves with no photo and no importImage call', async () => {
+      await ready(result({}, undefined, cands));
+      q('.decline-photo')?.click();
+      fixture.detectChanges();
+      expect(q('.photo-note')).toBeNull();
+      q('.save')?.click();
+      expect(importImage).not.toHaveBeenCalled();
+      expect(savedBody().imageKey).toBeUndefined();
+    });
+
+    it('after declining, a found photo can be picked again', async () => {
+      await ready(result({}, undefined, cands));
+      q('.decline-photo')?.click();
+      fixture.detectChanges();
+      q('.show-options')?.click();
+      fixture.detectChanges();
+      q<HTMLButtonElement>('.candidate:nth-child(2)')?.click();
+      fixture.detectChanges();
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledWith(cands[1]);
+    });
+
+    it('a retry after createRecipe fails reuses the fetched key', async () => {
+      await ready(result({}, undefined, cands));
+      createRecipe.mockReturnValueOnce(httpErr(500));
+      q('.save')?.click();
+      fixture.detectChanges();
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledTimes(1);
+      expect(createRecipe).toHaveBeenCalledTimes(2);
+      expect((createRecipe.mock.calls[1] as [RecipeInput])[0].imageKey).toBe('o/img.jpg');
+    });
+
+    it('changing candidate after a fetch discards the cached key', async () => {
+      await ready(result({}, undefined, cands));
+      createRecipe.mockReturnValueOnce(httpErr(500));
+      q('.save')?.click();
+      fixture.detectChanges();
+      q('.show-options')?.click();
+      fixture.detectChanges();
+      q<HTMLButtonElement>('.candidate:nth-child(2)')?.click();
+      fixture.detectChanges();
+      importImage.mockReturnValue(of({ imageKey: 'o/img2.jpg' }));
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledTimes(2);
+      expect(importImage).toHaveBeenLastCalledWith(cands[1]);
+      expect((createRecipe.mock.calls[1] as [RecipeInput])[0].imageKey).toBe('o/img2.jpg');
+    });
   });
 
   it('discard returns to /recipes without saving', async () => {

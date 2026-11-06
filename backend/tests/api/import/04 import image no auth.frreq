@@ -1,0 +1,48 @@
+{
+    "id": "46ce3a75-38ba-4b00-81b5-f12ba750f63d",
+    "name": "04 import image no auth",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/images/import",
+    "headers": [
+        {
+            "key": "Authorization",
+            "value": "Bearer not-a-valid-token",
+            "active": true,
+            "id": "019c9022-5717-4b5b-b01e-9a8adada5b19"
+        }
+    ],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"url\":\"https://127.0.0.1/a.png\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 401,
+        "jsonSchema": {
+            "schema": "{\"type\":\"object\",\"minProperties\":1}"
+        }
+    }
+}
