@@ -8,14 +8,15 @@
  *     and stores it at {ownerId}/{uuid}.{ext}; 400 bad url, 422 { error: <ImportError code> } (incl. not_image), 429 as above.
  *     Shares the import rate limit (same counter). Registered on the import Lambda only.
  * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d).
- * Instagram URLs are not fetched: 422 needs_text.
+ * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
+ * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
  * (pk=OWNER#{id}, sk=RATE#import#{epoch hour}, ttl 2h), incremented BEFORE any fetch so failures still count.
  */
 import { ownerPk, rateSk, llmDaySk, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
-import { isInstagramUrl } from '../import/extract-instagram.js';
+import { extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
 import { getLlmParser } from '../import/llm-parse.js';
@@ -93,10 +94,22 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     const text = body.text as string;
     return { status: 200, body: { draft: await maybeLlm(ownerId, text, extractFromText(text)) } };
   }
-  if (isInstagramUrl((body.url as string).trim())) return { status: 422, body: { error: 'needs_text' } };
+  const url = (body.url as string).trim();
+  if (isInstagramUrl(url)) {
+    const needsText = { status: 422, body: { error: 'needs_text' } };
+    if (process.env.INSTAGRAM_AUTOFETCH === '0') return needsText;
+    let caption: string | undefined;
+    try {
+      caption = extractInstagramCaption((await deps.safeFetch(url)).html);
+    } catch {
+      return needsText;
+    }
+    if (!caption) return needsText;
+    return { status: 200, body: { draft: await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url) } };
+  }
 
   try {
-    const page = await deps.safeFetch((body.url as string).trim());
+    const page = await deps.safeFetch(url);
     const structured = extractStructured(page.html, page.url);
     const candidates = extractImageCandidates(page.html, page.url, structured?.imageUrl);
     const images = candidates.length ? { imageUrl: candidates[0], candidates } : {};

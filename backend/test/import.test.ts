@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
@@ -309,11 +310,15 @@ describe('LLM fallback and Instagram needs_text', () => {
       },
     });
   });
-  afterEach(() => setLlmParser(undefined));
+  afterEach(() => {
+    setLlmParser(undefined);
+    delete process.env.INSTAGRAM_AUTOFETCH;
+  });
 
   it.each(['https://instagram.com/p/abc/', 'https://www.instagram.com/reel/abc/', 'https://instagr.am/p/abc', 'https://WWW.Instagram.com/p/x'])(
-    'instagram url %s -> 422 needs_text without fetching, still counted',
+    'INSTAGRAM_AUTOFETCH=0: instagram url %s -> 422 needs_text without fetching, still counted',
     async (url) => {
+      process.env.INSTAGRAM_AUTOFETCH = '0';
       const res = await call({ url });
       expect(res.status).toBe(422);
       expect(res.json).toEqual({ error: 'needs_text' });
@@ -324,8 +329,9 @@ describe('LLM fallback and Instagram needs_text', () => {
   );
 
   it.each(['https://instagram.com./p/abc/', 'https://www.instagram.com./p/abc/', 'https://m.instagram.com/p/abc/'])(
-    'trailing-dot and mobile host %s -> needs_text',
+    'INSTAGRAM_AUTOFETCH=0: trailing-dot and mobile host %s -> needs_text',
     async (url) => {
+      process.env.INSTAGRAM_AUTOFETCH = '0';
       const res = await call({ url });
       expect(res.status).toBe(422);
       expect(res.json).toEqual({ error: 'needs_text' });
@@ -344,6 +350,79 @@ describe('LLM fallback and Instagram needs_text', () => {
     const res = await call({ url });
     expect(res.json).not.toEqual({ error: 'needs_text' });
     expect(fetched).toEqual([url]);
+  });
+
+  describe('Instagram auto-fetch', () => {
+    const IG = 'https://www.instagram.com/p/abc/';
+    const GOOD_HTML = readFileSync(new URL('./fixtures/instagram-jsonld.html', import.meta.url), 'utf8');
+    const WALL_HTML = readFileSync(new URL('./fixtures/instagram-login-wall.html', import.meta.url), 'utf8');
+    const hourCount = () => db.items.get(`OWNER#u1 RATE#import#${Math.floor(nowMs / 3_600_000)}`)?.count;
+
+    it('good caption -> 200 text draft with sourceUrl, fetched once, counted', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.recipe.sourceUrl).toBe(IG);
+      expect(fetched).toEqual([IG]);
+      expect(hourCount()).toBe(1);
+    });
+
+    it('a low-confidence caption goes through the LLM trigger rule', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      result = async () => ({ ...aiRecipe, ingredients: [1, 2, 3].map((n) => ({ name: 'tomato' + n, quantity: 1, unit: 'g' })) });
+      const res = await call({ url: IG });
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].sourceUrl).toBe(IG);
+    });
+
+    it('login-wall html -> 422 needs_text, counted', async () => {
+      page = async () => ({ url: IG, html: WALL_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('ImportError from the fetch -> 422 needs_text, counted', async () => {
+      page = async () => {
+        throw new ImportError('bad_status');
+      };
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('network error from the fetch -> 422 needs_text, counted', async () => {
+      page = async () => {
+        throw new Error('ECONNRESET');
+      };
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('INSTAGRAM_AUTOFETCH=0 -> needs_text, safeFetch not called, counted', async () => {
+      process.env.INSTAGRAM_AUTOFETCH = '0';
+      const res = await call({ url: IG });
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(fetched).toEqual([]);
+      expect(hourCount()).toBe(1);
+    });
+
+    it('any other INSTAGRAM_AUTOFETCH value keeps auto-fetch on', async () => {
+      process.env.INSTAGRAM_AUTOFETCH = '1';
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      expect((await call({ url: IG })).status).toBe(200);
+    });
+
+    it('rate limit applies before the fetch', async () => {
+      for (let i = 0; i < IMPORT_LIMIT_PER_HOUR; i++) await call({ text: 'Soup' });
+      expect((await call({ url: IG })).status).toBe(429);
+      expect(fetched).toEqual([]);
+    });
   });
 
   it('low-confidence text calls the parser and returns an ai draft', async () => {
