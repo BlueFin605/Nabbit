@@ -1,0 +1,304 @@
+{
+ "componentChunkName": "component---src-templates-recipe-inner-template-tsx",
+ "path": "/recipes/the-best-lasagne/",
+ "result": {
+  "data": {
+   "sanityGlobalAdPlacements": {
+    "recipeInnerPageAd": null,
+    "recipeInnerPageAdBanner": []
+   },
+   "allSanityRecipes": {
+    "edges": [
+     {
+      "node": {
+       "_id": "recipe_15",
+       "title": "The best lasagne",
+       "h2": "Ultimate family friendly lasagne recipe",
+       "prepTime": "45",
+       "cookTime": "45",
+       "description": "We believe some things in life are worth taking a little time over, and lasagne is definitely one of them. It's one of the world’s most beloved meals, and for good reason; it’s tasty, rich, comforting soul food. This recipe makes a huge lasagne, so it’s great for a crowd – or make two smaller ones and freeze one.",
+       "servingSizeMin": "8",
+       "servingSizeMax": "10",
+       "slug": {
+        "current": "the-best-lasagne"
+       },
+       "method": [
+        {
+         "methodGroup": "To make mince filling",
+         "steps": [
+          {
+           "step": "Preheat the oven to 180°C.",
+           "timer": null,
+           "_key": "2biwhj"
+          },
+          {
+           "step": "In your largest frying pan, heat a little oil over a high heat. When the pan is hot, add half the mince, breaking up the big lumps quickly with a wooden spoon.",
+           "timer": null,
+           "_key": "4stvdf"
+          },
+          {
+           "step": "Leave the mince to sizzle until the underside is browned, then stir and brown the other side.",
+           "timer": null,
+           "_key": "kzr0hl"
+          },
+          {
+           "step": "Set aside and repeat with the remaining mince.",
+           "timer": null,
+           "_key": "rpkihi"
+          }
+         ]
+        },
+        {
+         "methodGroup": "To make cheese sauce",
+         "steps": [
+          {
+           "step": "Melt butter in a large saucepan over a medium-low heat.",
+           "timer": null,
+           "_key": "ajr38f"
+          },
+          {
+           "step": "Add flour and cook, stirring, for 3-5 minutes (don’t let it brown).",
+           "timer": 3,
+           "_key": "k3p2j"
+          },
+          {
+           "step": "Remove from heat and slowly add all the warmed milk in a thin stream, whisking all the time, until smooth.",
+           "timer": null,
+           "_key": "lh4y2h"
+          },
+          {
+           "step": "Return to heat and cook, stirring, until thickened.",
+           "timer": null,
+           "_key": "pd4qc"
+          }
+         ]
+        }
+       ],
+       "ingredients": [
+        {
+         "ingredients": [
+          {
+           "ingredient": {
+            "title": "New Zealand beef mince",
+            "excerpt": null,
+            "excerptLink": {
+             "_key": null,
+             "_type": "link",
+             "internallink": true,
+             "linktext": null,
+             "newwindow": true,
+             "url": null
+            },
+            "displayName": "New Zealand beef mince",
+            "displayNamePlural": "New Zealand beef mince"
+           },
+           "displayValue": "1kg",
+           "recipeIngredientExcerpt": "Browning mince first is an important step you shouldn't skip. Not only does it allow you to drain the fat off, browning is where most of the flavour comes from. Always defrost mince in the fridge - only use the microwave if you plan to cook it immediately.\n\n",
+           "recipeIngredientExcerptLink": null,
+           "description": null,
+           "_key": "4f670966c4fb"
+          },
+          {
+           "ingredient": {
+            "title": "onion",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "onion",
+            "displayNamePlural": "onions"
+           },
+           "displayValue": "2",
+           "recipeIngredientExcerpt": "To make life easier, you can use a food processor to chop the onion, garlic, celery and carrot to a fine mince before frying.",
+           "recipeIngredientExcerptLink": null,
+           "description": "finely chopped",
+           "_key": "52db04637c36"
+          },
+          {
+           "ingredient": {
+            "title": "garlic, cloves, raw, peeled",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "garlic clove",
+            "displayNamePlural": "garlic cloves"
+           },
+           "displayValue": "5",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": "crushed",
+           "_key": "511fb8051883"
+          },
+          {
+           "ingredient": {
+            "title": "carrots",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "carrot",
+            "displayNamePlural": "carrots"
+           },
+           "displayValue": "1 ",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": "grated",
+           "_key": "c6ec7fe7fdb6"
+          },
+          {
+           "ingredient": {
+            "title": "celery, american green, stalk, raw",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "celery stalk",
+            "displayNamePlural": "celery stalks"
+           },
+           "displayValue": "2",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": "finely chopped",
+           "_key": "437190f0a961"
+          }
+         ],
+         "group": "Lasagne",
+         "_key": "4ecf2f5ebc69"
+        },
+        {
+         "ingredients": [
+          {
+           "ingredient": {
+            "title": "butter, unsalted",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "butter",
+            "displayNamePlural": null
+           },
+           "displayValue": "100g",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": null,
+           "_key": "fdf3dc266ddc"
+          },
+          {
+           "ingredient": {
+            "title": "flour, wheat, white",
+            "excerpt": null,
+            "excerptLink": {
+             "_key": null,
+             "_type": "link",
+             "internallink": false,
+             "linktext": null,
+             "newwindow": null,
+             "url": null
+            },
+            "displayName": "white flour",
+            "displayNamePlural": null
+           },
+           "displayValue": "½ cup",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": null,
+           "_key": "10d5a96f3bd4"
+          },
+          {
+           "ingredient": {
+            "title": "milk",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "milk",
+            "displayNamePlural": null
+           },
+           "displayValue": "3½ cups",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": "warmed",
+           "_key": "7f52579cf63a"
+          },
+          {
+           "ingredient": {
+            "title": "grated tasty cheddar cheese",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "grated tasty cheddar cheese",
+            "displayNamePlural": null
+           },
+           "displayValue": "2 cups",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": null,
+           "_key": "cf37b68385b9"
+          },
+          {
+           "ingredient": {
+            "title": "Dijon mustard",
+            "excerpt": null,
+            "excerptLink": null,
+            "displayName": "",
+            "displayNamePlural": null
+           },
+           "displayValue": "1 Tbsp",
+           "recipeIngredientExcerpt": null,
+           "recipeIngredientExcerptLink": null,
+           "description": null,
+           "_key": "41f068ca7bae"
+          }
+         ],
+         "group": "Cheese sauce",
+         "_key": "70b099adfcdc"
+        }
+       ],
+       "nutritionalBlurb": "This nutrition analysis is based on 10 serves and is for the lasagne only. ",
+       "nutritionalInformation": {
+        "servingSize": "517",
+        "energy": "2628 (628 kcal)",
+        "protein": "39.8"
+       },
+       "healthTags": [
+        {
+         "_id": "healthAndLifestyleTaghrsp1i",
+         "title": "Iron Rich"
+        },
+        {
+         "_id": "8e515733-8e3c-4827-aebc-c9ad7fdc113f",
+         "title": "High Protein"
+        }
+       ],
+       "categories": [
+        {
+         "_id": "6b32ebf6-4ae3-4444-becc-d2b9829892f7",
+         "title": "Beef Recipes",
+         "slug": {
+          "current": "beef"
+         },
+         "recipeBadge": null
+        },
+        {
+         "_id": "cateogry2wzl19",
+         "title": "Family Favourites",
+         "slug": {
+          "current": "family-favourites"
+         },
+         "recipeBadge": null
+        }
+       ],
+       "seo": {
+        "pageDescription": "A delicious family favourite, this lasagne is the best. ",
+        "pageTitle": "Ultimate lasagne recipe"
+       }
+      }
+     }
+    ]
+   },
+   "relatedRecipes": {
+    "edges": [
+     {
+      "node": {
+       "title": "Lamb steaks with chilli pesto and roasted vegetables",
+       "slug": {
+        "current": "lamb-steaks-with-chilli-pesto-and-roasted-vegetables"
+       }
+      }
+     }
+    ]
+   }
+  },
+  "pageContext": {
+   "slug": "the-best-lasagne"
+  }
+ }
+}

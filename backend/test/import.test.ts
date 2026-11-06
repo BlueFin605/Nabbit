@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
 import { setLlmParser } from '../src/import/llm-parse.js';
@@ -57,6 +57,9 @@ beforeEach(() => {
     safeFetch: async (url) => {
       fetched.push(url);
       return page();
+    },
+    fetchJson: async () => {
+      throw new ImportError('bad_status', 'no page-data');
     },
     now: () => nowMs,
   });
@@ -494,7 +497,7 @@ describe('LLM fallback and Instagram needs_text', () => {
   });
 
   it('page-text fallback passes sourceUrl to the parser', async () => {
-    page = async () => ({ url: 'https://example.com/r', html: '<html><body><p>Just some words</p></body></html>' });
+    page = async () => ({ url: 'https://example.com/r', html: `<html><body><p>${'Just some words about a dish. '.repeat(10)}</p></body></html>` });
     const res = await call({ url: 'https://example.com/r' });
     expect(res.json.draft.confidence).toBe('ai');
     expect(parsed[0].sourceUrl).toBe('https://example.com/r');
@@ -625,5 +628,208 @@ describe('LLM fallback and Instagram needs_text', () => {
   it('401 without a sub is unchanged', async () => {
     const res = await call({ text: LOW }, null as never);
     expect(res.status).toBe(401);
+  });
+
+  describe('JS-shell pages (no server-rendered text)', () => {
+    const SHELL = readFileSync(new URL('./fixtures/gatsby-shell.html', import.meta.url), 'utf8');
+
+    it('Gatsby shell with no structured data -> 422 needs_text, the LLM is not called', async () => {
+      page = async () => ({ url: 'https://recipes.co.nz/recipes/the-best-lasagne/', html: SHELL });
+      const res = await call({ url: 'https://recipes.co.nz/recipes/the-best-lasagne/?gclid=abc' });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('a page with real prose but no recipe structure still goes to the LLM path', async () => {
+      page = async () => ({ url: 'https://example.com/r', html: `<html><body><p>${'Gently simmer the sauce for a good while. '.repeat(8)}</p></body></html>` });
+      const res = await call({ url: 'https://example.com/r' });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(parsed).toHaveLength(1);
+    });
+
+    it('a short page that still yields ingredients is not needs_text', async () => {
+      page = async () => ({ url: 'https://example.com/r', html: PLAIN_HTML });
+      const res = await call({ url: 'https://example.com/r' });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('embedded app data (Gatsby page-data.json / Next.js __NEXT_DATA__)', () => {
+    const SHELL = readFileSync(new URL('./fixtures/gatsby-shell.html', import.meta.url), 'utf8');
+    const PAGE_DATA = readFileSync(new URL('./fixtures/gatsby-page-data.json', import.meta.url), 'utf8');
+    const URL1 = 'https://recipes.co.nz/recipes/the-best-lasagne/';
+    const DATA_URL = 'https://recipes.co.nz/page-data/recipes/the-best-lasagne/page-data.json';
+    let jsonFetched: string[];
+    let jsonResult: () => Promise<{ url: string; text: string }>;
+    const nextPage = (json: unknown) => `<html><body><div id="__next"></div><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(json)}</script></body></html>`;
+
+    beforeEach(() => {
+      jsonFetched = [];
+      jsonResult = async () => ({ url: DATA_URL, text: PAGE_DATA });
+      setImportDeps({
+        safeFetch: async (url) => {
+          fetched.push(url);
+          return page();
+        },
+        fetchJson: async (url) => {
+          jsonFetched.push(url);
+          return jsonResult();
+        },
+        now: () => nowMs,
+      });
+      page = async () => ({ url: URL1, html: SHELL });
+    });
+    afterEach(() => {
+      delete process.env.LLM_GLOBAL_DAILY_LIMIT;
+    });
+
+    it('Gatsby shell: page-data.json goes to the LLM -> 200 ai draft with sourceUrl', async () => {
+      const res = await call({ url: `${URL1}?gclid=abc` });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(jsonFetched).toEqual([DATA_URL]);
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]!.text).toContain('Preheat the oven to 180°C.');
+      expect(parsed[0]!.sourceUrl).toBe(URL1);
+    });
+
+    it('counts against the app-wide LLM cap (cap 0 -> needs_text, LLM not called)', async () => {
+      process.env.LLM_GLOBAL_DAILY_LIMIT = '0';
+      const res = await call({ url: URL1 });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('no LLM configured -> needs_text', async () => {
+      setLlmParser(undefined);
+      const res = await call({ url: URL1 });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+    });
+
+    it('LLM returns nothing -> needs_text', async () => {
+      result = async () => undefined;
+      const res = await call({ url: URL1 });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(1);
+    });
+
+    it('page-data 404 -> needs_text', async () => {
+      jsonResult = async () => {
+        throw new ImportError('bad_status', 'Upstream returned 404');
+      };
+      const res = await call({ url: URL1 });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('blocked address from the guard -> needs_text, no LLM', async () => {
+      jsonResult = async () => {
+        throw new ImportError('blocked_address', 'blocked');
+      };
+      const res = await call({ url: URL1 });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('cross-origin result and oversized JSON are rejected -> needs_text', async () => {
+      jsonResult = async () => ({ url: 'https://evil.example/page-data.json', text: PAGE_DATA });
+      expect((await call({ url: URL1 })).json).toEqual({ error: 'needs_text' });
+      jsonResult = async () => ({ url: DATA_URL, text: JSON.stringify({ title: 'x'.repeat(1_100_000) }) });
+      expect((await call({ url: URL1 })).json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('nothing is fetched for pages that are not Gatsby/Next', async () => {
+      page = async () => ({ url: 'https://example.com/r', html: `<html><body><p>${'Gently simmer the sauce for a good while. '.repeat(8)}</p></body></html>` });
+      const res = await call({ url: 'https://example.com/r' });
+      expect(res.status).toBe(200);
+      expect(jsonFetched).toHaveLength(0);
+    });
+
+    it('Next.js: embedded JSON goes to the LLM, no extra fetch', async () => {
+      page = async () => ({ url: 'https://shop.example/r/soup', html: nextPage({ props: { pageProps: { recipe: { title: 'Soup', ingredients: ['1 onion', '2 cups stock'], method: ['Chop.', 'Boil.'] } } } }) });
+      const res = await call({ url: 'https://shop.example/r/soup' });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(jsonFetched).toHaveLength(0);
+      expect(parsed[0]!.text).toContain('Boil.');
+    });
+
+    it('schema.org Recipe inside the JSON -> structured draft, LLM not called', async () => {
+      const recipe = { '@type': 'Recipe', name: 'Pancakes', recipeYield: '4', recipeIngredient: ['1 cup flour', '2 eggs'], recipeInstructions: ['Mix.', 'Cook.'] };
+      page = async () => ({ url: 'https://shop.example/r/p', html: nextPage({ props: { recipe } }) });
+      const res = await call({ url: 'https://shop.example/r/p' });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('structured');
+      expect(res.json.draft.recipe.title).toBe('Pancakes');
+      expect(parsed).toHaveLength(0);
+    });
+    describe('trigger and single LLM attempt', () => {
+      const PROSE = 'Gently simmer the sauce for a good while. '.repeat(8);
+      const llmBumps = () => (db.incrementCounter as unknown as ReturnType<typeof vi.fn>).mock.calls.filter((c: unknown[]) => String(c[1]).startsWith('RATE#llm#') && c[0] !== 'GLOBAL');
+
+      it('SSR Next page with real text keeps the page-text path (app data is not substituted)', async () => {
+        const html = `<html><body><p>${PROSE}</p><div id="__next"></div><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { recipe: { title: 'Reduced', method: ['Reduced step.'] } } })}</script></body></html>`;
+        page = async () => ({ url: 'https://shop.example/r/ssr', html });
+        const res = await call({ url: 'https://shop.example/r/ssr' });
+        expect(res.status).toBe(200);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0]!.text).toContain('Gently simmer');
+        expect(parsed[0]!.text).not.toContain('Reduced step.');
+      });
+
+      it('at most one LLM attempt per request: a failed app-data attempt does not trigger a second', async () => {
+        result = async () => undefined;
+        vi.spyOn(db, 'incrementCounter');
+        const res = await call({ url: URL1 });
+        expect(res.status).toBe(422);
+        expect(res.json).toEqual({ error: 'needs_text' });
+        expect(parsed).toHaveLength(1);
+        expect(llmBumps()).toHaveLength(1);
+      });
+
+      it('SSR page with app data and a failing LLM calls the parser once, bumps quota once', async () => {
+        result = async () => undefined;
+        vi.spyOn(db, 'incrementCounter');
+        const html = `<html><body><p>${PROSE}</p><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { recipe: { title: 'Soup', method: ['Boil.'] } } })}</script></body></html>`;
+        page = async () => ({ url: 'https://shop.example/r/ssr', html });
+        const res = await call({ url: 'https://shop.example/r/ssr' });
+        expect(res.status).toBe(200);
+        expect(parsed).toHaveLength(1);
+        expect(llmBumps()).toHaveLength(1);
+      });
+
+      it('structured app-data draft carries the stripped sourceUrl', async () => {
+        const recipe = { '@type': 'Recipe', name: 'Pancakes', recipeIngredient: ['1 cup flour', '2 eggs'], recipeInstructions: ['Mix.', 'Cook.'] };
+        page = async () => ({ url: 'https://shop.example/r/p?utm_source=x&gclid=1&id=3', html: nextPage({ props: { recipe } }) });
+        const res = await call({ url: 'https://shop.example/r/p?utm_source=x&gclid=1&id=3' });
+        expect(res.json.draft.confidence).toBe('structured');
+        expect(res.json.draft.recipe.sourceUrl).toBe('https://shop.example/r/p?id=3');
+      });
+    });
+  });
+
+  describe('tracking params in sourceUrl', () => {
+    it('stripped from the stored sourceUrl, but the original URL is fetched', async () => {
+      const raw = 'https://example.com/r?id=7&utm_source=x&gclid=abc&fbclid=z';
+      page = async () => ({ url: raw, html: PLAIN_HTML });
+      const res = await call({ url: raw });
+      expect(fetched).toEqual([raw]);
+      expect(res.json.draft.recipe.sourceUrl).toBe('https://example.com/r?id=7');
+    });
+
+    it('also stripped on structured drafts', async () => {
+      const raw = 'https://example.com/r?gad_source=1&pp=0';
+      page = async () => ({ url: raw, html: LD_HTML });
+      const res = await call({ url: raw });
+      expect(res.json.draft.recipe.sourceUrl).toBe('https://example.com/r');
+    });
   });
 });

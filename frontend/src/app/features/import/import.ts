@@ -9,6 +9,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiClient } from '../../core/api/api-client';
 import { environment } from '../../../environments/environment';
+import { stripTrackingParams } from './source-url';
 import type { ImportErrorCode, ImportRequest, ImportResult, RecipeDraft, RecipeInput } from '../../core/api/api.types';
 
 const FALLBACK = 'Paste the recipe text instead.';
@@ -25,6 +26,9 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorCode, string> = {
   too_many_redirects: 'That link redirects too many times.',
   needs_text: "Instagram wouldn't let us read this post. Paste the caption (and the recipe comment if it's in the comments).",
 };
+/** needs_text for a non-Instagram page (client-rendered recipe the server could not read). */
+export const NEEDS_TEXT_GENERIC_MESSAGE =
+  "That site builds its recipes with JavaScript, so we can't read it. Copy the recipe text from the page and paste it here.";
 export const RATE_LIMIT_MESSAGE = "You've imported a lot — try again in a while.";
 export const GENERIC_ERROR_MESSAGE = "Couldn't import that recipe.";
 
@@ -127,7 +131,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
 
     @if (!draft()) {
       <mat-form-field class="box" appearance="outline">
-        <mat-label>{{ needsText() ? 'Paste the caption' : 'Paste a link or recipe text' }}</mat-label>
+        <mat-label>{{ needsText() ? (needsTextGeneric() ? 'Paste the recipe text' : 'Paste the caption') :'Paste a link or recipe text' }}</mat-label>
         <textarea #box matInput rows="4" [value]="value()" (input)="onInput($event)"></textarea>
       </mat-form-field>
 
@@ -224,7 +228,9 @@ export class Import implements OnInit {
   protected readonly info = signal<string | null>(null);
   /** True after a needs_text response: the box now expects the pasted caption. */
   protected readonly needsText = signal(false);
-  /** True when the import came from an Instagram URL or a needs_text flow: offer the comment appender. */
+  /** True when the needs_text came from a non-Instagram URL (generic message and label, no comment appender). */
+  protected readonly needsTextGeneric = signal(false);
+  /** True when the import came from an Instagram URL or an Instagram needs_text flow: offer the comment appender. */
   protected readonly igSource = signal(false);
   protected readonly comment = signal('');
 
@@ -261,16 +267,17 @@ export class Import implements OnInit {
     const v = this.value().trim();
     if (!v || this.loading()) return;
     // After needs_text the box holds a caption, sent as text even if it starts with https://. The exception is
-    // a single non-Instagram https URL: the user gave up on the caption and pasted another link, so import it normally.
-    if (this.needsText() && /^https:\/\/\S+$/i.test(v) && !isInstagramUrl(v)) {
+    // a single https URL: the user gave up on the caption and pasted another link, so import it normally. In Instagram
+    // caption mode an Instagram URL stays text (probably part of the caption); in generic mode any link resets.
+    if (this.needsText() && /^https:\/\/\S+$/i.test(v) && (this.needsTextGeneric() || !isInstagramUrl(v))) {
       this.needsText.set(false);
       this.pendingUrl = undefined;
     }
     let request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
     if (request.url && isInstagramUrl(request.url)) request = { url: canonicalInstagramUrl(request.url) };
-    this.sourceUrl = request.url ?? this.pendingUrl;
+    this.sourceUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
     this.caption = request.text;
-    this.igSource.set(isInstagramUrl(request.url) || this.needsText());
+    this.igSource.set(isInstagramUrl(request.url) || (this.needsText() && !this.needsTextGeneric()));
     this.run(request, 'fresh');
   }
 
@@ -286,10 +293,12 @@ export class Import implements OnInit {
       error: (err: unknown) => {
         this.loading.set(false);
         if (mode === 'fresh' && this.isNeedsText(err)) {
-          this.pendingUrl = request.url ?? this.pendingUrl;
+          this.pendingUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
+          const generic = !!this.pendingUrl && !isInstagramUrl(this.pendingUrl);
           this.needsText.set(true);
+          this.needsTextGeneric.set(generic);
           this.value.set('');
-          this.info.set(IMPORT_ERROR_MESSAGES.needs_text);
+          this.info.set(generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
         } else {
           this.error.set(this.messageFor(err));
         }

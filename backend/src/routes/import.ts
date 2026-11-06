@@ -10,6 +10,8 @@
  * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d),
  * plus an app-wide cap per UTC day (pk=GLOBAL, same sk; LLM_GLOBAL_DAILY_LIMIT, default 300, read per request)
  * so many accounts cannot multiply the spend. The global counter is only bumped once the owner is under their cap.
+ * JS-rendered shells (Gatsby page-data.json, Next.js __NEXT_DATA__; only when the page has almost no text and nothing parsed): the embedded app data
+ * is reduced to text for the LLM (same caps/validation), or used directly when it holds a schema.org Recipe; nothing usable -> needs_text.
  * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
  * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
@@ -20,10 +22,12 @@ import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
 import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
 import { extractStructured } from '../import/extract-structured.js';
+import { extractAppData, MAX_APP_DATA_BYTES } from '../import/extract-app-data.js';
 import { ImportError } from '../import/import-error.js';
+import { stripTrackingParams } from '../import/source-url.js';
 import { getLlmParser } from '../import/llm-parse.js';
 import type { RecipeDraft } from '@nabbit/recipe-core';
-import { safeFetch as realSafeFetch, safeFetchImage, type FetchedImage } from '../import/safe-fetch.js';
+import { safeFetch as realSafeFetch, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
@@ -31,14 +35,23 @@ export const IMPORT_LIMIT_PER_HOUR = 30;
 export const LLM_LIMIT_PER_DAY = 30;
 export const LLM_GLOBAL_LIMIT_PER_DAY_DEFAULT = 300;
 export const MAX_IMPORT_TEXT = 50_000;
+/** A fetched page with no structured data, fewer visible characters than this and no parsed ingredients or steps is a JS shell. */
+export const MIN_PAGE_TEXT_CHARS = 200;
 const HOUR_MS = 3_600_000;
 
 export interface ImportDeps {
   safeFetch: (url: string) => Promise<{ url: string; html: string }>;
   fetchImage: (url: string) => Promise<FetchedImage>;
+  /** Same-origin embedded-app-data fetch (Gatsby page-data.json); SSRF-guarded and size-capped like safeFetch. */
+  fetchJson: (url: string) => Promise<{ url: string; text: string }>;
   now: () => number;
 }
-const defaults: ImportDeps = { safeFetch: (u) => realSafeFetch(u), fetchImage: (u) => safeFetchImage(u), now: () => Date.now() };
+const defaults: ImportDeps = {
+  safeFetch: (u) => realSafeFetch(u),
+  fetchImage: (u) => safeFetchImage(u),
+  fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES, { allowedOrigin: new URL(u).origin }),
+  now: () => Date.now(),
+};
 let deps: ImportDeps = defaults;
 
 /** Test hook: inject the fetcher / clock (pass undefined to reset). */
@@ -146,7 +159,8 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
 
   try {
     const page = await deps.safeFetch(url);
-    const structured = extractStructured(page.html, page.url);
+    const sourceUrl = stripTrackingParams(page.url);
+    const structured = extractStructured(page.html, sourceUrl);
     const candidates = extractImageCandidates(page.html, page.url, structured?.imageUrl);
     const images = candidates.length ? { imageUrl: candidates[0], candidates } : {};
     if (structured) {
@@ -155,8 +169,24 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
       return { status: 200, body: { draft, ...images } };
     }
     const text = htmlToText(page.html);
-    const heuristic = extractFromText(text, { sourceUrl: page.url });
-    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, page.url), ...images } };
+    const heuristic = extractFromText(text, { sourceUrl });
+    // Client-rendered shell (e.g. Gatsby, CSR Next): essentially no text and nothing parsed. Try the page's embedded app data
+    // (the only LLM attempt this request makes); if that yields nothing, ask the user to paste. Pages with real text never use it.
+    if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && heuristic.recipe.steps.length === 0) {
+      const app = await extractAppData(page.html, page.url, deps.fetchJson, sourceUrl).catch(() => undefined);
+      if (app?.structured) {
+        const draft = { ...app.structured };
+        const appImages = extractImageCandidates(page.html, page.url, draft.imageUrl);
+        delete draft.imageUrl;
+        return { status: 200, body: { draft, ...(appImages.length ? { imageUrl: appImages[0], candidates: appImages } : {}) } };
+      }
+      if (app?.text) {
+        const ai = await maybeLlm(ownerId, app.text, extractFromText('', { sourceUrl }), sourceUrl);
+        if (ai.confidence === 'ai') return { status: 200, body: { draft: ai, ...images } };
+      }
+      return { status: 422, body: { error: 'needs_text' } };
+    }
+    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, sourceUrl), ...images } };
   } catch (err) {
     if (err instanceof ImportError) return { status: 422, body: { error: err.code } };
     throw err;

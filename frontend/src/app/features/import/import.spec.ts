@@ -6,7 +6,7 @@ import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -310,6 +310,60 @@ describe('Import', () => {
       }
     });
 
+    describe('needs_text for a non-Instagram page', () => {
+      const SITE = 'https://example.com/js-recipe';
+
+      it('shows the generic JavaScript message and a "Paste the recipe text" label', async () => {
+        await setup({}, needsText);
+        type(SITE);
+        await tapImport();
+        expect(q('[role="alert"]')).toBeNull();
+        expect(q('.info')?.textContent).toContain(NEEDS_TEXT_GENERIC_MESSAGE);
+        expect(q('.info')?.textContent).not.toContain('Instagram');
+        expect(q('mat-label')?.textContent).toContain('Paste the recipe text');
+      });
+
+      it('strips tracking params from the remembered URL used as sourceUrl', async () => {
+        await setup({}, onlyOnce(needsText, () => of(result())));
+        type(`${SITE}?id=2&utm_source=x&gclid=abc`);
+        await tapImport();
+        type('Pancakes\n2 eggs');
+        await tapImport();
+        jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+        q('.save')?.click();
+        expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: `${SITE}?id=2` }));
+      });
+
+      it('a lone Instagram URL pasted in generic mode imports as a URL', async () => {
+        await setup({}, onlyOnce(needsText, () => of(result())));
+        type(SITE);
+        await tapImport();
+        type(IG);
+        await tapImport();
+        expect(importRecipe).toHaveBeenLastCalledWith({ url: IG });
+      });
+
+      it('Instagram URLs keep the Instagram message', async () => {
+        await setup({}, needsText);
+        type(IG);
+        await tapImport();
+        expect(q('.info')?.textContent).toContain(IMPORT_ERROR_MESSAGES.needs_text);
+      });
+
+      it('pasted text re-imports as {text}, keeps the URL as sourceUrl and does not offer the comment appender', async () => {
+        await setup({}, onlyOnce(needsText, () => of(result())));
+        type(SITE);
+        await tapImport();
+        type('Pancakes\n2 eggs');
+        await tapImport();
+        expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+        expect(q('.comment-appender')).toBeNull();
+        jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+        q('.save')?.click();
+        expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: SITE }));
+      });
+    });
+
     it('pasting the caption sends {text} and sets sourceUrl to the remembered URL', async () => {
       await setup({}, onlyOnce(needsText, () => of(result())));
       type(IG);
@@ -557,6 +611,12 @@ describe('IMPORT_ERROR_MESSAGES', () => {
 
   it.each(codes)('has a message for %s', (code) => {
     expect(IMPORT_ERROR_MESSAGES[code]).toBeTruthy();
+  });
+
+  it('asks the user to paste the recipe text for non-Instagram needs_text', () => {
+    expect(NEEDS_TEXT_GENERIC_MESSAGE).toBe(
+      "That site builds its recipes with JavaScript, so we can't read it. Copy the recipe text from the page and paste it here.",
+    );
   });
 
   it('asks the user to paste the caption for needs_text', () => {
