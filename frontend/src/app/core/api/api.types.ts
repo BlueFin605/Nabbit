@@ -36,6 +36,8 @@ export type ImportRequest = { url: string; text?: never } | { text: string; url?
 export interface ImportResult {
   draft: RecipeDraft;
   imageUrl?: string;
+  /** Ranked photo candidates (best first). */
+  candidates?: string[];
 }
 
 /** Error codes the importer returns with a 422. */
@@ -46,6 +48,7 @@ export type ImportErrorCode =
   | 'timeout'
   | 'bad_status'
   | 'not_html'
+  | 'not_image'
   | 'too_many_redirects';
 
 export interface ListSummary {

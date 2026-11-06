@@ -35,7 +35,7 @@
         "body": "JsonSchema",
         "httpCode": 200,
         "jsonSchema": {
-            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"draft\"\n  ],\n  \"properties\": {\n    \"draft\": {\n      \"type\": \"object\",\n      \"required\": [\n        \"recipe\"\n      ],\n      \"properties\": {\n        \"confidence\": {\n          \"type\": \"string\"\n        },\n        \"recipe\": {\n          \"type\": \"object\",\n          \"required\": [\n            \"title\",\n            \"servings\",\n            \"ingredients\",\n            \"steps\",\n            \"tags\"\n          ],\n          \"properties\": {\n            \"title\": {\n              \"const\": \"Pancakes\"\n            },\n            \"ingredients\": {\n              \"type\": \"array\",\n              \"minItems\": 3,\n              \"maxItems\": 3\n            },\n            \"steps\": {\n              \"type\": \"array\",\n              \"minItems\": 2,\n              \"maxItems\": 2\n            }\n          }\n        }\n      }\n    }\n  }\n}"
+            "schema": "{\"type\":\"object\",\"required\":[\"draft\"],\"not\":{\"required\":[\"candidates\"]},\"properties\":{\"draft\":{\"type\":\"object\",\"required\":[\"recipe\"],\"properties\":{\"confidence\":{\"type\":\"string\"},\"recipe\":{\"type\":\"object\",\"required\":[\"title\",\"servings\",\"ingredients\",\"steps\",\"tags\"],\"properties\":{\"title\":{\"const\":\"Pancakes\"},\"ingredients\":{\"type\":\"array\",\"minItems\":3,\"maxItems\":3},\"steps\":{\"type\":\"array\",\"minItems\":2,\"maxItems\":2}}}}}}}"
         }
     }
 }

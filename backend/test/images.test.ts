@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
 import { registerRecipeRoutes } from '../src/routes/recipes.js';
-import { registerImageRoutes, setImageSigner, type SignRequest } from '../src/routes/images.js';
+import { registerImageRoutes, setImageSigner, setImagePutter, putRecipeImage, imageKeyFor, type SignRequest } from '../src/routes/images.js';
 import { setDb } from '../src/db.js';
 import { createMemoryDb } from '../src/db-memory.js';
 
@@ -84,5 +84,30 @@ describe('recipe save with imageKey', () => {
   });
   it('rejects a prefix-lookalike owner', async () => {
     expect((await call('POST', '/recipes', 'u1', recipe('u10/abc.png'))).status).toBe(400);
+  });
+});
+
+describe('putRecipeImage', () => {
+  it('stores bytes under {ownerId}/{uuid}.{ext} via the putter and returns the key', async () => {
+    const puts: { key: string; contentType: string; bytes: Uint8Array }[] = [];
+    setImagePutter(async (r) => {
+      puts.push(r);
+    });
+    try {
+      const bytes = new Uint8Array([1, 2, 3]);
+      const key = await putRecipeImage('owner-1', 'image/webp', bytes);
+      expect(key).toMatch(/^owner-1\/[0-9a-f-]{36}\.webp$/);
+      expect(puts).toEqual([{ key, contentType: 'image/webp', bytes }]);
+      // the key passes the recipes ownership validation
+      const r = await call('POST', '/recipes', 'owner-1', { title: 'T', servings: 1, ingredients: [], steps: [], tags: [], imageKey: key });
+      expect(r.status).toBe(201);
+    } finally {
+      setImagePutter(undefined);
+    }
+  });
+
+  it('imageKeyFor maps content types to extensions', () => {
+    expect(imageKeyFor('o', 'image/jpeg')).toMatch(/^o\/[0-9a-f-]{36}\.jpg$/);
+    expect(imageKeyFor('o', 'image/png')).toMatch(/\.png$/);
   });
 });

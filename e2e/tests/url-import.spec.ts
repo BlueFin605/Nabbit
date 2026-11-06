@@ -10,7 +10,7 @@ test.describe('journey 6: URL import', () => {
     await page.getByRole('button', { name: 'Import', exact: true }).click();
 
     await expect(page.locator('input.title')).toHaveValue('Lemon Pasta');
-    await expect(page.getByRole('note')).toHaveCount(0);
+    await expect(page.getByRole('note').filter({ hasText: 'we guessed at the layout' })).toHaveCount(0);
     await expect(page.locator('.ingredient .preview summary').nth(1)).toHaveText('240 ml cream');
     await page.locator('button.save').click();
 
@@ -26,5 +26,40 @@ test.describe('journey 6: URL import', () => {
     await page.getByRole('button', { name: 'Import', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText("We can't open that address.");
     await expect(page.locator('input.title')).toHaveCount(0);
+  });
+});
+
+test.describe('journey 7: photo import', () => {
+  test('finds the page photo, offers it, and saves it with the recipe', async ({ page, api }) => {
+    await page.goto('/import');
+    await page.getByLabel('Paste a link or recipe text').fill('https://nabbit-fixtures.test/pasta.html');
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+
+    await expect(page.getByText('Photo found, will be saved')).toBeVisible();
+    await page.getByRole('button', { name: 'Show photo options' }).click();
+    await expect(page.locator('button.candidate').first()).toBeVisible();
+    expect(await page.locator('button.candidate').count()).toBeGreaterThanOrEqual(1);
+    await page.locator('button.save').click();
+
+    await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
+    const [saved] = await api.recipes();
+    expect(saved.imageKey).toMatch(/^local-dev-user-id\//);
+    const photo = page.locator('img.photo');
+    await expect(photo).toBeVisible();
+    await expect.poll(() => photo.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  });
+
+  test('a page whose photo cannot be fetched saves without one and says so', async ({ page, api }) => {
+    await page.goto('/import');
+    await page.getByLabel('Paste a link or recipe text').fill('https://nabbit-fixtures.test/nophoto.html');
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    await expect(page.locator('input.title')).toHaveValue('Broken Photo Pasta');
+    await page.locator('button.save').click();
+
+    await expect(page.getByText('Saved without a photo')).toBeVisible();
+    await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
+    const [saved] = await api.recipes();
+    expect(saved.imageKey ?? '').toBe('');
+    await expect(page.locator('img.photo')).toHaveCount(0);
   });
 });

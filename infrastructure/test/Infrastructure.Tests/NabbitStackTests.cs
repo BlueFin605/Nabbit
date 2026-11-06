@@ -163,6 +163,33 @@ namespace Infrastructure.Tests
             });
         }
 
+[Fact]
+        public void ImportRole_CanOnlyPutObjectsInImageBucket_AndHasImageBucketEnv()
+        {
+            var t = Synth();
+            var s3Actions = AllowStatementsFor(t, "ImportFunctionServiceRole")
+                .Where(st => Actions(st).Any(a => a.StartsWith("s3:")))
+                .SelectMany(Actions).ToList();
+            Assert.Contains("s3:PutObject", s3Actions);
+            Assert.All(s3Actions, a => Assert.True(a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
+            // No other new permissions: table is still UpdateItem only, and nothing but dynamodb/s3/logs-style statements exist.
+            var allActions = AllowStatementsFor(t, "ImportFunctionServiceRole").SelectMany(Actions).ToList();
+            Assert.All(allActions, a => Assert.True(a == "dynamodb:UpdateItem" || a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
+            var import = Resources(t, "AWS::Lambda::Function").Single(f =>
+                f.Value.GetProperty("Properties").TryGetProperty("FunctionName", out var n) && n.GetString() == "nabbit-import-production");
+            Assert.True(import.Value.GetProperty("Properties").GetProperty("Environment").GetProperty("Variables").TryGetProperty("IMAGE_BUCKET", out _));
+        }
+
+        [Fact]
+        public void ImageImportRoute_GoesToImportLambda_WithJwt()
+        {
+            Synth().HasResourceProperties("AWS::ApiGatewayV2::Route", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "RouteKey", "POST /recipes/images/import" },
+                { "AuthorizationType", "JWT" },
+            }));
+        }
+
         [Fact]
         public void Cors_AllowsOnlyAppOriginWithCredentials()
         {

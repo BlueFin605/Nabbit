@@ -1,0 +1,110 @@
+{
+    "id": "5edaefd8-5490-42ef-919d-c8eba2660615",
+    "name": "05 import image invalid body",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/images/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "e32829e1-a5eb-45dd-bd95-0c3ce5de20e1",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Inherit",
+                "headers": [],
+                "body": "None",
+                "httpCode": 200
+            }
+        },
+        {
+            "id": "a2cd1217-8d9a-4470-8e69-b8af9ff21f01",
+            "name": "url not https-valid shape",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Inherit",
+                "headers": [],
+                "body": "None",
+                "httpCode": 200
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"url\":\"http://x\"}"
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\"type\":\"object\",\"required\":[\"error\"],\"properties\":{\"error\":{\"type\":\"string\",\"minLength\":1}}}"
+        }
+    }
+}

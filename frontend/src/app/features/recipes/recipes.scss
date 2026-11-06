@@ -2,9 +2,16 @@
   display: block;
 }
 
-.search {
-  width: 100%;
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
+}
+
+.search {
+  flex: 1;
+  min-width: 0;
 }
 
 .tags {
@@ -26,6 +33,22 @@
 }
 @media (min-width: 1200px) {
   .grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+.card-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+
+  > .card { flex: 1; }
+}
+
+.card-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--mat-sys-surface, #fff);
+  opacity: 0.9;
 }
 
 .card {
@@ -91,6 +114,78 @@
   .photo,
   .bar {
     animation: pulse 1.2s ease-in-out infinite;
+  }
+}
+
+// ---- small cards ----
+.grid.view-small {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+
+  .photo { aspect-ratio: 1 / 1; }
+  .placeholder { font-size: 2rem; }
+  .body {
+    padding: 8px 10px 10px;
+
+    h2 { font-size: 0.9rem; margin: 0; }
+  }
+  .card-tags { display: none; }
+  .card-delete { top: 0; right: 0; }
+}
+@media (min-width: 600px) {
+  .grid.view-small { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 900px) {
+  .grid.view-small { grid-template-columns: repeat(4, 1fr); }
+}
+@media (min-width: 1200px) {
+  .grid.view-small { grid-template-columns: repeat(6, 1fr); }
+}
+
+// ---- list rows ----
+.grid.view-list {
+  grid-template-columns: 1fr;
+  gap: 0;
+
+  .card-wrap {
+    flex-direction: row;
+    align-items: center;
+    border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
+  }
+  .card {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    border-radius: 0;
+    background: transparent;
+    min-width: 0;
+    padding: 8px 0;
+  }
+  .photo {
+    flex: none;
+    width: 72px;
+    height: 72px;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+  }
+  .placeholder { font-size: 1.75rem; }
+  .body {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+
+    h2 { font-size: 1rem; margin: 0 0 4px; }
+  }
+  .card-tags {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .card-delete {
+    position: static;
+    flex: none;
+    width: 48px;
+    height: 48px;
+    background: transparent;
   }
 }
 

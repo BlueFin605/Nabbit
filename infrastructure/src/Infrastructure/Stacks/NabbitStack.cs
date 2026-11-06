@@ -171,6 +171,7 @@ namespace Infrastructure.Stacks
                 Environment = new System.Collections.Generic.Dictionary<string, string>
                 {
                     { "TABLE_NAME", DataTable.TableName },
+                    { "IMAGE_BUCKET", ImageBucket.BucketName },
                     { "IMPORT_CONTACT_URL", $"https://{config.Domain}" },
                 },
             });
@@ -183,6 +184,8 @@ namespace Infrastructure.Stacks
             }));
             // Presigned POST uploads only need s3:PutObject; the API never reads or deletes image objects itself.
             ImageBucket.GrantPut(ApiFunction);
+            // The import Lambda stores images fetched for POST /recipes/images/import: PutObject only, no read/delete/list.
+            ImageBucket.GrantPut(ImportFunction);
 
             var authorizer = new HttpUserPoolAuthorizer("JwtAuthorizer", UserPool, new HttpUserPoolAuthorizerProps
             {
@@ -236,6 +239,13 @@ namespace Infrastructure.Stacks
                 Path = "/recipes/import",
                 Methods = new[] { Apigw.HttpMethod.POST },
                 Integration = new HttpLambdaIntegration("ImportIntegration", ImportFunction),
+                Authorizer = authorizer,
+            });
+            Api.AddRoutes(new Apigw.AddRoutesOptions
+            {
+                Path = "/recipes/images/import",
+                Methods = new[] { Apigw.HttpMethod.POST },
+                Integration = new HttpLambdaIntegration("ImageImportIntegration", ImportFunction),
                 Authorizer = authorizer,
             });
 

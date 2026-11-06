@@ -11,14 +11,15 @@
  * The S3 call is behind `setImageSigner` so unit tests never touch AWS.
  */
 import { randomUUID } from 'node:crypto';
-import { S3Client } from '@aws-sdk/client-s3';
+import { EXT, getS3 } from '../image-store.js';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+import { MAX_IMAGE_BYTES } from '../image-limits.js';
+export { MAX_IMAGE_BYTES };
+// Re-exported for existing callers; the import Lambda imports ../image-store.js directly (no route side effect).
+export { imageKeyFor, putRecipeImage, setImagePutter, type ImagePutter } from '../image-store.js';
 export const UPLOAD_EXPIRES_IN = 300;
-
-const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
 export interface SignRequest {
   key: string;
@@ -32,12 +33,10 @@ export interface SignedPost {
 }
 export type ImageSigner = (req: SignRequest) => Promise<SignedPost>;
 
-let s3: S3Client | undefined;
 const s3Signer: ImageSigner = async (req) => {
   const bucket = process.env.IMAGE_BUCKET;
   if (!bucket) throw new Error('IMAGE_BUCKET is not set');
-  s3 ??= new S3Client({});
-  return createPresignedPost(s3, {
+  return createPresignedPost(getS3(), {
     Bucket: bucket,
     Key: req.key,
     Conditions: [['content-length-range', 0, req.maxBytes], ['eq', '$Content-Type', req.contentType]],

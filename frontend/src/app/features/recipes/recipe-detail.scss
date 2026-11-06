@@ -38,6 +38,20 @@
   line-height: 1.6;
 }
 
+.ingredients li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.add-one {
+  margin-left: auto;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
 .ingredients li.fixed .qty::after {
   content: ' (not scaled)';
   font-size: 0.8em;

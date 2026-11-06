@@ -24,3 +24,8 @@ details summary { cursor: pointer; min-height: 40px; display: flex; align-items:
   .fields { grid-template-columns: 1fr 1fr 2fr 2fr; }
   .f-name, .f-note { grid-column: auto; }
 }
+
+.candidates { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.candidate { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
+.candidate.chosen { border-color: var(--mat-sys-primary, #6750a4); }
+.candidate img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 6px; }

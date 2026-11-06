@@ -31,6 +31,19 @@ describe('import route isolation', () => {
     expect((await handler(event('/recipes/import'))).statusCode).toBe(400);
   });
 
+  it('api handler 404s POST /recipes/images/import; import handler serves it (400, not 404)', async () => {
+    const api = (await import('../src/handlers/api.js')) as { handler: H };
+    expect((await api.handler(event('/recipes/images/import'))).statusCode).toBe(404);
+    vi.resetModules();
+    const imp = (await import('../src/handlers/import.js')) as { handler: H };
+    expect((await imp.handler(event('/recipes/images/import'))).statusCode).toBe(400);
+  });
+
+  it('import handler does not register the presign route POST /recipes/images', async () => {
+    const { handler } = (await import('../src/handlers/import.js')) as { handler: H };
+    expect((await handler(event('/recipes/images'))).statusCode).toBe(404);
+  });
+
   it('router rejects paths with empty segments', async () => {
     const { handler } = (await import('../src/handlers/import.js')) as { handler: H };
     for (const p of ['/recipes//import', '/recipes/import/', '//recipes/import']) {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { request as httpRequest } from 'node:http';
 import { createServer, type AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
-import { safeFetch, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
+import { safeFetch, safeFetchImage, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
 import { ImportError } from '../src/import/import-error.js';
 
 const PUBLIC = '93.184.216.34';
@@ -398,5 +398,52 @@ describe('address ordering and validation', () => {
     const f = fetchWith();
     await safeFetch(`https://[${V6}]/`, { fetchImpl: f as never });
     expect(initOf(f)[1].pinnedAddresses).toEqual([V6]);
+  });
+});
+
+describe('safeFetchImage', () => {
+  const JPEG = [0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0];
+  const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const WEBP = [0x52, 0x49, 0x46, 0x46, 1, 2, 3, 4, 0x57, 0x45, 0x42, 0x50];
+  const img = (bytes: number[] | Uint8Array, type: string, status = 200) =>
+    new Response(new Uint8Array(bytes), { status, headers: { 'content-type': type } });
+  const run = (res: () => Response, opts: Record<string, unknown> = {}) =>
+    safeFetchImage('https://example.com/p', { resolve: resolvePublic, fetchImpl: (async () => res()) as never, ...opts });
+
+  it.each([
+    ['image/jpeg', JPEG],
+    ['image/png', PNG],
+    ['image/webp', WEBP],
+  ] as const)('returns bytes for %s', async (type, bytes) => {
+    const fetchImpl = vi.fn(async () => img(bytes as number[], type));
+    const out = await safeFetchImage('https://example.com/p#x', { resolve: resolvePublic, fetchImpl: fetchImpl as never });
+    expect(out.url).toBe('https://example.com/p');
+    expect(out.contentType).toBe(type);
+    expect(Array.from(out.bytes)).toEqual(bytes);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, Record<string, unknown>];
+    expect((init.headers as Record<string, string>).accept).toBe('image/jpeg,image/png,image/webp');
+  });
+
+  it('declared text/html -> not_image', async () => {
+    expect(await codeOf(run(() => html('x')))).toBe('not_image');
+  });
+  it('declared png but JPEG bytes -> not_image', async () => {
+    expect(await codeOf(run(() => img(JPEG, 'image/png')))).toBe('not_image');
+  });
+  it('image/gif -> not_image', async () => {
+    expect(await codeOf(run(() => img([0x47, 0x49, 0x46], 'image/gif')))).toBe('not_image');
+  });
+  it('over 5 MB -> too_large', async () => {
+    const big = new Uint8Array(5 * 1024 * 1024 + 1);
+    big.set(JPEG);
+    expect(await codeOf(run(() => img(big, 'image/jpeg')))).toBe('too_large');
+  });
+  it('redirect to private IP -> blocked_address', async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(redirect('https://10.0.0.1/x')).mockResolvedValue(img(JPEG, 'image/jpeg'));
+    expect(await codeOf(safeFetchImage('https://example.com/', { resolve: resolvePublic, fetchImpl: fetchImpl as never }))).toBe('blocked_address');
+  });
+  it('times out', async () => {
+    const fetchImpl = vi.fn(() => new Promise<Response>(() => undefined));
+    expect(await codeOf(safeFetchImage('https://example.com/', { resolve: resolvePublic, fetchImpl: fetchImpl as never, timeoutMs: 20 }))).toBe('timeout');
   });
 });

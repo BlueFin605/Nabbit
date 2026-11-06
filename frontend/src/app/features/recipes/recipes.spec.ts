@@ -1,10 +1,11 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { NEVER, of, throwError, type Observable } from 'rxjs';
+import { NEVER, Subject, of, throwError, type Observable } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { RecipeQuery, RecipeSummary } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
-import { Recipes, SEARCH_DEBOUNCE_MS } from './recipes';
+import { RecipeDeleter, type DeleteHooks } from './recipe-deleter';
+import { RECIPE_VIEW_KEY, Recipes, SEARCH_DEBOUNCE_MS } from './recipes';
 
 const mk = (id: string, title: string, tags: string[], imageKey?: string): RecipeSummary => ({
   id,
@@ -89,6 +90,166 @@ describe('Recipes', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(el().querySelectorAll('a.card')).toHaveLength(2);
+  });
+
+  describe('delete', () => {
+    let confirmAndDelete: jest.Mock<void, [string, DeleteHooks, string?]>;
+    const hooksOf = () => confirmAndDelete.mock.calls[0][1];
+    const deleteBtns = () => Array.from(el().querySelectorAll<HTMLElement>('button.card-delete'));
+
+    async function setupDelete() {
+      confirmAndDelete = jest.fn<void, [string, DeleteHooks, string?]>();
+      TestBed.overrideProvider(RecipeDeleter, { useValue: { confirmAndDelete } });
+      await setup();
+    }
+
+    it('renders a labelled delete button per card', async () => {
+      await setupDelete();
+      expect(deleteBtns().map((b) => b.getAttribute('aria-label'))).toEqual([
+        'Delete recipe Pancakes',
+        'Delete recipe Stew',
+      ]);
+    });
+
+    it('does not navigate when delete is clicked', async () => {
+      await setupDelete();
+      const router = TestBed.inject(Router);
+      const nav = jest.spyOn(router, 'navigate').mockResolvedValue(true);
+      const navUrl = jest.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+      deleteBtns()[0].click();
+      expect(confirmAndDelete).toHaveBeenCalledWith('1', expect.any(Object), 'Pancakes');
+      expect(nav).not.toHaveBeenCalled();
+      expect(navUrl).not.toHaveBeenCalled();
+    });
+
+    it('removes the card once deleted', async () => {
+      await setupDelete();
+      deleteBtns()[0].click();
+      hooksOf().onDeleted?.();
+      fixture.detectChanges();
+      expect(el().querySelectorAll('a.card')).toHaveLength(1);
+      expect(el().textContent).not.toContain('Pancakes');
+      expect(listRecipes).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the recipe title to the confirm dialog', async () => {
+      await setupDelete();
+      deleteBtns()[1].click();
+      expect(confirmAndDelete).toHaveBeenCalledWith('2', expect.any(Object), 'Stew');
+    });
+
+    it('a list response already in flight does not re-show a deleted recipe', async () => {
+      await setupDelete();
+      const late = new Subject<RecipeSummary[]>();
+      listRecipes.mockReturnValueOnce(late);
+      (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+      deleteBtns()[0].click();
+      hooksOf().onDeleting?.();
+      hooksOf().onDeleted?.();
+      late.next(ALL);
+      late.complete();
+      fixture.detectChanges();
+      expect(el().textContent).not.toContain('Pancakes');
+      expect(el().querySelectorAll('a.card')).toHaveLength(1);
+    });
+
+    it('re-fetches the list on undo', async () => {
+      await setupDelete();
+      deleteBtns()[0].click();
+      const hooks = hooksOf();
+      hooks.onDeleted?.();
+      fixture.detectChanges();
+      hooks.onRestored?.('1');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(listRecipes).toHaveBeenCalledTimes(2);
+      expect(el().querySelectorAll('a.card')).toHaveLength(2);
+    });
+  });
+
+  describe('view mode', () => {
+    const grid = () => el().querySelector('.grid') as HTMLElement;
+    const toggle = (v: string) => el().querySelector<HTMLElement>(`mat-button-toggle[value="${v}"] button`) as HTMLElement;
+    beforeEach(() => localStorage.clear());
+    afterEach(() => jest.restoreAllMocks());
+
+    it('defaults to large with empty storage', async () => {
+      await setup();
+      expect(grid().classList.contains('view-large')).toBe(true);
+      expect(el().querySelector('mat-button-toggle-group')?.getAttribute('aria-label')).toBe('Recipe view');
+      expect(el().querySelectorAll('mat-button-toggle')).toHaveLength(3);
+    });
+
+    it('restores a stored view', async () => {
+      localStorage.setItem(RECIPE_VIEW_KEY, 'small');
+      await setup();
+      expect(grid().classList.contains('view-small')).toBe(true);
+      expect(grid().classList.contains('view-large')).toBe(false);
+    });
+
+    it('falls back to large for an invalid stored value', async () => {
+      localStorage.setItem(RECIPE_VIEW_KEY, 'huge');
+      await setup();
+      expect(grid().classList.contains('view-large')).toBe(true);
+    });
+
+    it('clicking a toggle sets the class and persists it', async () => {
+      await setup();
+      toggle('list').click();
+      fixture.detectChanges();
+      expect(grid().classList.contains('view-list')).toBe(true);
+      expect(grid().classList.contains('view-large')).toBe(false);
+      expect(localStorage.getItem(RECIPE_VIEW_KEY)).toBe('list');
+    });
+
+    it('survives localStorage that throws', async () => {
+      jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      await setup();
+      expect(grid().classList.contains('view-large')).toBe(true);
+      toggle('small').click();
+      fixture.detectChanges();
+      expect(grid().classList.contains('view-small')).toBe(true);
+    });
+  });
+
+  describe('layouts', () => {
+    beforeEach(() => localStorage.clear());
+    const deleteBtns = () => el().querySelectorAll('button.card-delete');
+
+    for (const v of ['large', 'small', 'list']) {
+      it(`${v}: lazy photo, delete button per card`, async () => {
+        localStorage.setItem(RECIPE_VIEW_KEY, v);
+        await setup();
+        expect(el().querySelector('.grid')?.classList.contains(`view-${v}`)).toBe(true);
+        const img = el().querySelector('a.card img.photo');
+        expect(img?.getAttribute('loading')).toBe('lazy');
+        expect(img?.getAttribute('src')).toBe(imageUrl('o/img1'));
+        expect(deleteBtns()).toHaveLength(2);
+      });
+
+      it(`${v}: skeleton follows the active view`, async () => {
+        localStorage.setItem(RECIPE_VIEW_KEY, v);
+        await setup(() => NEVER);
+        const sk = el().querySelector('.grid[aria-busy="true"]');
+        expect(sk?.classList.contains(`view-${v}`)).toBe(true);
+        expect(sk?.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+      });
+    }
+
+    it('list: renders a thumbnail with title and tags in the row', async () => {
+      localStorage.setItem(RECIPE_VIEW_KEY, 'list');
+      await setup();
+      const card = el().querySelector('a.card') as HTMLElement;
+      expect(card.querySelector('img.photo')).not.toBeNull();
+      expect(card.querySelector('.body h2')?.textContent).toContain('Pancakes');
+      expect(card.querySelectorAll('.card-tags li')).toHaveLength(2);
+      expect(el().querySelectorAll('.placeholder')).toHaveLength(1);
+    });
   });
 
   it('FAB navigates to /import', async () => {
