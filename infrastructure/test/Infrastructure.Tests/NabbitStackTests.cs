@@ -23,8 +23,9 @@ namespace Infrastructure.Tests
 
             var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir };
             var app = new App();
-            var certs = new NabbitCertStack(app, "Certs", new StackProps { Env = Env("us-east-1"), CrossRegionReferences = true }, config);
-            var stack = new NabbitStack(app, "Nabbit", new StackProps { Env = Env(config.Region), CrossRegionReferences = true }, config, certs.GlobalCertificate);
+            var globalCert = Amazon.CDK.AWS.CertificateManager.Certificate.FromCertificateArn(app, "GlobalCert",
+                "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000");
+            var stack = new NabbitStack(app, "Nabbit", new StackProps { Env = Env(config.Region) }, config, globalCert);
             return Template.FromStack(stack);
         }
 
@@ -241,14 +242,29 @@ namespace Infrastructure.Tests
                 { "CallbackURLs", new[] { "https://nabbit.example.com/", "https://nabbit.example.com/auth/callback", "https://nabbit.example.com/callback" } },
                 { "LogoutURLs", new[] { "https://nabbit.example.com/" } },
             }));
-            t.HasResourceProperties("AWS::Cognito::UserPoolDomain", Match.ObjectLike(new Dictionary<string, object> { { "Domain", "auth.nabbit.example.com" } }));
+            t.HasResourceProperties("AWS::Cognito::UserPoolDomain", Match.ObjectLike(new Dictionary<string, object> { { "Domain", "nabbit-auth-production" } }));
         }
 
         [Fact]
-        public void Dns_HasAliasRecordsForSpaApiAndAuth()
+        public void Cognito_HasGoogleIdp_AndClientSupportsIt()
         {
             var t = Synth();
-            t.ResourceCountIs("AWS::Route53::RecordSet", 3);
+            t.HasResourceProperties("AWS::Cognito::UserPoolIdentityProvider", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "ProviderName", "Google" },
+                { "ProviderType", "Google" },
+            }));
+            t.HasResourceProperties("AWS::Cognito::UserPoolClient", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "SupportedIdentityProviders", new[] { "COGNITO", "Google" } },
+            }));
+        }
+
+        [Fact]
+        public void Dns_HasAliasRecordsForSpaAndApi()
+        {
+            var t = Synth();
+            t.ResourceCountIs("AWS::Route53::RecordSet", 2);
             t.HasResourceProperties("AWS::CloudFront::Distribution", Match.ObjectLike(new Dictionary<string, object>
             {
                 { "DistributionConfig", Match.ObjectLike(new Dictionary<string, object>

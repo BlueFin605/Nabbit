@@ -31,7 +31,9 @@ export interface SafeFetchDeps {
 export const MAX_REDIRECTS = 4;
 export const MAX_BYTES = 2 * 1024 * 1024;
 export const DEFAULT_TIMEOUT_MS = 5000;
-export const USER_AGENT = 'Nabbit-RecipeImporter/1.0 (+https://nabbit.example.com; recipe import on behalf of a user)';
+// Contact URL is injected by the stack from config.domain; no domain is baked into the public source.
+const CONTACT_URL = process.env.IMPORT_CONTACT_URL;
+export const USER_AGENT = `Nabbit-RecipeImporter/1.0 (${CONTACT_URL ? `+${CONTACT_URL}; ` : ''}recipe import on behalf of a user)`;
 
 // ---------------------------------------------------------------------------
 // Address classification

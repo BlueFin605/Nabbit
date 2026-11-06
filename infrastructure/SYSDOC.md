@@ -7,7 +7,7 @@ What this is: the AWS CDK (C#, .NET 10) app that deploys Nabbit. Deploys are man
 - `src/Infrastructure/Program.cs` — entry point; reads the `nabbit` section of `config.json` (`-c configFile=...`, default `../config.json`) and creates both stacks.
 - `src/Infrastructure/NabbitConfig.cs` — config model (`prefix`, `region`, `environment`, `domain`, optional `hostedZoneId`, `importReservedConcurrency`, `apiCodePath`, `importCodePath`).
 - `src/Infrastructure/Stacks/NabbitStack.cs` — the single stack: DynamoDB, Cognito, S3 buckets, CloudFront, HTTP API, Lambda, Route53 records, API certificate.
-- `src/Infrastructure/Stacks/NabbitCertStack.cs` — tiny us-east-1 companion holding the one certificate (SPA + `auth.` domains) that CloudFront and the Cognito custom domain require. Cross-region references link it to `NabbitStack`.
+- The us-east-1 certificate (SPA domain) for CloudFront is not a CDK resource: the deploy script (kept outside this repo) finds or requests it in ACM and passes `-c globalCertArn=...`, which `Program.cs` imports.
 - `test/Infrastructure.Tests` — `dotnet test src/Infrastructure.slnx` runs CDK assertions (TTL + PITR, public access blocked, JWT authorizer on every non-OPTIONS route, no route can match OPTIONS, least-privilege IAM for import and API roles, no wildcard bucket policy, CORS (API and image bucket), auth domain, DNS).
 
 ## Key decisions

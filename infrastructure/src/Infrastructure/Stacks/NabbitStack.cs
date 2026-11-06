@@ -72,6 +72,23 @@ namespace Infrastructure.Stacks
                 RemovalPolicy = RemovalPolicy.RETAIN,
             });
 
+            // Google IdP: real credentials live in SSM SecureString (path from config googleOauthSecretName).
+            // CDK creates the IdP with placeholders; deploy-infra.ps1 injects the live values post-deploy
+            // via update-identity-provider, so the secret never enters the template and can rotate freely.
+            var googleIdp = new UserPoolIdentityProviderGoogle(this, "GoogleProvider", new UserPoolIdentityProviderGoogleProps
+            {
+                UserPool = UserPool,
+                ClientId = "PLACEHOLDER_SYNCED_POST_DEPLOY",
+                ClientSecretValue = SecretValue.UnsafePlainText("PLACEHOLDER_SYNCED_POST_DEPLOY"),
+                Scopes = new[] { "openid", "email", "profile" },
+                AttributeMapping = new AttributeMapping
+                {
+                    Email = ProviderAttribute.GOOGLE_EMAIL,
+                    GivenName = ProviderAttribute.GOOGLE_GIVEN_NAME,
+                    FamilyName = ProviderAttribute.GOOGLE_FAMILY_NAME,
+                },
+            });
+
             UserPoolClient = UserPool.AddClient("WebClient", new UserPoolClientOptions
             {
                 UserPoolClientName = config.Name("web"),
@@ -84,8 +101,9 @@ namespace Infrastructure.Stacks
                     CallbackUrls = new[] { $"{origin}/", $"{origin}/auth/callback", $"{origin}/callback" },
                     LogoutUrls = new[] { $"{origin}/" },
                 },
-                SupportedIdentityProviders = new[] { UserPoolClientIdentityProvider.COGNITO },
+                SupportedIdentityProviders = new[] { UserPoolClientIdentityProvider.COGNITO, UserPoolClientIdentityProvider.GOOGLE },
             });
+            UserPoolClient.Node.AddDependency(googleIdp);
 
             // ---- Storage ----
             // Browser uploads directly via presigned POST from the SPA origin; reads go through CloudFront, so POST only.
@@ -148,11 +166,12 @@ namespace Infrastructure.Stacks
                 Code = Code.FromAsset(config.ImportCodePath),
                 MemorySize = 512,
                 Timeout = Duration.Seconds(29),
-                ReservedConcurrentExecutions = config.ImportReservedConcurrency,
+                ReservedConcurrentExecutions = config.ImportReservedConcurrency > 0 ? config.ImportReservedConcurrency : (double?)null,
                 LogGroup = importLogs,
                 Environment = new System.Collections.Generic.Dictionary<string, string>
                 {
                     { "TABLE_NAME", DataTable.TableName },
+                    { "IMPORT_CONTACT_URL", $"https://{config.Domain}" },
                 },
             });
             // The import Lambda only bumps the per-user rate counter, so it gets UpdateItem and nothing else.
@@ -266,30 +285,23 @@ namespace Infrastructure.Stacks
                 },
             });
 
-            // ---- DNS + Cognito Hosted UI custom domain (needs the apex A record to exist first) ----
-            var spaRecord = new ARecord(this, "SpaAlias", new ARecordProps
+            // ---- DNS + Cognito Hosted UI prefix domain ----
+            new ARecord(this, "SpaAlias", new ARecordProps
             {
                 Zone = zone,
                 RecordName = config.Domain + ".",
                 Target = RecordTarget.FromAlias(new CloudFrontTarget(Distribution)),
             });
-            var authDomain = UserPool.AddDomain("AuthDomain", new UserPoolDomainOptions
+            UserPool.AddDomain("AuthDomain", new UserPoolDomainOptions
             {
-                CustomDomain = new CustomDomainOptions { DomainName = config.AuthDomain, Certificate = globalCert },
+                CognitoDomain = new CognitoDomainOptions { DomainPrefix = config.AuthDomainPrefix },
             });
-            authDomain.Node.AddDependency(spaRecord);
 
             new ARecord(this, "ApiAlias", new ARecordProps
             {
                 Zone = zone,
                 RecordName = config.ApiDomain + ".",
                 Target = RecordTarget.FromAlias(new ApiGatewayv2DomainProperties(apiDomain.RegionalDomainName, apiDomain.RegionalHostedZoneId)),
-            });
-            new ARecord(this, "AuthAlias", new ARecordProps
-            {
-                Zone = zone,
-                RecordName = config.AuthDomain + ".",
-                Target = RecordTarget.FromAlias(new UserPoolDomainTarget(authDomain)),
             });
 
             // ---- Outputs ----
@@ -299,6 +311,7 @@ namespace Infrastructure.Stacks
             Out("ImageBucketName", ImageBucket.BucketName);
             Out("SpaBucketName", SpaBucket.BucketName);
             Out("DistributionId", Distribution.DistributionId);
+            Out("AuthDomain", config.AuthDomain);
             Out("ApiUrl", $"https://{config.ApiDomain}");
             Out("ImportReservedConcurrency", config.ImportReservedConcurrency.ToString());
         }

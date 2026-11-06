@@ -15,7 +15,7 @@ namespace Infrastructure
         /// <summary>Optional. When set the zone is imported by id instead of looked up (lets synth run without AWS credentials).</summary>
         public string HostedZoneId { get; set; }
 
-        /// <summary>Reserved concurrency cap for the dedicated import Lambda.</summary>
+        /// <summary>Reserved concurrency cap for the dedicated import Lambda. 0 = no reservation (needed while the account Lambda quota is 50, since AWS requires 50 unreserved).</summary>
         public int ImportReservedConcurrency { get; set; } = 5;
 
         /// <summary>Folder holding the built API router (index.js). Relative to the cdk working directory.</summary>
@@ -25,7 +25,9 @@ namespace Infrastructure
         public string ImportCodePath { get; set; } = "../backend/dist/import";
 
         public string ApiDomain => $"api.{Domain}";
-        public string AuthDomain => $"auth.{Domain}";
+        /// <summary>Cognito allows only 4 custom domains per (non-adjustable) account quota, so the hosted UI uses a Cognito prefix domain.</summary>
+        public string AuthDomainPrefix => Name("auth");
+        public string AuthDomain => $"{AuthDomainPrefix}.auth.{Region}.amazoncognito.com";
         public string Name(string name) => $"{Prefix}-{name}-{Environment}";
 
         /// <summary>Hosted zone is the parent of the app domain (nabbit.example.com -> example.com).</summary>

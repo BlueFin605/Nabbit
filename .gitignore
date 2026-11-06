@@ -41,3 +41,8 @@ cdk.out/
 # Cognito Local runtime state (generated)
 /aspire/cognito-local-data/config.json
 /aspire/cognito-local-data/db/
+
+# Environment-specific / generated (never commit)
+/config.json
+/infrastructure/cdk.context.json
+/frontend/src/environments/environment.production.ts

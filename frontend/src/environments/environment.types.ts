@@ -8,7 +8,7 @@ export interface Environment {
     region: string;
     userPoolId: string;
     clientId: string;
-    /** Hosted UI domain without scheme, e.g. auth.nabbit.example.com. */
+    /** Hosted UI domain without scheme, e.g. nabbit-auth-production.auth.<region>.amazoncognito.com. */
     domain: string;
     redirectUri: string;
   };
