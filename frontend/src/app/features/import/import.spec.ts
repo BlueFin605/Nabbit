@@ -323,6 +323,26 @@ describe('Import', () => {
         expect(q('mat-label')?.textContent).toContain('Paste the recipe text');
       });
 
+      it('strips tracking params from the remembered URL used as sourceUrl', async () => {
+        await setup({}, onlyOnce(needsText, () => of(result())));
+        type(`${SITE}?id=2&utm_source=x&gclid=abc`);
+        await tapImport();
+        type('Pancakes\n2 eggs');
+        await tapImport();
+        jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+        q('.save')?.click();
+        expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: `${SITE}?id=2` }));
+      });
+
+      it('a lone Instagram URL pasted in generic mode imports as a URL', async () => {
+        await setup({}, onlyOnce(needsText, () => of(result())));
+        type(SITE);
+        await tapImport();
+        type(IG);
+        await tapImport();
+        expect(importRecipe).toHaveBeenLastCalledWith({ url: IG });
+      });
+
       it('Instagram URLs keep the Instagram message', async () => {
         await setup({}, needsText);
         type(IG);

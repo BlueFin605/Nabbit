@@ -9,6 +9,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiClient } from '../../core/api/api-client';
 import { environment } from '../../../environments/environment';
+import { stripTrackingParams } from './source-url';
 import type { ImportErrorCode, ImportRequest, ImportResult, RecipeDraft, RecipeInput } from '../../core/api/api.types';
 
 const FALLBACK = 'Paste the recipe text instead.';
@@ -266,14 +267,15 @@ export class Import implements OnInit {
     const v = this.value().trim();
     if (!v || this.loading()) return;
     // After needs_text the box holds a caption, sent as text even if it starts with https://. The exception is
-    // a single non-Instagram https URL: the user gave up on the caption and pasted another link, so import it normally.
-    if (this.needsText() && /^https:\/\/\S+$/i.test(v) && !isInstagramUrl(v)) {
+    // a single https URL: the user gave up on the caption and pasted another link, so import it normally. In Instagram
+    // caption mode an Instagram URL stays text (probably part of the caption); in generic mode any link resets.
+    if (this.needsText() && /^https:\/\/\S+$/i.test(v) && (this.needsTextGeneric() || !isInstagramUrl(v))) {
       this.needsText.set(false);
       this.pendingUrl = undefined;
     }
     let request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
     if (request.url && isInstagramUrl(request.url)) request = { url: canonicalInstagramUrl(request.url) };
-    this.sourceUrl = request.url ?? this.pendingUrl;
+    this.sourceUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
     this.caption = request.text;
     this.igSource.set(isInstagramUrl(request.url) || (this.needsText() && !this.needsTextGeneric()));
     this.run(request, 'fresh');
@@ -291,7 +293,7 @@ export class Import implements OnInit {
       error: (err: unknown) => {
         this.loading.set(false);
         if (mode === 'fresh' && this.isNeedsText(err)) {
-          this.pendingUrl = request.url ?? this.pendingUrl;
+          this.pendingUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
           const generic = !!this.pendingUrl && !isInstagramUrl(this.pendingUrl);
           this.needsText.set(true);
           this.needsTextGeneric.set(generic);
