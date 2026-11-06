@@ -1,0 +1,152 @@
+{
+    "id": "c0e39385-fbb8-4d74-b2b7-e48dfee790e7",
+    "name": "06 import image blocked address",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/images/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"url\":\"https://127.0.0.1/a.png\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [
+        {
+            "id": "cedbecb1-c1cd-4867-875a-9e7b0eca84f2",
+            "name": "primary",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Inherit",
+                "headers": [],
+                "body": "None",
+                "httpCode": 200
+            }
+        },
+        {
+            "id": "9f3e59fc-8b5f-42eb-9d43-4ea097166c68",
+            "name": "localhost",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 422,
+                "jsonSchema": {
+                    "schema": "{\"type\":\"object\",\"required\":[\"error\"],\"properties\":{\"error\":{\"const\":\"blocked_address\"}}}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"url\":\"https://localhost/a.png\"}"
+            }
+        },
+        {
+            "id": "16e5e3bc-d60c-4ee3-8cfc-e2048cbdf66e",
+            "name": "unsupported scheme",
+            "parameters": [],
+            "headers": [],
+            "variables": [],
+            "secrets": [],
+            "authentication": {
+                "authentication": "inherit",
+                "awsSig": {
+                    "signUrl": false,
+                    "accessKey": "",
+                    "secretKey": "",
+                    "sessionToken": "",
+                    "awsRegion": "eu-central-1",
+                    "serviceName": ""
+                },
+                "basicAuth": {
+                    "userName": "",
+                    "password": ""
+                },
+                "bearerToken": {
+                    "token": ""
+                }
+            },
+            "validation": {
+                "type": "Body",
+                "headers": [],
+                "body": "JsonSchema",
+                "httpCode": 400,
+                "jsonSchema": {
+                    "schema": "{\"type\":\"object\",\"required\":[\"error\"],\"properties\":{\"error\":{\"const\":\"url must be an https URL\"}}}"
+                }
+            },
+            "body": {
+                "contentType": "application/json",
+                "body": "{\"url\":\"ftp://example.com/a.png\"}"
+            }
+        }
+    ],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 422,
+        "jsonSchema": {
+            "schema": "{\"type\":\"object\",\"required\":[\"error\"],\"properties\":{\"error\":{\"const\":\"blocked_address\"}}}"
+        }
+    }
+}
