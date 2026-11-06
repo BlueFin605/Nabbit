@@ -15,6 +15,7 @@
 import { ownerPk, rateSk, llmDaySk, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
+import { isInstagramUrl } from '../import/extract-instagram.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
 import { getLlmParser } from '../import/llm-parse.js';
@@ -26,7 +27,6 @@ import { HttpError, route, type RequestCtx } from '../router.js';
 export const IMPORT_LIMIT_PER_HOUR = 30;
 export const LLM_LIMIT_PER_DAY = 30;
 export const MAX_IMPORT_TEXT = 50_000;
-const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com', 'instagr.am']);
 const HOUR_MS = 3_600_000;
 
 export interface ImportDeps {
@@ -40,15 +40,6 @@ let deps: ImportDeps = defaults;
 /** Test hook: inject the fetcher / clock (pass undefined to reset). */
 export function setImportDeps(d: Partial<ImportDeps> | undefined): void {
   deps = { ...defaults, ...d };
-}
-
-function isInstagramUrl(raw: string): boolean {
-  try {
-    const u = new URL(raw);
-    return u.protocol === 'https:' && INSTAGRAM_HOSTS.has(u.hostname.toLowerCase().replace(/\.$/, ''));
-  } catch {
-    return false;
-  }
 }
 
 /** Low-confidence heuristic drafts get one LLM attempt (daily cap per owner); any failure keeps the heuristic draft. */
