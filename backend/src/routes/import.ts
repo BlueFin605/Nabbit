@@ -21,6 +21,7 @@ import { extractImageCandidates } from '../import/extract-images.js';
 import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
+import { stripTrackingParams } from '../import/source-url.js';
 import { getLlmParser } from '../import/llm-parse.js';
 import type { RecipeDraft } from '@nabbit/recipe-core';
 import { safeFetch as realSafeFetch, safeFetchImage, type FetchedImage } from '../import/safe-fetch.js';
@@ -31,6 +32,8 @@ export const IMPORT_LIMIT_PER_HOUR = 30;
 export const LLM_LIMIT_PER_DAY = 30;
 export const LLM_GLOBAL_LIMIT_PER_DAY_DEFAULT = 300;
 export const MAX_IMPORT_TEXT = 50_000;
+/** A fetched page with no structured data, fewer visible characters than this and no parsed ingredients or steps is a JS shell. */
+export const MIN_PAGE_TEXT_CHARS = 200;
 const HOUR_MS = 3_600_000;
 
 export interface ImportDeps {
@@ -146,7 +149,8 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
 
   try {
     const page = await deps.safeFetch(url);
-    const structured = extractStructured(page.html, page.url);
+    const sourceUrl = stripTrackingParams(page.url);
+    const structured = extractStructured(page.html, sourceUrl);
     const candidates = extractImageCandidates(page.html, page.url, structured?.imageUrl);
     const images = candidates.length ? { imageUrl: candidates[0], candidates } : {};
     if (structured) {
@@ -155,8 +159,12 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
       return { status: 200, body: { draft, ...images } };
     }
     const text = htmlToText(page.html);
-    const heuristic = extractFromText(text, { sourceUrl: page.url });
-    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, page.url), ...images } };
+    const heuristic = extractFromText(text, { sourceUrl });
+    // Client-rendered shell (e.g. Gatsby): essentially no text and nothing parsed -> ask the user to paste; never call the LLM.
+    if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && heuristic.recipe.steps.length === 0) {
+      return { status: 422, body: { error: 'needs_text' } };
+    }
+    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, sourceUrl), ...images } };
   } catch (err) {
     if (err instanceof ImportError) return { status: 422, body: { error: err.code } };
     throw err;

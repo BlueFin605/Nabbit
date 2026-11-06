@@ -494,7 +494,7 @@ describe('LLM fallback and Instagram needs_text', () => {
   });
 
   it('page-text fallback passes sourceUrl to the parser', async () => {
-    page = async () => ({ url: 'https://example.com/r', html: '<html><body><p>Just some words</p></body></html>' });
+    page = async () => ({ url: 'https://example.com/r', html: `<html><body><p>${'Just some words about a dish. '.repeat(10)}</p></body></html>` });
     const res = await call({ url: 'https://example.com/r' });
     expect(res.json.draft.confidence).toBe('ai');
     expect(parsed[0].sourceUrl).toBe('https://example.com/r');
@@ -625,5 +625,48 @@ describe('LLM fallback and Instagram needs_text', () => {
   it('401 without a sub is unchanged', async () => {
     const res = await call({ text: LOW }, null as never);
     expect(res.status).toBe(401);
+  });
+
+  describe('JS-shell pages (no server-rendered text)', () => {
+    const SHELL = readFileSync(new URL('./fixtures/gatsby-shell.html', import.meta.url), 'utf8');
+
+    it('Gatsby shell with no structured data -> 422 needs_text, the LLM is not called', async () => {
+      page = async () => ({ url: 'https://recipes.co.nz/recipes/the-best-lasagne/', html: SHELL });
+      const res = await call({ url: 'https://recipes.co.nz/recipes/the-best-lasagne/?gclid=abc' });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('a page with real prose but no recipe structure still goes to the LLM path', async () => {
+      page = async () => ({ url: 'https://example.com/r', html: `<html><body><p>${'Gently simmer the sauce for a good while. '.repeat(8)}</p></body></html>` });
+      const res = await call({ url: 'https://example.com/r' });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(parsed).toHaveLength(1);
+    });
+
+    it('a short page that still yields ingredients is not needs_text', async () => {
+      page = async () => ({ url: 'https://example.com/r', html: PLAIN_HTML });
+      const res = await call({ url: 'https://example.com/r' });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  describe('tracking params in sourceUrl', () => {
+    it('stripped from the stored sourceUrl, but the original URL is fetched', async () => {
+      const raw = 'https://example.com/r?id=7&utm_source=x&gclid=abc&fbclid=z';
+      page = async () => ({ url: raw, html: PLAIN_HTML });
+      const res = await call({ url: raw });
+      expect(fetched).toEqual([raw]);
+      expect(res.json.draft.recipe.sourceUrl).toBe('https://example.com/r?id=7');
+    });
+
+    it('also stripped on structured drafts', async () => {
+      const raw = 'https://example.com/r?gad_source=1&pp=0';
+      page = async () => ({ url: raw, html: LD_HTML });
+      const res = await call({ url: raw });
+      expect(res.json.draft.recipe.sourceUrl).toBe('https://example.com/r');
+    });
   });
 });
