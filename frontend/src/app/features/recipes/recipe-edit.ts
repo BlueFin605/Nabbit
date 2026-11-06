@@ -141,12 +141,18 @@ export class RecipeEdit implements OnInit, HasUnsavedChanges {
   protected confirmDelete(): void {
     const r = this.recipe();
     if (!r) return;
-    this.deleter.confirmAndDelete(r.id, {
-      onDeleted: () => {
-        this.leaving = true;
-        void this.router.navigate(['/recipes']);
+    this.deleter.confirmAndDelete(
+      r.id,
+      {
+        onDeleting: () => this.saving.set(true),
+        onSettled: () => this.saving.set(false),
+        onDeleted: () => {
+          this.leaving = true;
+          void this.router.navigate(['/recipes']);
+        },
+        onError: (message) => this.error.set(message),
       },
-      onError: (message) => this.error.set(message),
-    });
+      r.title,
+    );
   }
 }

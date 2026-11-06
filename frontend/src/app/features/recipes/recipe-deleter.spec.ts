@@ -22,6 +22,25 @@ describe('RecipeDeleter', () => {
     return TestBed.inject(RecipeDeleter);
   }
 
+  it('puts the recipe title in the confirm message when given', () => {
+    const d = setup(true);
+    d.confirmAndDelete('r1', {}, 'Pancakes');
+    const cfg = (TestBed.inject(MatDialog).open as jest.Mock<unknown, [unknown, { data: { message: string } }]>).mock.calls[0][1];
+    expect(cfg.data.message).toContain('"Pancakes"');
+  });
+
+  it('calls onDeleting then onSettled around the delete (success and error)', () => {
+    const d = setup(true);
+    const calls: string[] = [];
+    const hooks = { onDeleting: () => calls.push('deleting'), onSettled: () => calls.push('settled') };
+    d.confirmAndDelete('r1', hooks);
+    expect(calls).toEqual(['deleting', 'settled']);
+    calls.length = 0;
+    api.deleteRecipe.mockReturnValue(throwError(() => new Error('x')));
+    d.confirmAndDelete('r1', hooks);
+    expect(calls).toEqual(['deleting', 'settled']);
+  });
+
   it('does nothing when the dialog is cancelled', () => {
     const d = setup(false);
     const onDeleted = jest.fn();

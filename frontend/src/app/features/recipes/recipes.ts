@@ -158,6 +158,8 @@ export class Recipes implements OnInit {
   protected readonly allTags = computed(() => [...this.seenTags()].sort((a, b) => a.localeCompare(b)));
 
   private readonly search$ = new Subject<string>();
+  /** Ids deleted this session (until Undo), filtered from incoming results so a stale in-flight list can't resurrect them. */
+  private readonly deletedIds = new Set<string>();
   private readonly request$ = new Subject<void>();
 
   constructor() {
@@ -170,7 +172,7 @@ export class Recipes implements OnInit {
       .pipe(
         switchMap(() =>
           this.api.listRecipes({ q: this.q() || undefined, tag: this.tag() ?? undefined }).pipe(
-            map((recipes): Load => ({ status: 'ok', recipes })),
+            map((recipes): Load => ({ status: 'ok', recipes: recipes.filter((r) => !this.deletedIds.has(r.id)) })),
             catchError(() => of<Load>({ status: 'error' })),
             startWith<Load>({ status: 'loading' }),
           ),
@@ -218,13 +220,25 @@ export class Recipes implements OnInit {
   protected onDelete(event: Event, id: string): void {
     event.preventDefault();
     event.stopPropagation();
-    this.deleter.confirmAndDelete(id, {
-      onDeleted: () =>
-        this.load.update((l) =>
-          l.status === 'ok' ? { status: 'ok', recipes: l.recipes.filter((r) => r.id !== id) } : l,
-        ),
-      onRestored: () => this.refresh(),
-    });
+    const title = this.recipes().find((r) => r.id === id)?.title;
+    this.deleter.confirmAndDelete(
+      id,
+      {
+        onDeleting: () => this.deletedIds.add(id),
+        onDeleted: () => {
+          this.deletedIds.add(id);
+          this.load.update((l) =>
+            l.status === 'ok' ? { status: 'ok', recipes: l.recipes.filter((r) => r.id !== id) } : l,
+          );
+        },
+        onError: () => this.deletedIds.delete(id),
+        onRestored: () => {
+          this.deletedIds.delete(id);
+          this.refresh();
+        },
+      },
+      title,
+    );
   }
 
   protected add(): void {

@@ -6,6 +6,10 @@ import { ApiClient } from '../../core/api/api-client';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
 
 export interface DeleteHooks {
+  /** Runs when the delete API call starts (after the user confirms). */
+  onDeleting?: () => void;
+  /** Runs when the delete API call finishes, whether it succeeded or failed. */
+  onSettled?: () => void;
   /** Runs after the API call succeeds (e.g. navigate away). */
   onDeleted?: () => void;
   /** Default: router.navigate(['/recipes', id]). */
@@ -22,10 +26,12 @@ export class RecipeDeleter {
   private readonly dialog = inject(MatDialog);
   private readonly snackBar = inject(MatSnackBar);
 
-  confirmAndDelete(id: string, hooks: DeleteHooks = {}): void {
+  confirmAndDelete(id: string, hooks: DeleteHooks = {}, title?: string): void {
     const data: ConfirmDialogData = {
       title: 'Delete this recipe?',
-      message: 'This recipe will be deleted. You can undo this for a short while.',
+      message: title
+        ? `"${title}" will be deleted. You can undo this for a short while.`
+        : 'This recipe will be deleted. You can undo this for a short while.',
       confirmLabel: 'Delete',
     };
     this.dialog
@@ -37,8 +43,10 @@ export class RecipeDeleter {
   }
 
   private doDelete(id: string, hooks: DeleteHooks): void {
+    hooks.onDeleting?.();
     this.api.deleteRecipe(id).subscribe({
       next: () => {
+        hooks.onSettled?.();
         hooks.onDeleted?.();
         this.snackBar
           .open('Recipe deleted', 'Undo', { duration: 8000 })
@@ -46,6 +54,7 @@ export class RecipeDeleter {
           .subscribe(() => this.undo(id, hooks));
       },
       error: () => {
+        hooks.onSettled?.();
         const message = "Couldn't delete the recipe. Try again.";
         if (hooks.onError) hooks.onError(message);
         else this.snackBar.open(message, undefined, { duration: 5000 });

@@ -1,6 +1,6 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
-import { NEVER, of, throwError, type Observable } from 'rxjs';
+import { NEVER, Subject, of, throwError, type Observable } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { RecipeQuery, RecipeSummary } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
@@ -93,12 +93,12 @@ describe('Recipes', () => {
   });
 
   describe('delete', () => {
-    let confirmAndDelete: jest.Mock<void, [string, DeleteHooks]>;
+    let confirmAndDelete: jest.Mock<void, [string, DeleteHooks, string?]>;
     const hooksOf = () => confirmAndDelete.mock.calls[0][1];
     const deleteBtns = () => Array.from(el().querySelectorAll<HTMLElement>('button.card-delete'));
 
     async function setupDelete() {
-      confirmAndDelete = jest.fn<void, [string, DeleteHooks]>();
+      confirmAndDelete = jest.fn<void, [string, DeleteHooks, string?]>();
       TestBed.overrideProvider(RecipeDeleter, { useValue: { confirmAndDelete } });
       await setup();
     }
@@ -117,7 +117,7 @@ describe('Recipes', () => {
       const nav = jest.spyOn(router, 'navigate').mockResolvedValue(true);
       const navUrl = jest.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
       deleteBtns()[0].click();
-      expect(confirmAndDelete).toHaveBeenCalledWith('1', expect.any(Object));
+      expect(confirmAndDelete).toHaveBeenCalledWith('1', expect.any(Object), 'Pancakes');
       expect(nav).not.toHaveBeenCalled();
       expect(navUrl).not.toHaveBeenCalled();
     });
@@ -130,6 +130,27 @@ describe('Recipes', () => {
       expect(el().querySelectorAll('a.card')).toHaveLength(1);
       expect(el().textContent).not.toContain('Pancakes');
       expect(listRecipes).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the recipe title to the confirm dialog', async () => {
+      await setupDelete();
+      deleteBtns()[1].click();
+      expect(confirmAndDelete).toHaveBeenCalledWith('2', expect.any(Object), 'Stew');
+    });
+
+    it('a list response already in flight does not re-show a deleted recipe', async () => {
+      await setupDelete();
+      const late = new Subject<RecipeSummary[]>();
+      listRecipes.mockReturnValueOnce(late);
+      (fixture.componentInstance as unknown as { refresh(): void }).refresh();
+      deleteBtns()[0].click();
+      hooksOf().onDeleting?.();
+      hooksOf().onDeleted?.();
+      late.next(ALL);
+      late.complete();
+      fixture.detectChanges();
+      expect(el().textContent).not.toContain('Pancakes');
+      expect(el().querySelectorAll('a.card')).toHaveLength(1);
     });
 
     it('re-fetches the list on undo', async () => {
