@@ -1,0 +1,41 @@
+{
+    "id": "ee74c8c6-f61a-4c0f-a6a4-5bba84781303",
+    "name": "07 LOCAL ONLY import instagram url needs_text (autofetch off)",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"url\":\"https://www.instagram.com/p/abc123/\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 422,
+        "jsonSchema": {
+            "schema": "{\"type\":\"object\",\"required\":[\"error\"],\"properties\":{\"error\":{\"const\":\"needs_text\"}}}"
+        }
+    }
+}

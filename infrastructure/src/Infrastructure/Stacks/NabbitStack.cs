@@ -182,6 +182,19 @@ namespace Infrastructure.Stacks
                 Actions = new[] { "dynamodb:UpdateItem" },
                 Resources = new[] { DataTable.TableArn },
             }));
+            // Optional LLM fallback parser. Bedrock Converse is authorised by bedrock:InvokeModel (there is no separate
+            // Converse action), scoped to the configured model only. The API Lambda gets nothing Bedrock-related.
+            if (!string.IsNullOrWhiteSpace(config.LlmModelId))
+            {
+                var modelId = config.LlmModelId.Trim();
+                ImportFunction.AddEnvironment("LLM_MODEL_ID", modelId);
+                ImportFunction.AddToRolePolicy(new PolicyStatement(new PolicyStatementProps
+                {
+                    Effect = Effect.ALLOW,
+                    Actions = new[] { "bedrock:InvokeModel" },
+                    Resources = BedrockModelArns(modelId, config.Region, Account),
+                }));
+            }
             // Presigned POST uploads only need s3:PutObject; the API never reads or deletes image objects itself.
             ImageBucket.GrantPut(ApiFunction);
             // The import Lambda stores images fetched for POST /recipes/images/import: PutObject only, no read/delete/list.
@@ -335,6 +348,27 @@ namespace Infrastructure.Stacks
             Cors = cors,
             RemovalPolicy = RemovalPolicy.RETAIN,
         });
+
+        private static readonly string[] ProfilePrefixes = { "us-gov", "global", "apac", "us", "eu", "au", "jp", "ca" };
+
+        /// <summary>
+        /// IAM resources for a Bedrock model id. A plain id gets the foundation-model ARN. A cross-region inference-profile id
+        /// (prefix such as "us.") needs the account's inference-profile ARN plus the underlying foundation-model ARN in whichever
+        /// region the profile routes to (region segment wildcarded; the model id stays pinned).
+        /// </summary>
+        internal static string[] BedrockModelArns(string modelId, string region, string account)
+        {
+            var dot = modelId.IndexOf('.');
+            if (dot > 0 && System.Array.IndexOf(ProfilePrefixes, modelId[..dot]) >= 0)
+            {
+                return new[]
+                {
+                    $"arn:aws:bedrock:{region}:{account}:inference-profile/{modelId}",
+                    $"arn:aws:bedrock:*::foundation-model/{modelId[(dot + 1)..]}",
+                };
+            }
+            return new[] { $"arn:aws:bedrock:{region}::foundation-model/{modelId}" };
+        }
 
         private void Out(string id, string value) => new CfnOutput(this, id, new CfnOutputProps { Value = value });
     }

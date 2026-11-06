@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
+import { setLlmParser } from '../src/import/llm-parse.js';
 import { registerImportRoutes, setImportDeps, IMPORT_LIMIT_PER_HOUR } from '../src/routes/import.js';
 import { setDb } from '../src/db.js';
 import { createMemoryDb } from '../src/db-memory.js';
@@ -281,5 +283,294 @@ describe('POST /recipes/images/import', () => {
     for (let i = 0; i < 29; i++) await call({ text: 'Soup' });
     expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(200);
     expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(429);
+  });
+});
+
+describe('LLM fallback and Instagram needs_text', () => {
+  const LOW = 'Mystery dish\n\nIngredients\n2 cups flour\n';
+  const LOW_WITH_STEP = 'Dish\n\nIngredients\n2 cups flour\n\nMethod\n1. Mix.';
+  const GOOD = 'Toast\n\nIngredients\n2 slices bread\n1 tbsp butter\n\nMethod\n1. Toast the bread.\n2. Butter it.';
+  const aiRecipe = {
+    title: 'AI Dish',
+    servings: 4,
+    ingredients: [{ name: 'flour', quantity: 240, unit: 'g' }],
+    steps: ['Mix.', 'Bake.'],
+    tags: [],
+  };
+  let parsed: { text: string; sourceUrl?: string }[];
+  let result: () => Promise<unknown>;
+
+  beforeEach(() => {
+    parsed = [];
+    result = async () => aiRecipe;
+    setLlmParser({
+      parse: async (text, ctx) => {
+        parsed.push({ text, sourceUrl: ctx.sourceUrl });
+        return (await result()) as never;
+      },
+    });
+  });
+  afterEach(() => {
+    setLlmParser(undefined);
+    delete process.env.INSTAGRAM_AUTOFETCH;
+  });
+
+  it.each(['https://instagram.com/p/abc/', 'https://www.instagram.com/reel/abc/', 'https://instagr.am/p/abc', 'https://WWW.Instagram.com/p/x'])(
+    'INSTAGRAM_AUTOFETCH=0: instagram url %s -> 422 needs_text without fetching, still counted',
+    async (url) => {
+      process.env.INSTAGRAM_AUTOFETCH = '0';
+      const res = await call({ url });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(fetched).toEqual([]);
+      const hour = Math.floor(nowMs / 3_600_000);
+      expect(db.items.get(`OWNER#u1\u0000RATE#import#${hour}`)?.count).toBe(1);
+    },
+  );
+
+  it.each(['https://instagram.com./p/abc/', 'https://www.instagram.com./p/abc/', 'https://m.instagram.com/p/abc/'])(
+    'INSTAGRAM_AUTOFETCH=0: trailing-dot and mobile host %s -> needs_text',
+    async (url) => {
+      process.env.INSTAGRAM_AUTOFETCH = '0';
+      const res = await call({ url });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(fetched).toEqual([]);
+    },
+  );
+
+  it.each([
+    'https://notinstagram.com/r',
+    'http://instagram.com/p/abc',
+    'https://instagram.com.evil.com/p/abc',
+    'https://instagram.com@evil.com/p/abc',
+    'https://instagram.com..evil.com/p/abc',
+  ])('lookalike %s is not treated as instagram', async (url) => {
+    page = async () => ({ url, html: LD_HTML });
+    const res = await call({ url });
+    expect(res.json).not.toEqual({ error: 'needs_text' });
+    expect(fetched).toEqual([url]);
+  });
+
+  describe('Instagram auto-fetch', () => {
+    const IG = 'https://www.instagram.com/p/abc/';
+    const GOOD_HTML = readFileSync(new URL('./fixtures/instagram-jsonld.html', import.meta.url), 'utf8');
+    const WALL_HTML = readFileSync(new URL('./fixtures/instagram-login-wall.html', import.meta.url), 'utf8');
+    const hourCount = () => db.items.get(`OWNER#u1 RATE#import#${Math.floor(nowMs / 3_600_000)}`)?.count;
+
+    it('good caption -> 200 text draft with sourceUrl, fetched once, counted', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.recipe.sourceUrl).toBe(IG);
+      expect(fetched).toEqual([IG]);
+      expect(hourCount()).toBe(1);
+    });
+
+    it('a low-confidence caption goes through the LLM trigger rule', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      result = async () => ({ ...aiRecipe, ingredients: [1, 2, 3].map((n) => ({ name: 'tomato' + n, quantity: 1, unit: 'g' })) });
+      const res = await call({ url: IG });
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].sourceUrl).toBe(IG);
+    });
+
+    it('login-wall html -> 422 needs_text, counted', async () => {
+      page = async () => ({ url: IG, html: WALL_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('ImportError from the fetch -> 422 needs_text, counted', async () => {
+      page = async () => {
+        throw new ImportError('bad_status');
+      };
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('network error from the fetch -> 422 needs_text, counted', async () => {
+      page = async () => {
+        throw new Error('ECONNRESET');
+      };
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    const REEL_HTML = readFileSync(new URL('./fixtures/instagram-reel.html', import.meta.url), 'utf8');
+
+    it('realistic reel fixture: heuristic draft, parser not called, photo candidates from og:image', async () => {
+      const html = REEL_HTML.replace('</head>', '<meta property="og:image" content="https://scontent.cdninstagram.com/v/t51/pic.jpg"></head>');
+      page = async () => ({ url: 'https://www.instagram.com/reel/EXAMPLE1/', html });
+      const res = await call({ url: 'https://www.instagram.com/reel/EXAMPLE1/' });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(res.json.draft.recipe.ingredients).toHaveLength(4);
+      expect(res.json.draft.recipe.steps).toHaveLength(3);
+      expect(parsed).toHaveLength(0);
+      expect(res.json.imageUrl).toBe('https://scontent.cdninstagram.com/v/t51/pic.jpg');
+      expect(res.json.candidates).toEqual(['https://scontent.cdninstagram.com/v/t51/pic.jpg']);
+    });
+
+    it('share params are dropped: fetch, sourceUrl and LLM ctx use the canonical url', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      const shared = 'https://instagram.com/p/abc/?igsh=xyz&utm_source=ig_web_copy_link#f';
+      const res = await call({ url: shared });
+      expect(fetched).toEqual([IG]);
+      expect(res.json.draft.recipe.sourceUrl).toBe(IG);
+      result = async () => ({ ...aiRecipe, ingredients: [1, 2, 3].map((n) => ({ name: 'tomato' + n, quantity: 1, unit: 'g' })) });
+      await call({ url: shared });
+      expect(parsed[0].sourceUrl).toBe(IG);
+    });
+
+    it('daily LLM cap used up: auto-fetched low-confidence caption -> heuristic draft, no error, parser not called', async () => {
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      db.items.set('OWNER#u1\u0000RATE#llm#2026-11-02', { count: 30 } as never);
+      const res = await call({ url: IG });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(parsed).toHaveLength(0);
+    });
+
+    it.each([
+      'https://www.instagram.com/accounts/login/?next=%2Fp%2Fabc%2F',
+      'https://www.instagram.com/challenge/?next=/p/abc/',
+      'https://www.instagram.com/privacy/checks/?next=/p/abc/',
+    ])('redirect to %s with generic html -> needs_text', async (final) => {
+      page = async () => ({ url: final, html: REEL_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(hourCount()).toBe(1);
+    });
+
+    it('redirect to a non-Instagram host -> needs_text', async () => {
+      page = async () => ({ url: 'https://evil.example.com/p/abc/', html: REEL_HTML });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+    });
+
+    it('instagr.am redirecting to www.instagram.com is fine', async () => {
+      page = async () => ({ url: 'https://www.instagram.com/p/abc/', html: REEL_HTML });
+      expect((await call({ url: 'https://instagr.am/p/abc' })).status).toBe(200);
+    });
+
+    it('INSTAGRAM_AUTOFETCH=0 -> needs_text, safeFetch not called, counted', async () => {
+      process.env.INSTAGRAM_AUTOFETCH = '0';
+      const res = await call({ url: IG });
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(fetched).toEqual([]);
+      expect(hourCount()).toBe(1);
+    });
+
+    it('any other INSTAGRAM_AUTOFETCH value keeps auto-fetch on', async () => {
+      process.env.INSTAGRAM_AUTOFETCH = '1';
+      page = async () => ({ url: IG, html: GOOD_HTML });
+      expect((await call({ url: IG })).status).toBe(200);
+    });
+
+    it('rate limit applies before the fetch', async () => {
+      for (let i = 0; i < IMPORT_LIMIT_PER_HOUR; i++) await call({ text: 'Soup' });
+      expect((await call({ url: IG })).status).toBe(429);
+      expect(fetched).toEqual([]);
+    });
+  });
+
+  it('low-confidence text calls the parser and returns an ai draft', async () => {
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('ai');
+    expect(res.json.draft.recipe.title).toBe('AI Dish');
+    expect(res.json.draft.recipe.ingredients[0].unit).toBe('g');
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('page-text fallback passes sourceUrl to the parser', async () => {
+    page = async () => ({ url: 'https://example.com/r', html: '<html><body><p>Just some words</p></body></html>' });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.draft.confidence).toBe('ai');
+    expect(parsed[0].sourceUrl).toBe('https://example.com/r');
+  });
+
+  it('good heuristic text does not call the parser', async () => {
+    const res = await call({ text: GOOD });
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('structured data never calls the parser', async () => {
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.draft.confidence).toBe('structured');
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('parser returning undefined keeps the heuristic draft', async () => {
+    result = async () => undefined;
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('parser throwing keeps the heuristic draft', async () => {
+    result = async () => {
+      throw new Error('boom');
+    };
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('keeps the heuristic draft when the LLM has more ingredients but fewer steps', async () => {
+    result = async () => ({
+      ...aiRecipe,
+      ingredients: [
+        { name: 'flour', quantity: 240, unit: 'g' },
+        { name: 'egg', quantity: 2 },
+      ],
+      steps: [],
+    });
+    const res = await call({ text: LOW_WITH_STEP });
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('keeps the heuristic draft when the LLM has more steps but fewer ingredients', async () => {
+    result = async () => ({ ...aiRecipe, ingredients: [], steps: ['Mix.', 'Bake.'] });
+    const res = await call({ text: LOW_WITH_STEP });
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('keeps the heuristic draft when the LLM has fewer ingredients and fewer steps', async () => {
+    result = async () => ({ ...aiRecipe, ingredients: [], steps: [] });
+    const res = await call({ text: LOW_WITH_STEP });
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('skips the parser once the daily cap is used, with a ttl on the counter', async () => {
+    for (let i = 0; i < 30; i++) {
+      await call({ text: LOW });
+      // keep under the hourly limit by moving to the next hour every 20 calls
+      if (i === 19) nowMs += 3_600_000;
+    }
+    expect(parsed).toHaveLength(30);
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(parsed).toHaveLength(30);
+    const item = db.items.get('OWNER#u1\u0000RATE#llm#2026-11-02');
+    expect(item?.count).toBe(31);
+    expect(item?.ttl).toBe(Math.floor(nowMs / 1000) + 2 * 86400);
+  });
+
+  it('401 without a sub is unchanged', async () => {
+    const res = await call({ text: LOW }, null as never);
+    expect(res.status).toBe(401);
   });
 });

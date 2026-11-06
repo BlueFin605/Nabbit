@@ -14,7 +14,7 @@ Architecture, the data model and key decisions are in `SYSDOC.md`.
 
 ## Configuration
 
-Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment. Optional keys: `hostedZoneId` (import the DNS zone instead of looking it up), `importReservedConcurrency` (default 5), `apiCodePath` and `importCodePath` (override the Lambda bundle locations).
+Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment. Optional keys: `hostedZoneId` (import the DNS zone instead of looking it up), `importReservedConcurrency` (default 5), `llmModelId` (enables the import Lambda LLM fallback: sets LLM_MODEL_ID and grants bedrock:InvokeModel on that model only), `apiCodePath` and `importCodePath` (override the Lambda bundle locations).
 
 ## Build
 
@@ -72,7 +72,7 @@ npm run dev                      # Aspire (start-aspire.ps1): LocalStack + backe
 fullyrested run -c backend/tests/api/nabbit.frcol --all -e local
 ```
 
-(or `run` via the FullyRested MCP / desktop app). The `local` environment sends unsigned dev JWTs for three fixed users (A, B for cross-owner cases, and a rate-limit user). The `import-rate-limit` folder burns that user's 30/hour import quota, so it asserts the 429 and can be re-run freely. URL imports are only tested for rejected addresses (`blocked_address`, `bad_url`) so the suite never reaches the internet. The `production` environment uses secret references `token`, `otherToken` and `rlToken` (Cognito ID tokens for three users; set with `fullyrested secret set`) and a placeholder `baseUrl`; running it is the maintainer's call.
+(or `run` via the FullyRested MCP / desktop app). The `local` environment sends unsigned dev JWTs for three fixed users (A, B for cross-owner cases, and a rate-limit user). The `import-rate-limit` folder burns that user's 30/hour import quota, so it asserts the 429 and can be re-run freely. URL imports are only tested for rejected addresses (`blocked_address`, `bad_url`) so the suite reaches the internet in one case only: request 07 (`07 LOCAL ONLY import instagram url needs_text (autofetch off)`) does a real Instagram fetch on any backend started WITHOUT `INSTAGRAM_AUTOFETCH=0`. The Aspire AppHost sets it to 0 for the local backend; if you start the backend by hand for the suite, set it too. Request 07 is local-only: do not run it against the `production` environment (auto-fetch is on there). The `production` environment uses secret references `token`, `otherToken` and `rlToken` (Cognito ID tokens for three users; set with `fullyrested secret set`) and a placeholder `baseUrl`; running it is the maintainer's call.
 
 ## E2E tests
 

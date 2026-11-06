@@ -5,8 +5,8 @@ import { Router, provideRouter } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
-import type { ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { Import, firstUrl, toImportRequest } from './import';
+import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
+import { IMPORT_ERROR_MESSAGES, Import, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -36,6 +36,7 @@ describe('Import', () => {
   let fixture: ComponentFixture<Import>;
 
   async function setup(inputs: Record<string, string> = {}, impl: (r: unknown) => unknown = () => of(result())) {
+    TestBed.resetTestingModule();
     importRecipe = jest.fn(impl);
     createRecipe = jest.fn(() => of({ id: 'new1' } as Recipe));
     importImage = jest.fn(() => of({ imageKey: 'o/img.jpg' }));
@@ -280,6 +281,256 @@ describe('Import', () => {
     });
   });
 
+  describe('AI import', () => {
+    const IG = 'https://www.instagram.com/reel/abc/';
+    const needsText = () => httpErr(422, { error: 'needs_text' });
+    const onlyOnce = (first: () => unknown, then: () => unknown) => {
+      let n = 0;
+      return () => (n++ === 0 ? first() : then());
+    };
+    const withIng = (original: string, name: string): Ingredient => ({ ...ing(), id: name, original, name });
+
+    it('needs_text shows an info panel (not the alert), keeps the URL and focuses a "Paste the caption" textarea', async () => {
+      jest.useFakeTimers();
+      try {
+        await setup({}, needsText);
+        document.body.appendChild(el());
+        type(IG);
+        q('.import-btn')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        expect(q('[role="alert"]')).toBeNull();
+        expect(q('.info')?.textContent).toContain(IMPORT_ERROR_MESSAGES.needs_text);
+        expect(q('mat-label')?.textContent).toContain('Paste the caption');
+        expect(q<HTMLTextAreaElement>('textarea')?.value).toBe('');
+        expect(document.activeElement).toBe(q('textarea'));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('pasting the caption sends {text} and sets sourceUrl to the remembered URL', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: IG }));
+    });
+
+    it('share params are stripped from the request and from the saved sourceUrl', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type('https://www.instagram.com/reel/XyZ/?igsh=abc&utm_source=ig_web_copy_link&rpxt=1#f');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: 'https://www.instagram.com/reel/XyZ/' });
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://www.instagram.com/reel/XyZ/' }));
+    });
+
+    it('canonicalInstagramUrl reduces posts and drops query/fragment elsewhere', () => {
+      expect(canonicalInstagramUrl('https://instagram.com/someone/p/AbC/?igshid=1')).toBe('https://www.instagram.com/p/AbC/');
+      expect(canonicalInstagramUrl('https://www.instagram.com/tv/Q9?srtk=1')).toBe('https://www.instagram.com/tv/Q9/');
+      expect(canonicalInstagramUrl('https://www.instagram.com/someone/?hl=en#x')).toBe('https://www.instagram.com/someone/');
+    });
+
+    it('other 422 codes still show the red alert', async () => {
+      await setup({}, () => httpErr(422, { error: 'bad_status' }));
+      type(IG);
+      await tapImport();
+      expect(q('[role="alert"]')?.textContent).toContain("wouldn't let us read the page");
+      expect(q('.info')).toBeNull();
+    });
+
+    it('shows the AI banner only for confidence ai', async () => {
+      await setup({}, () => of(result({ confidence: 'ai' })));
+      type('x');
+      await tapImport();
+      expect(q('.banner')?.textContent).toContain('AI-assisted - check the ingredients');
+      await setup({}, () => of(result({ confidence: 'structured' })));
+      type('x');
+      await tapImport();
+      expect(q('.banner')).toBeNull();
+    });
+
+    it('offers the comment appender for Instagram URLs and needs_text only', async () => {
+      await setup({}, () => of(result()));
+      type('https://example.com/r');
+      await tapImport();
+      expect(q('.comment-appender')).toBeNull();
+
+      for (const host of ['instagram.com', 'www.instagram.com', 'instagr.am']) {
+        await setup({}, () => of(result()));
+        type(`https://${host}/p/x/`);
+        await tapImport();
+        expect(q('.comment-appender')).not.toBeNull();
+      }
+
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('caption');
+      await tapImport();
+      expect(q('.comment-appender')).not.toBeNull();
+    });
+
+    it('does not treat lookalike hosts as Instagram', async () => {
+      await setup({}, () => of(result()));
+      type('https://notinstagram.com/p/x');
+      await tapImport();
+      expect(q('.comment-appender')).toBeNull();
+    });
+
+    async function toAppender(impl: () => unknown, caption = 'the caption') {
+      await setup({}, onlyOnce(needsText, impl));
+      type(IG);
+      await tapImport();
+      type(caption);
+      await tapImport();
+    }
+    function writeComment(text: string) {
+      const area = q<HTMLTextAreaElement>('.comment-appender textarea') as HTMLTextAreaElement;
+      area.value = text;
+      area.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+    function editTitle(text: string) {
+      const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      title.value = text;
+      title.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('with a known caption, re-imports caption + comment and REPLACES the draft', async () => {
+      const comment = result({
+        recipe: {
+          title: 'Other',
+          servings: 2,
+          ingredients: [withIng('1 cup flour', 'flour'), withIng('2 eggs', 'eggs')],
+          steps: ['Mix', 'Bake'],
+          tags: [],
+        },
+      });
+      await toAppender(onlyOnce(() => of(result({}, undefined, ['https://a.example/1.jpg'])), () => of(comment)));
+      writeComment('the comment');
+      q('.add-comment')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment' });
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('Other');
+      expect(el().querySelectorAll('.ingredient')).toHaveLength(2);
+      expect(q('.photo-note')).not.toBeNull(); // photo choice kept
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      const body = (createRecipe.mock.calls[0] as [RecipeInput])[0];
+      expect(body.ingredients.map((i) => i.name)).toEqual(['flour', 'eggs']);
+      expect(body.steps).toEqual(['Mix', 'Bake']);
+    });
+
+    it('with an unknown caption, sends just the comment and MERGES, skipping duplicates', async () => {
+      const comment = result({
+        confidence: 'ai',
+        recipe: {
+          title: 'Other',
+          servings: 2,
+          ingredients: [withIng('1 CUP flour', 'flour'), withIng('2 eggs', 'eggs')],
+          steps: ['mix', 'Bake'],
+          tags: [],
+        },
+      });
+      await setup({}, onlyOnce(() => of(result()), () => of(comment)));
+      type(IG);
+      await tapImport();
+      writeComment('the comment');
+      q('.add-comment')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment' });
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+      expect(q('.banner')?.textContent).toContain('AI-assisted');
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      const body = (createRecipe.mock.calls[0] as [RecipeInput])[0];
+      expect(body.ingredients.map((i) => i.name)).toEqual(['flour', 'eggs']);
+      expect(body.steps).toEqual(['Mix', 'Fry', 'Bake']);
+    });
+
+    it('mergeDrafts is ai when either side is ai', () => {
+      const d = (confidence: 'ai' | 'heuristic' | 'structured') => result({ confidence }).draft;
+      expect(mergeDrafts(d('heuristic'), d('ai')).confidence).toBe('ai');
+      expect(mergeDrafts(d('ai'), d('heuristic')).confidence).toBe('ai');
+      expect(mergeDrafts(d('heuristic'), d('structured')).confidence).toBe('heuristic');
+    });
+
+    it('disables the appender once the editor is dirty so edits are never wiped', async () => {
+      await toAppender(() => of(result()));
+      writeComment('the comment');
+      expect(q<HTMLButtonElement>('.add-comment')?.disabled).toBe(false);
+      editTitle('My edited title');
+      expect(q<HTMLButtonElement>('.add-comment')?.disabled).toBe(true);
+      expect(q('.comment-appender .hint')).not.toBeNull();
+      q('.add-comment')?.click();
+      expect(importRecipe).toHaveBeenCalledTimes(2); // IG needs_text + caption only
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('My edited title');
+    });
+
+    it('a caption starting with https:// plus more text is still sent as {text} after needs_text', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('https://example.com/r great pancakes\n2 eggs');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'https://example.com/r great pancakes\n2 eggs' });
+    });
+
+    it('a single non-Instagram https URL after needs_text is a normal URL import', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('https://example.com/r');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: 'https://example.com/r' });
+      expect(q('.comment-appender')).toBeNull();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://example.com/r' }));
+    });
+
+    it('trailing-dot and m. hosts count as Instagram', () => {
+      expect(isInstagramUrl('https://instagram.com./p/x')).toBe(true);
+      expect(isInstagramUrl('https://m.instagram.com/p/x')).toBe(true);
+      expect(isInstagramUrl('https://instagram.com.evil.com/p/x')).toBe(false);
+      expect(isInstagramUrl('https://instagram.com@evil.com/p/x')).toBe(false);
+    });
+
+    it('appender failure shows the alert, keeps the draft, and does not set needsText or move focus', async () => {
+      await toAppender(onlyOnce(() => of(result()), needsText));
+      document.body.appendChild(el());
+      writeComment('the comment');
+      (document.activeElement as HTMLElement | null)?.blur();
+      jest.useFakeTimers();
+      try {
+        q('.add-comment')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        expect(q('.comment-appender [role="alert"]')?.textContent).toContain("Instagram wouldn't let us read this post");
+        expect(q('.info')).toBeNull();
+        expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+        expect(q('mat-label')?.textContent ?? '').not.toContain('Paste the caption');
+        expect(document.activeElement).not.toBe(q('textarea'));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   it('discard returns to /recipes without saving', async () => {
     await setup();
     const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -288,5 +539,29 @@ describe('Import', () => {
     q('.discard')?.click();
     expect(nav).toHaveBeenCalledWith(['/recipes']);
     expect(createRecipe).not.toHaveBeenCalled();
+  });
+});
+
+describe('IMPORT_ERROR_MESSAGES', () => {
+  const codes: ImportErrorCode[] = [
+    'bad_url',
+    'blocked_address',
+    'too_large',
+    'timeout',
+    'bad_status',
+    'not_html',
+    'not_image',
+    'too_many_redirects',
+    'needs_text',
+  ];
+
+  it.each(codes)('has a message for %s', (code) => {
+    expect(IMPORT_ERROR_MESSAGES[code]).toBeTruthy();
+  });
+
+  it('asks the user to paste the caption for needs_text', () => {
+    expect(IMPORT_ERROR_MESSAGES.needs_text).toBe(
+      "Instagram wouldn't let us read this post. Paste the caption (and the recipe comment if it's in the comments).",
+    );
   });
 });

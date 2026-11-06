@@ -15,6 +15,9 @@ import type { SafeFetchDeps } from './import/safe-fetch.js';
 
 /** The only hostname the hook answers for; use https://nabbit-fixtures.test/<path> in the importer. */
 export const FIXTURE_HOST = 'nabbit-fixtures.test';
+/** Second fixture hostname, served from the same origin; the stack lists it in NABBIT_E2E_INSTAGRAM_HOSTS so it counts as Instagram. */
+export const FIXTURE_IG_HOST = 'ig.nabbit-fixtures.test';
+const FIXTURE_HOSTS: readonly string[] = [FIXTURE_HOST, FIXTURE_IG_HOST];
 /** A routable-looking address the guard accepts (never connected to; the fetch is redirected). */
 const FIXTURE_ADDRESS = '93.184.216.34';
 
@@ -35,12 +38,12 @@ export function fixtureFetchDeps(env: NodeJS.ProcessEnv = process.env): SafeFetc
   if (!origin) return undefined;
   return {
     resolve: async (host) => {
-      if (host !== FIXTURE_HOST) throw new Error('fixture mode: unknown host');
+      if (!FIXTURE_HOSTS.includes(host)) throw new Error('fixture mode: unknown host');
       return [FIXTURE_ADDRESS];
     },
     fetchImpl: ((input: string | URL, init?: RequestInit) => {
       const u = new URL(String(input));
-      if (u.hostname !== FIXTURE_HOST) return Promise.reject(new Error('fixture mode: unknown host'));
+      if (!FIXTURE_HOSTS.includes(u.hostname)) return Promise.reject(new Error('fixture mode: unknown host'));
       return fetch(origin + u.pathname + u.search, { method: 'GET', redirect: 'manual', headers: init?.headers, signal: init?.signal });
     }) as typeof fetch,
   };

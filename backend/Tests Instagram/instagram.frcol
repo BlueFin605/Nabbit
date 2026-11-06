@@ -1,0 +1,30 @@
+{
+    "collectionGuid": "19d7249c-a66a-41ba-9f5d-b39b8329e1df",
+    "collectionEnvironment": {
+        "name": "",
+        "id": "",
+        "variables": [],
+        "secrets": [],
+        "auth": {
+            "authentication": "none",
+            "awsSig": {
+                "signUrl": false,
+                "accessKey": "",
+                "secretKey": "",
+                "sessionToken": "",
+                "awsRegion": "eu-central-1",
+                "serviceName": ""
+            },
+            "basicAuth": {
+                "userName": "",
+                "password": ""
+            },
+            "bearerToken": {
+                "token": ""
+            }
+        },
+        "headers": []
+    },
+    "environments": [],
+    "selectedEnvironmentId": ""
+}

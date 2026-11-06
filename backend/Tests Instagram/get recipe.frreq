@@ -1,0 +1,56 @@
+{
+    "id": "69cd4f6a-893e-4ecd-9b85-22033e3730b4",
+    "name": "new request",
+    "verb": "get",
+    "protocol": "https",
+    "url": "www.instagram.com/reel/C62PDl9hgn2/",
+    "headers": [
+        {
+            "key": "user-agent",
+            "value": "fullyrested",
+            "active": true,
+            "id": "aaa"
+        },
+        {
+            "key": "accept",
+            "value": "*",
+            "active": true,
+            "id": "a518ce51-d9db-4a29-92b5-c53f649e4fc8"
+        },
+        {
+            "key": "accept-encoding",
+            "value": "gzip, deflate, br",
+            "active": true,
+            "id": "b9b8c2b8-c263-4e13-9241-a38ebd58e3e9"
+        }
+    ],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "None",
+        "headers": [],
+        "body": "None",
+        "httpCode": 200
+    }
+}
