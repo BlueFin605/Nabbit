@@ -7,6 +7,8 @@
  *   list          pk=OWNER#{ownerId}  sk=LIST#{id}
  *   item memory   pk=OWNER#{ownerId}  sk=MEM#{lowercased name}
  *   import rate   pk=OWNER#{ownerId}  sk=RATE#import#{epoch hour}  (count, ttl)
+ *   LLM per owner pk=OWNER#{ownerId}  sk=RATE#llm#{yyyy-mm-dd}    (count, ttl)
+ *   LLM app-wide  pk=GLOBAL           sk=RATE#llm#{yyyy-mm-dd}    (count, ttl)
  * Helpers `ownerPk` / `recipeSk` build keys so every item is scoped to its owner by construction.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -69,6 +71,8 @@ export const MEM_SK_PREFIX = 'MEM#';
 export const rateSk = (kind: string, hour: number): string => `RATE#${kind}#${hour}`;
 /** Per-owner daily LLM counter for a UTC date (yyyy-mm-dd). */
 export const llmDaySk = (utcDate: string): string => `RATE#llm#${utcDate}`;
+/** Partition for app-wide counters. Owned by no one: owner partitions always start with `OWNER#`. */
+export const GLOBAL_PK = 'GLOBAL';
 
 /** DynamoDB-backed implementation. `AWS_ENDPOINT_URL` (local dev) is honoured by the SDK itself. */
 export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?: DynamoDBDocumentClient): Db {

@@ -188,6 +188,8 @@ namespace Infrastructure.Stacks
             {
                 var modelId = config.LlmModelId.Trim();
                 ImportFunction.AddEnvironment("LLM_MODEL_ID", modelId);
+                if (config.LlmGlobalDailyLimit is int globalLimit)
+                    ImportFunction.AddEnvironment("LLM_GLOBAL_DAILY_LIMIT", globalLimit.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 ImportFunction.AddToRolePolicy(new PolicyStatement(new PolicyStatementProps
                 {
                     Effect = Effect.ALLOW,

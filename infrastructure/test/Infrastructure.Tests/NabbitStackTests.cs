@@ -11,7 +11,7 @@ namespace Infrastructure.Tests
 {
     public class NabbitStackTests
     {
-        private static Template Synth(string llmModelId = null)
+        private static Template Synth(string llmModelId = null, int? llmGlobalDailyLimit = null)
         {
             var codeDir = Path.Combine(Path.GetTempPath(), "nabbit-test-api");
             Directory.CreateDirectory(codeDir);
@@ -21,7 +21,7 @@ namespace Infrastructure.Tests
             Directory.CreateDirectory(importDir);
             File.WriteAllText(Path.Combine(importDir, "index.js"), "exports.handler = async () => ({});");
 
-            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir, LlmModelId = llmModelId };
+            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir, LlmModelId = llmModelId, LlmGlobalDailyLimit = llmGlobalDailyLimit };
             var app = new App();
             var globalCert = Amazon.CDK.AWS.CertificateManager.Certificate.FromCertificateArn(app, "GlobalCert",
                 "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000");
@@ -237,6 +237,28 @@ namespace Infrastructure.Tests
             Assert.Empty(BedrockStatements(t, "ApiFunctionServiceRole"));
             Assert.False(EnvOf(t, "nabbit-import-production").ContainsKey("LLM_MODEL_ID"));
             Assert.False(EnvOf(t, "nabbit-api-production").ContainsKey("LLM_MODEL_ID"));
+        }
+
+        [Fact]
+        public void LlmGlobalDailyLimit_Set_WithModel_SetsImportEnvOnly()
+        {
+            var t = Synth("anthropic.claude-haiku-5-5", 50);
+            Assert.Equal("50", EnvOf(t, "nabbit-import-production")["LLM_GLOBAL_DAILY_LIMIT"].GetString());
+            Assert.False(EnvOf(t, "nabbit-api-production").ContainsKey("LLM_GLOBAL_DAILY_LIMIT"));
+        }
+
+        [Fact]
+        public void LlmGlobalDailyLimit_Unset_NoEnv_BackendDefaultApplies()
+        {
+            var t = Synth("anthropic.claude-haiku-5-5");
+            Assert.False(EnvOf(t, "nabbit-import-production").ContainsKey("LLM_GLOBAL_DAILY_LIMIT"));
+        }
+
+        [Fact]
+        public void LlmGlobalDailyLimit_WithoutModel_NoEnv()
+        {
+            var t = Synth(null, 50);
+            Assert.False(EnvOf(t, "nabbit-import-production").ContainsKey("LLM_GLOBAL_DAILY_LIMIT"));
         }
 
         [Fact]

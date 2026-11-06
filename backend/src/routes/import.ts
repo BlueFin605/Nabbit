@@ -7,13 +7,15 @@
  *   POST /recipes/images/import  body `{ url }` (https) -> 200 { imageKey }: downloads the image through the SSRF guard
  *     and stores it at {ownerId}/{uuid}.{ext}; 400 bad url, 422 { error: <ImportError code> } (incl. not_image), 429 as above.
  *     Shares the import rate limit (same counter). Registered on the import Lambda only.
- * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d).
+ * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d),
+ * plus an app-wide cap per UTC day (pk=GLOBAL, same sk; LLM_GLOBAL_DAILY_LIMIT, default 300, read per request)
+ * so many accounts cannot multiply the spend. The global counter is only bumped once the owner is under their cap.
  * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
  * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
  * (pk=OWNER#{id}, sk=RATE#import#{epoch hour}, ttl 2h), incremented BEFORE any fetch so failures still count.
  */
-import { ownerPk, rateSk, llmDaySk, getDb } from '../db.js';
+import { ownerPk, rateSk, llmDaySk, GLOBAL_PK, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
 import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
@@ -27,6 +29,7 @@ import { HttpError, route, type RequestCtx } from '../router.js';
 
 export const IMPORT_LIMIT_PER_HOUR = 30;
 export const LLM_LIMIT_PER_DAY = 30;
+export const LLM_GLOBAL_LIMIT_PER_DAY_DEFAULT = 300;
 export const MAX_IMPORT_TEXT = 50_000;
 const HOUR_MS = 3_600_000;
 
@@ -43,7 +46,16 @@ export function setImportDeps(d: Partial<ImportDeps> | undefined): void {
   deps = { ...defaults, ...d };
 }
 
-/** Low-confidence heuristic drafts get one LLM attempt (daily cap per owner); any failure keeps the heuristic draft. */
+/** App-wide daily LLM cap: LLM_GLOBAL_DAILY_LIMIT when it is a non-negative integer, else the default. 0 = never call the LLM. */
+export function llmGlobalLimit(): number {
+  const raw = process.env.LLM_GLOBAL_DAILY_LIMIT?.trim();
+  return raw && /^\d+$/.test(raw) ? Number(raw) : LLM_GLOBAL_LIMIT_PER_DAY_DEFAULT;
+}
+
+/**
+ * Low-confidence heuristic drafts get one LLM attempt, within the per-owner daily cap and then the app-wide daily cap.
+ * Any failure keeps the heuristic draft.
+ */
 async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string): Promise<RecipeDraft> {
   const h = heuristic.recipe;
   if (h.ingredients.length >= 2 && h.steps.length >= 2) return heuristic;
@@ -54,6 +66,11 @@ async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, s
     const day = new Date(nowMs).toISOString().slice(0, 10);
     const count = await getDb().incrementCounter(ownerPk(ownerId), llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
     if (count > LLM_LIMIT_PER_DAY) return heuristic;
+    const globalCount = await getDb().incrementCounter(GLOBAL_PK, llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
+    if (globalCount > llmGlobalLimit()) {
+      console.warn(`import: app-wide daily LLM cap reached (${globalCount})`);
+      return heuristic;
+    }
     const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
     if (!recipe) return heuristic;
     if (recipe.ingredients.length < h.ingredients.length || recipe.steps.length < h.steps.length) return heuristic;
