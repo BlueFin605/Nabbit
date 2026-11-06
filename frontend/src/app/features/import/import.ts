@@ -19,6 +19,7 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorCode, string> = {
   timeout: 'That site took too long to respond.',
   bad_status: "That site wouldn't let us read the page.",
   not_html: "That link isn't a web page.",
+  not_image: "That image can't be used.",
   too_many_redirects: 'That link redirects too many times.',
 };
 export const RATE_LIMIT_MESSAGE = "You've imported a lot — try again in a while.";

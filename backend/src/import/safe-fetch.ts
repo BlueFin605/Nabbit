@@ -3,7 +3,8 @@ import type { IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 import { Readable } from 'node:stream';
-import { ImportError } from './import-error.js';
+import { MAX_IMAGE_BYTES } from '../image-limits.js';
+import { ImportError, type ImportErrorCode } from './import-error.js';
 
 export { ImportError } from './import-error.js';
 export type { ImportErrorCode } from './import-error.js';
@@ -321,7 +322,19 @@ function decoderFor(contentType: string | null): TextDecoder {
   return new TextDecoder('utf-8');
 }
 
-export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promise<FetchedPage> {
+export interface GuardedFetchOptions {
+  accept: string;
+  isAllowedType: (contentType: string) => boolean;
+  notAllowedCode: ImportErrorCode;
+  maxBytes: number;
+}
+export interface GuardedResponse {
+  url: string;
+  contentType: string;
+  bytes: Uint8Array;
+}
+
+export async function guardedFetch(rawUrl: string, opts: GuardedFetchOptions, deps: SafeFetchDeps = {}): Promise<GuardedResponse> {
   const resolve = deps.resolve ?? defaultResolve;
   const fetchImpl = deps.fetchImpl ?? pinnedFetch;
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -352,7 +365,7 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
           pinnedAddresses: addresses,
           headers: {
             'user-agent': USER_AGENT,
-            accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1',
+            accept: opts.accept,
             'accept-encoding': 'identity',
           },
         };
@@ -382,12 +395,12 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
         throw new ImportError('bad_status', `Upstream returned ${res.status}`);
       }
       const contentType = res.headers.get('content-type');
-      if (!isHtmlType(contentType)) {
+      if (!opts.isAllowedType(contentType ?? '')) {
         void res.body?.cancel().catch(() => undefined);
-        throw new ImportError('not_html', 'Page is not HTML');
+        throw new ImportError(opts.notAllowedCode, opts.notAllowedCode === 'not_html' ? 'Page is not HTML' : 'Not an allowed content type');
       }
       const declared = Number(res.headers.get('content-length'));
-      if (Number.isFinite(declared) && declared > MAX_BYTES) {
+      if (Number.isFinite(declared) && declared > opts.maxBytes) {
         void res.body?.cancel().catch(() => undefined);
         throw new ImportError('too_large', 'Page is too large');
       }
@@ -407,7 +420,7 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
             }
             if (r.done) break;
             total += r.value.byteLength;
-            if (total > MAX_BYTES) throw new ImportError('too_large', 'Page is too large');
+            if (total > opts.maxBytes) throw new ImportError('too_large', 'Page is too large');
             chunks.push(r.value);
           }
         } finally {
@@ -420,10 +433,59 @@ export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promi
         buf.set(c, off);
         off += c.byteLength;
       }
-      return { url: current.href, html: decoderFor(contentType).decode(buf) };
+      return { url: current.href, contentType: contentType ?? '', bytes: buf };
     }
   } finally {
     clearTimeout(timer);
     controller.abort();
   }
+}
+
+const HTML_ACCEPT = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.1';
+
+export async function safeFetch(rawUrl: string, deps: SafeFetchDeps = {}): Promise<FetchedPage> {
+  const r = await guardedFetch(
+    rawUrl,
+    { accept: HTML_ACCEPT, isAllowedType: (t) => isHtmlType(t), notAllowedCode: 'not_html', maxBytes: MAX_BYTES },
+    deps,
+  );
+  return { url: r.url, html: decoderFor(r.contentType).decode(r.bytes) };
+}
+
+export type ImageContentType = 'image/jpeg' | 'image/png' | 'image/webp';
+export interface FetchedImage {
+  url: string;
+  contentType: ImageContentType;
+  bytes: Uint8Array;
+}
+
+const IMAGE_TYPES: readonly string[] = ['image/jpeg', 'image/png', 'image/webp'];
+
+function sniffImageType(b: Uint8Array): ImageContentType | null {
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (
+    b.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  return null;
+}
+
+export async function safeFetchImage(rawUrl: string, deps: SafeFetchDeps = {}): Promise<FetchedImage> {
+  const r = await guardedFetch(
+    rawUrl,
+    {
+      accept: 'image/jpeg,image/png,image/webp',
+      isAllowedType: (t) => IMAGE_TYPES.includes(t.split(';')[0]!.trim().toLowerCase()),
+      notAllowedCode: 'not_image',
+      maxBytes: MAX_IMAGE_BYTES,
+    },
+    deps,
+  );
+  const declared = r.contentType.split(';')[0]!.trim().toLowerCase();
+  if (sniffImageType(r.bytes) !== declared) throw new ImportError('not_image', 'Image content does not match its type');
+  return { url: r.url, contentType: declared as ImageContentType, bytes: r.bytes };
 }

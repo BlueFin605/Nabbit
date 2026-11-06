@@ -46,6 +46,7 @@ export type ImportErrorCode =
   | 'timeout'
   | 'bad_status'
   | 'not_html'
+  | 'not_image'
   | 'too_many_redirects';
 
 export interface ListSummary {

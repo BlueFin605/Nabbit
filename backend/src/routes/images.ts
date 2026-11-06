@@ -15,7 +15,8 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+import { MAX_IMAGE_BYTES } from '../image-limits.js';
+export { MAX_IMAGE_BYTES };
 export const UPLOAD_EXPIRES_IN = 300;
 
 const EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
