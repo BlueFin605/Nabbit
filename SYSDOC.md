@@ -25,6 +25,9 @@ flowchart LR
   U[User: paste or share] --> F[Frontend /import]
   F -->|POST /recipes/import| I[Import Lambda]
   I -->|url| SF[safe-fetch] --> EX[extract-structured, else htmlToText + extract-text]
+  EX -->|no structured data, little text| AD[extract-app-data: Gatsby/Next JSON] -->|reduced text| LLM
+  AD -->|nothing usable| NT2[422 needs_text]
+  NT2 -.->|user pastes text| F
   I -->|Instagram host| IG[safe-fetch, no cookies] --> IC[extract-instagram caption]
   IC -->|caption| EX2
   IC -->|login wall, empty, truncated, fetch error, or INSTAGRAM_AUTOFETCH=0| NT[422 needs_text]
@@ -42,7 +45,7 @@ flowchart LR
   F -->|POST /recipes| A[API Lambda] --> DB[(DynamoDB)]
 ```
 
-Instagram URLs (`instagram.com`, `www.instagram.com`, `m.instagram.com`, `instagr.am`, https; a trailing dot is ignored) are fetched anonymously through the same guarded fetch (no cookies, honest User-Agent). The caption is extracted from the page (`extract-instagram.ts`) and goes through the normal text path, including the LLM fallback. On a login wall, an empty or truncated caption, any fetch error, or `INSTAGRAM_AUTOFETCH=0`, the import route answers 422 `needs_text` and the frontend asks the user to paste the caption, which is then imported as text. A recipe that lives in a comment is pasted (the "Recipe in a comment?" appender, merged into the existing preview). Comments cannot be fetched anonymously, so they are always pasted. See Key decisions and Known gaps.
+Instagram URLs (`instagram.com`, `www.instagram.com`, `m.instagram.com`, `instagr.am`, https; a trailing dot is ignored) are fetched anonymously through the same guarded fetch (no cookies, honest User-Agent). The caption is extracted from the page (`extract-instagram.ts`) and goes through the normal text path, including the LLM fallback. On a login wall, an empty or truncated caption, any fetch error, or `INSTAGRAM_AUTOFETCH=0`, the import route answers 422 `needs_text` and the frontend asks the user to paste the caption, which is then imported as text. A recipe that lives in a comment is pasted (the "Recipe in a comment?" appender, merged into the existing preview). Comments cannot be fetched anonymously, so they are always pasted. A non-Instagram page with no structured data, under 200 characters of visible text and no ingredients or steps (a JavaScript-built shell) is not sent to the LLM as is: the server first tries the app data embedded in the page (`extract-app-data.ts`: Gatsby `/page-data/<path>/page-data.json` on the same origin, or Next `__NEXT_DATA__`) and gives the LLM a reduced text; if that yields nothing, or no LLM is configured, it answers 422 `needs_text` and the frontend shows a generic paste prompt. Tracking params are stripped from `sourceUrl`. See Key decisions and Known gaps.
 
 Import saves nothing. The draft comes back with ingredients already parsed and metric-converted (`recipe-core`), plus ranked photo `candidates` for URL imports; the client previews and edits, then saves with `POST /recipes`. If a candidate photo is still chosen at Save, the client first calls `POST /recipes/images/import`, which downloads it through the SSRF guard into the image bucket and returns an `imageKey` for the recipe (on failure the recipe saves without a photo). Scaling in the recipe view is purely client-side and non-destructive; "Save as new size" does a `PUT` with the scaled ingredients.
 

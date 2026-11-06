@@ -25,7 +25,7 @@ Pasted text skips step 1 and 2 and goes straight to step 3.
 Not supported:
 
 - **RDFa**, and recipes in a PDF or an image.
-- **Pages that build the recipe with JavaScript** after loading (some single-page apps, for example `recipes.co.nz`). The HTML Nabbit receives is an empty shell, so there is nothing to read. Copy the recipe text from the page and paste it into Nabbit instead.
+- **Pages that build the recipe with JavaScript** after loading (some single-page apps, for example `recipes.co.nz`). The HTML Nabbit receives is an empty shell. When `llmModelId` is configured, Nabbit first tries the app data embedded in the page (a Gatsby `page-data.json` or Next.js `__NEXT_DATA__`) and has the LLM read that. If nothing usable is found, or no LLM is configured, Nabbit asks you to paste the recipe text from the page instead.
 - **Instagram** posts are fetched anonymously for the caption only. When Instagram blocks that, Nabbit asks you to paste the caption; a recipe in a comment is always pasted.
 
 To check whether a site will work, view its page source (not the inspected DOM) and search for `ld+json` and `recipeIngredient`. If they are there, it will import.
