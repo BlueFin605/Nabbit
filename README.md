@@ -14,7 +14,7 @@ Architecture, the data model and key decisions are in `SYSDOC.md`.
 
 ## Configuration
 
-Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment. Optional keys: `hostedZoneId` (import the DNS zone instead of looking it up), `importReservedConcurrency` (default 5), `llmModelId` (enables the import Lambda LLM fallback: sets LLM_MODEL_ID and grants bedrock:InvokeModel on that model only), `apiCodePath` and `importCodePath` (override the Lambda bundle locations).
+Copy `config.example.json` and set `prefix`, `region`, `environment` and `domain` for your deployment. Optional keys: `hostedZoneId` (import the DNS zone instead of looking it up), `importReservedConcurrency` (default 5), `llmModelId` (enables the import Lambda LLM fallback: sets LLM_MODEL_ID and grants bedrock:InvokeModel on that model only), `llmGlobalDailyLimit` (app-wide LLM calls per UTC day across all users; default 300, 0 = none), `apiCodePath` and `importCodePath` (override the Lambda bundle locations).
 
 ## Build
 

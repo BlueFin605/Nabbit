@@ -569,6 +569,59 @@ describe('LLM fallback and Instagram needs_text', () => {
     expect(item?.ttl).toBe(Math.floor(nowMs / 1000) + 2 * 86400);
   });
 
+  describe('app-wide daily LLM cap', () => {
+    const GLOBAL_KEY = 'GLOBAL\u0000RATE#llm#2026-11-02';
+    afterEach(() => {
+      delete process.env.LLM_GLOBAL_DAILY_LIMIT;
+    });
+
+    it('counts each LLM attempt on the GLOBAL counter, with a ttl', async () => {
+      await call({ text: LOW });
+      const item = db.items.get(GLOBAL_KEY);
+      expect(item?.count).toBe(1);
+      expect(item?.ttl).toBe(Math.floor(nowMs / 1000) + 2 * 86400);
+      expect(parsed).toHaveLength(1);
+    });
+
+    it('default cap (300) used up: heuristic draft, parser not called, even for an owner under their own cap', async () => {
+      db.items.set(GLOBAL_KEY, { count: 300 } as never);
+      const res = await call({ text: LOW });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('LLM_GLOBAL_DAILY_LIMIT overrides the default and spans owners', async () => {
+      process.env.LLM_GLOBAL_DAILY_LIMIT = '2';
+      await call({ text: LOW });
+      await call({ text: LOW }, 'u2');
+      const third = await call({ text: LOW }, 'u3');
+      expect(parsed).toHaveLength(2);
+      expect(third.json.draft.confidence).toBe('heuristic');
+    });
+
+    it('LLM_GLOBAL_DAILY_LIMIT=0 means no LLM calls', async () => {
+      process.env.LLM_GLOBAL_DAILY_LIMIT = '0';
+      await call({ text: LOW });
+      expect(parsed).toHaveLength(0);
+    });
+
+    it.each(['abc', '-5', '1.5', ''])('invalid LLM_GLOBAL_DAILY_LIMIT %j falls back to the default', async (v) => {
+      process.env.LLM_GLOBAL_DAILY_LIMIT = v;
+      db.items.set(GLOBAL_KEY, { count: 299 } as never);
+      await call({ text: LOW });
+      expect(parsed).toHaveLength(1);
+      await call({ text: LOW });
+      expect(parsed).toHaveLength(1);
+    });
+
+    it('an owner over their own cap does not consume the global budget', async () => {
+      db.items.set('OWNER#u1\u0000RATE#llm#2026-11-02', { count: 30 } as never);
+      await call({ text: LOW });
+      expect(db.items.get(GLOBAL_KEY)).toBeUndefined();
+    });
+  });
+
   it('401 without a sub is unchanged', async () => {
     const res = await call({ text: LOW }, null as never);
     expect(res.status).toBe(401);

@@ -21,6 +21,9 @@ namespace Infrastructure
         /// <summary>Optional Bedrock model id or cross-region inference-profile id (e.g. "us.anthropic...") for the import Lambda's LLM fallback parser. Unset = feature off: no LLM_MODEL_ID env var, no Bedrock permission.</summary>
         public string LlmModelId { get; set; }
 
+        /// <summary>Optional app-wide cap on LLM calls per UTC day, across all users. Null = the backend default (300); 0 = no LLM calls. Only applied when LlmModelId is set.</summary>
+        public int? LlmGlobalDailyLimit { get; set; }
+
         /// <summary>Folder holding the built API router (index.js). Relative to the cdk working directory.</summary>
         public string ApiCodePath { get; set; } = "../backend/dist/api";
 
@@ -70,6 +73,10 @@ namespace Infrastructure
             };
             if (s.TryGetProperty("importReservedConcurrency", out var c) && c.ValueKind == JsonValueKind.Number)
                 cfg.ImportReservedConcurrency = c.GetInt32();
+            if (s.TryGetProperty("llmGlobalDailyLimit", out var g) && g.ValueKind == JsonValueKind.Number)
+                cfg.LlmGlobalDailyLimit = g.GetInt32() < 0
+                    ? throw new InvalidOperationException("config \"nabbit.llmGlobalDailyLimit\" must be 0 or more")
+                    : g.GetInt32();
             if (string.IsNullOrWhiteSpace(cfg.Domain))
                 throw new InvalidOperationException("config \"nabbit.domain\" is required");
             return cfg;
