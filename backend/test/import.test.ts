@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
 import { setLlmParser } from '../src/import/llm-parse.js';
@@ -770,6 +770,49 @@ describe('LLM fallback and Instagram needs_text', () => {
       expect(res.json.draft.confidence).toBe('structured');
       expect(res.json.draft.recipe.title).toBe('Pancakes');
       expect(parsed).toHaveLength(0);
+    });
+    describe('trigger and single LLM attempt', () => {
+      const PROSE = 'Gently simmer the sauce for a good while. '.repeat(8);
+      const llmBumps = () => (db.incrementCounter as unknown as ReturnType<typeof vi.fn>).mock.calls.filter((c: unknown[]) => String(c[1]).startsWith('RATE#llm#') && c[0] !== 'GLOBAL');
+
+      it('SSR Next page with real text keeps the page-text path (app data is not substituted)', async () => {
+        const html = `<html><body><p>${PROSE}</p><div id="__next"></div><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { recipe: { title: 'Reduced', method: ['Reduced step.'] } } })}</script></body></html>`;
+        page = async () => ({ url: 'https://shop.example/r/ssr', html });
+        const res = await call({ url: 'https://shop.example/r/ssr' });
+        expect(res.status).toBe(200);
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0]!.text).toContain('Gently simmer');
+        expect(parsed[0]!.text).not.toContain('Reduced step.');
+      });
+
+      it('at most one LLM attempt per request: a failed app-data attempt does not trigger a second', async () => {
+        result = async () => undefined;
+        vi.spyOn(db, 'incrementCounter');
+        const res = await call({ url: URL1 });
+        expect(res.status).toBe(422);
+        expect(res.json).toEqual({ error: 'needs_text' });
+        expect(parsed).toHaveLength(1);
+        expect(llmBumps()).toHaveLength(1);
+      });
+
+      it('SSR page with app data and a failing LLM calls the parser once, bumps quota once', async () => {
+        result = async () => undefined;
+        vi.spyOn(db, 'incrementCounter');
+        const html = `<html><body><p>${PROSE}</p><script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { recipe: { title: 'Soup', method: ['Boil.'] } } })}</script></body></html>`;
+        page = async () => ({ url: 'https://shop.example/r/ssr', html });
+        const res = await call({ url: 'https://shop.example/r/ssr' });
+        expect(res.status).toBe(200);
+        expect(parsed).toHaveLength(1);
+        expect(llmBumps()).toHaveLength(1);
+      });
+
+      it('structured app-data draft carries the stripped sourceUrl', async () => {
+        const recipe = { '@type': 'Recipe', name: 'Pancakes', recipeIngredient: ['1 cup flour', '2 eggs'], recipeInstructions: ['Mix.', 'Cook.'] };
+        page = async () => ({ url: 'https://shop.example/r/p?utm_source=x&gclid=1&id=3', html: nextPage({ props: { recipe } }) });
+        const res = await call({ url: 'https://shop.example/r/p?utm_source=x&gclid=1&id=3' });
+        expect(res.json.draft.confidence).toBe('structured');
+        expect(res.json.draft.recipe.sourceUrl).toBe('https://shop.example/r/p?id=3');
+      });
     });
   });
 

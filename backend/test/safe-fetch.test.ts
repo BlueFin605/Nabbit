@@ -478,3 +478,20 @@ describe('safeFetchJson', () => {
     expect(await codeOf(safeFetchJson('https://example.com/p.json', { resolve: resolvePublic, fetchImpl: nf as never }, 1000))).toBe('bad_status');
   });
 });
+
+describe('allowedOrigin (safeFetchJson)', () => {
+  const json = (body = '{"a":1}') => new Response(body, { status: 200, headers: { 'content-type': 'application/json' } });
+  it('rejects a cross-origin redirect hop BEFORE fetching it', async () => {
+    const fetchImpl = vi.fn(async (u: string) => (u.startsWith('https://a.example/') ? redirect('https://evil.example/x.json') : json()));
+    const resolve = vi.fn(resolvePublic);
+    const code = await codeOf(safeFetchJson('https://a.example/p.json', { resolve, fetchImpl: fetchImpl as never }, 1000, { allowedOrigin: 'https://a.example' }));
+    expect(code).toBe('bad_url');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+  it('allows a same-origin redirect', async () => {
+    const fetchImpl = vi.fn(async (u: string) => (u.endsWith('/p.json') ? redirect('https://a.example/q.json') : json()));
+    const r = await safeFetchJson('https://a.example/p.json', { resolve: resolvePublic, fetchImpl: fetchImpl as never }, 1000, { allowedOrigin: 'https://a.example' });
+    expect(r.url).toBe('https://a.example/q.json');
+  });
+});

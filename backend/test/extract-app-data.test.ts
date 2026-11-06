@@ -114,3 +114,44 @@ describe('extractAppData', () => {
     expect(await extractAppData(SHELL, PAGE, ok('<html>not json</html>'))).toBeUndefined();
   });
 });
+
+describe('hostile input is linear', () => {
+  const MB2 = 2 * 1024 * 1024;
+  const time = (f: () => unknown) => {
+    const t = Date.now();
+    f();
+    return Date.now() - t;
+  };
+  it.each([
+    ['repeated <script ', '<script '],
+    ['repeated <meta ', '<meta '],
+    ['unterminated __NEXT_DATA__', '<script id="__NEXT_DATA__" type="application/json">{"a":'],
+    ['repeated id attr without script', 'id="__NEXT_DATA__" '],
+  ])('%s completes quickly', (_n, unit) => {
+    const html = unit.repeat(Math.ceil(MB2 / unit.length));
+    expect(time(() => detectAppData(html, PAGE))).toBeLessThan(1000);
+  });
+  it('still finds NEXT_DATA with attributes in any order and single quotes', () => {
+    expect(detectAppData(`<script type='application/json' id='__NEXT_DATA__' >{"a":1}</SCRIPT>`, PAGE)).toEqual({ kind: 'next', json: { a: 1 } });
+  });
+});
+
+describe('reduceAppData DROP anchoring', () => {
+  it('keeps recipe strings under keys that merely contain a drop substring (stages, percentage, subheader, metadata)', () => {
+    const t = reduceAppData({ method: { stages: [{ steps: ['Whisk the eggs.'] }] }, percentage: 'x', subheader: 'y', metadata: 'z' });
+    expect(t).toContain('Whisk the eggs.');
+  });
+  it('still drops whole-word noise keys, including camelCase segments', () => {
+    const t = reduceAppData({ title: 'T', imageUrl: 'https://i/x.jpg', relatedRecipes: [{ title: 'Other' }], seoDescription: 'seo blurb', tags: ['tagname'], ads: { name: 'adname' } });
+    expect(t).toContain('T');
+    for (const s of ['x.jpg', 'Other', 'tagname', 'adname', 'seo blurb']) expect(t, s).not.toContain(s);
+  });
+});
+
+describe('extractAppData structured sourceUrl', () => {
+  it('uses the supplied (stripped) sourceUrl, not the page url', async () => {
+    const recipe = { '@type': 'Recipe', name: 'Pancakes', recipeIngredient: ['1 cup flour', '2 eggs'], recipeInstructions: ['Mix.', 'Cook.'] };
+    const r = await extractAppData(next({ props: { recipe } }), 'https://x.example/r?gclid=1', vi.fn(), 'https://x.example/r');
+    expect(r?.structured?.recipe.sourceUrl).toBe('https://x.example/r');
+  });
+});

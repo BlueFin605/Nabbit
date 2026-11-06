@@ -10,7 +10,7 @@
  * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d),
  * plus an app-wide cap per UTC day (pk=GLOBAL, same sk; LLM_GLOBAL_DAILY_LIMIT, default 300, read per request)
  * so many accounts cannot multiply the spend. The global counter is only bumped once the owner is under their cap.
- * JS-rendered pages (Gatsby page-data.json, Next.js __NEXT_DATA__) with no usable server-rendered recipe: the embedded app data
+ * JS-rendered shells (Gatsby page-data.json, Next.js __NEXT_DATA__; only when the page has almost no text and nothing parsed): the embedded app data
  * is reduced to text for the LLM (same caps/validation), or used directly when it holds a schema.org Recipe; nothing usable -> needs_text.
  * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
  * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
@@ -49,7 +49,7 @@ export interface ImportDeps {
 const defaults: ImportDeps = {
   safeFetch: (u) => realSafeFetch(u),
   fetchImage: (u) => safeFetchImage(u),
-  fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES),
+  fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES, { allowedOrigin: new URL(u).origin }),
   now: () => Date.now(),
 };
 let deps: ImportDeps = defaults;
@@ -170,9 +170,10 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     }
     const text = htmlToText(page.html);
     const heuristic = extractFromText(text, { sourceUrl });
-    if (heuristic.recipe.ingredients.length < 2 || heuristic.recipe.steps.length < 2) {
-      // Gatsby page-data.json / Next.js __NEXT_DATA__: runs before the JS-shell decision below and falls through to it when it yields nothing.
-      const app = await extractAppData(page.html, page.url, deps.fetchJson).catch(() => undefined);
+    // Client-rendered shell (e.g. Gatsby, CSR Next): essentially no text and nothing parsed. Try the page's embedded app data
+    // (the only LLM attempt this request makes); if that yields nothing, ask the user to paste. Pages with real text never use it.
+    if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && heuristic.recipe.steps.length === 0) {
+      const app = await extractAppData(page.html, page.url, deps.fetchJson, sourceUrl).catch(() => undefined);
       if (app?.structured) {
         const draft = { ...app.structured };
         const appImages = extractImageCandidates(page.html, page.url, draft.imageUrl);
@@ -183,9 +184,6 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
         const ai = await maybeLlm(ownerId, app.text, extractFromText('', { sourceUrl }), sourceUrl);
         if (ai.confidence === 'ai') return { status: 200, body: { draft: ai, ...images } };
       }
-    }
-    // Client-rendered shell (e.g. Gatsby): essentially no text and nothing parsed -> ask the user to paste; never call the LLM.
-    if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && heuristic.recipe.steps.length === 0) {
       return { status: 422, body: { error: 'needs_text' } };
     }
     return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, sourceUrl), ...images } };

@@ -327,6 +327,8 @@ export interface GuardedFetchOptions {
   isAllowedType: (contentType: string) => boolean;
   notAllowedCode: ImportErrorCode;
   maxBytes: number;
+  /** When set, every redirect hop must stay on this origin; a hop elsewhere is rejected before it is resolved or fetched. */
+  allowedOrigin?: string;
 }
 export interface GuardedResponse {
   url: string;
@@ -387,6 +389,7 @@ export async function guardedFetch(rawUrl: string, opts: GuardedFetchOptions, de
           throw new ImportError('bad_url', 'Invalid redirect target');
         }
         current = parseSafeUrl(next); // re-validated (scheme/port/creds) now, address at top of loop
+        if (opts.allowedOrigin && current.origin !== opts.allowedOrigin) throw new ImportError('bad_url', 'Redirected to a different origin');
         continue;
       }
 
@@ -496,10 +499,15 @@ function isJsonType(contentType: string | null): boolean {
 }
 
 /** Same SSRF guard / redirect / timeout handling as safeFetch, for a small JSON document (e.g. Gatsby page-data.json). */
-export async function safeFetchJson(rawUrl: string, deps: SafeFetchDeps = {}, maxBytes: number = MAX_BYTES): Promise<{ url: string; text: string }> {
+export async function safeFetchJson(
+  rawUrl: string,
+  deps: SafeFetchDeps = {},
+  maxBytes: number = MAX_BYTES,
+  opts: { allowedOrigin?: string } = {},
+): Promise<{ url: string; text: string }> {
   const r = await guardedFetch(
     rawUrl,
-    { accept: 'application/json', isAllowedType: isJsonType, notAllowedCode: 'not_html', maxBytes },
+    { accept: 'application/json', isAllowedType: isJsonType, notAllowedCode: 'not_html', maxBytes, ...(opts.allowedOrigin ? { allowedOrigin: opts.allowedOrigin } : {}) },
     deps,
   );
   return { url: r.url, text: new TextDecoder('utf-8').decode(r.bytes) };

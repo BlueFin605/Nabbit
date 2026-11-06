@@ -25,20 +25,65 @@ export function gatsbyDataUrl(pageUrl: string): string {
   return `${u.origin}/page-data${p}page-data.json`;
 }
 
-const GATSBY_META = /<meta\b[^>]*\bname=["']generator["'][^>]*\bcontent=["']Gatsby|<meta\b[^>]*\bcontent=["']Gatsby[^>]*\bname=["']generator["']/i;
 const GATSBY_CHUNKS = /___chunkMapping|gatsby-chunk-mapping/;
-const NEXT_DATA = /<script\b[^>]*\bid=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i;
+const MAX_TAG_CHARS = 2000;
+const MAX_NEXT_DATA_CANDIDATES = 5;
+
+/**
+ * Content of the first <script ... id="__NEXT_DATA__" ...>...</script>, found with indexOf scans only
+ * (a backtracking regex is quadratic on hostile HTML). `lower` is html.toLowerCase().
+ */
+function nextDataText(html: string, lower: string): string | undefined {
+  let from = 0;
+  for (let n = 0; n < MAX_NEXT_DATA_CANDIDATES; n++) {
+    let at = -1;
+    const dq = lower.indexOf('id="__next_data__"', from);
+    const sq = lower.indexOf("id='__next_data__'", from);
+    if (dq !== -1 && (sq === -1 || dq < sq)) at = dq;
+    else if (sq !== -1) at = sq;
+    if (at === -1) return undefined;
+    from = at + 1;
+    // the opening "<script" must be just before, within one tag's worth of characters, with no '>' between
+    const lt = lower.lastIndexOf('<', at);
+    if (lt === -1 || at - lt > MAX_TAG_CHARS || !lower.startsWith('<script', lt) || lower.lastIndexOf('>', at) > lt) continue;
+    const gt = lower.indexOf('>', at);
+    if (gt === -1) return undefined;
+    const end = lower.indexOf('</script', gt + 1);
+    if (end === -1) return undefined;
+    return html.slice(gt + 1, end);
+  }
+  return undefined;
+}
+
+/** True when some <meta ...> tag is the Gatsby generator tag. Linear: one pass of indexOf, bounded tag length. */
+function hasGatsbyMeta(lower: string): boolean {
+  let i = lower.indexOf('<meta');
+  let gt = -1;
+  while (i !== -1) {
+    if (gt < i) {
+      gt = lower.indexOf('>', i);
+      if (gt === -1) return false;
+    }
+    if (gt - i <= MAX_TAG_CHARS) {
+      const tag = lower.slice(i, gt);
+      if (/\bname=["']generator["']/.test(tag) && /\bcontent=["']gatsby/.test(tag)) return true;
+    }
+    i = lower.indexOf('<meta', i + 5);
+  }
+  return false;
+}
 
 export function detectAppData(html: string, pageUrl: string): AppDataSource | undefined {
-  const m = NEXT_DATA.exec(html);
-  if (m && m[1] && m[1].length <= MAX_APP_DATA_BYTES) {
+  const lower = html.toLowerCase();
+  const raw = nextDataText(html, lower);
+  if (raw && raw.length <= MAX_APP_DATA_BYTES) {
     try {
-      return { kind: 'next', json: JSON.parse(m[1]) };
+      return { kind: 'next', json: JSON.parse(raw) };
     } catch {
       /* malformed embedded JSON is just "no app data" */
     }
   }
-  if (GATSBY_META.test(html) || GATSBY_CHUNKS.test(html)) {
+  if (hasGatsbyMeta(lower) || GATSBY_CHUNKS.test(html)) {
     try {
       return { kind: 'gatsby', dataUrl: gatsbyDataUrl(pageUrl) };
     } catch {
@@ -49,8 +94,13 @@ export function detectAppData(html: string, pageUrl: string): AppDataSource | un
 }
 
 const KEEP = /title|name|headline|description|ingredient|method|step|instruction|serv|yield|prep|cook|time|portion/i;
-const DROP =
-  /^_|excerpt|nutri|seo|author|related|image|asset|url|href|slug|categor|health|tag|badge|video|^ad|advert|nav|menu|footer|header|cookie|timer|logo|crop|hotspot|keyword|meta|sponsor|promo|newsletter|social|share|comment|rating|review/i;
+// Noise keys are matched on whole words / camelCase segments (stage, percentage, subheader must not match tag, age, header).
+const DROP_STEMS = ['excerpt', 'nutri', 'seo', 'author', 'related', 'image', 'asset', 'url', 'href', 'slug', 'categor', 'health', 'tag', 'badge', 'video', 'advert', 'nav', 'menu', 'footer', 'header', 'cookie', 'timer', 'logo', 'crop', 'hotspot', 'keyword', 'sponsor', 'promo', 'newsletter', 'social', 'share', 'comment', 'rating', 'review'];
+const DROP_WORDS = new Set(['ad', 'ads', 'meta']);
+const keySegments = (key: string): string[] =>
+  key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+const isDropKey = (key: string): boolean =>
+  key.startsWith('_') || keySegments(key).some((w) => DROP_WORDS.has(w) || DROP_STEMS.some((st) => w.startsWith(st)));
 const MAX_DEPTH = 40;
 
 /** Walk the JSON and keep strings under recipe-ish keys (and not under noise keys), as `key: value` lines, capped. */
@@ -75,7 +125,7 @@ export function reduceAppData(json: unknown): string {
     }
     if (typeof v === 'object') {
       for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-        if (DROP.test(k)) continue;
+        if (isDropKey(k)) continue;
         walk(x, k, keep || KEEP.test(k), depth + 1);
       }
     }
@@ -110,7 +160,7 @@ function structuredFrom(recipe: Record<string, unknown>, pageUrl: string): Struc
  * Pull recipe data out of the page's embedded app data. Returns undefined when the page has none, the fetch is refused
  * or fails, it is not same-origin, it is oversized or not JSON, or nothing recipe-like is in it.
  */
-export async function extractAppData(html: string, pageUrl: string, fetchJson: FetchJson): Promise<AppData | undefined> {
+export async function extractAppData(html: string, pageUrl: string, fetchJson: FetchJson, sourceUrl: string = pageUrl): Promise<AppData | undefined> {
   const src = detectAppData(html, pageUrl);
   if (!src) return undefined;
   let json: unknown;
@@ -129,7 +179,7 @@ export async function extractAppData(html: string, pageUrl: string, fetchJson: F
   }
   const recipe = findSchemaRecipe(json);
   if (recipe) {
-    const structured = structuredFrom(recipe, pageUrl);
+    const structured = structuredFrom(recipe, sourceUrl);
     if (structured) return { structured };
   }
   const text = reduceAppData(json);
