@@ -65,10 +65,13 @@ interface StepRow {
     @if (photoSrc(); as src) {
       <img class="photo" [src]="src" alt="Recipe photo" />
     }
-    @if (previewImage() && !imageKey()) {
-      <p class="photo-note" role="note">Photo found, will be saved</p>
+    @if (!imageKey() && (previewImage() || options().length)) {
+      @if (previewImage()) {
+        <p class="photo-note" role="note">Photo found, will be saved</p>
+        <button mat-button type="button" class="decline-photo" (click)="declinePhoto()">Don't use this photo</button>
+      }
       @if (!showPreview()) {
-        <button mat-button type="button" class="show-options" (click)="showPreview.set(true)">Show photo options</button>
+        <button mat-button type="button" class="show-options" (click)="showPreview.set(true)">{{ previewImage() ? 'Show photo options' : 'Use a found photo' }}</button>
       } @else {
         <div class="candidates">
           @for (c of options(); track c) {
@@ -413,6 +416,11 @@ export class RecipeEditor {
           this.photoError.set('Could not upload that photo. Try again.');
         },
       });
+  }
+
+  protected declinePhoto(): void {
+    this.showPreview.set(false);
+    this.candidateChosen.emit(undefined);
   }
 
   protected removePhoto(): void {

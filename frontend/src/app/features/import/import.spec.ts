@@ -229,6 +229,55 @@ describe('Import', () => {
       expect(importImage).not.toHaveBeenCalled();
       expect(createRecipe).toHaveBeenCalled();
     });
+
+    it('declining the found photo saves with no photo and no importImage call', async () => {
+      await ready(result({}, undefined, cands));
+      q('.decline-photo')?.click();
+      fixture.detectChanges();
+      expect(q('.photo-note')).toBeNull();
+      q('.save')?.click();
+      expect(importImage).not.toHaveBeenCalled();
+      expect(savedBody().imageKey).toBeUndefined();
+    });
+
+    it('after declining, a found photo can be picked again', async () => {
+      await ready(result({}, undefined, cands));
+      q('.decline-photo')?.click();
+      fixture.detectChanges();
+      q('.show-options')?.click();
+      fixture.detectChanges();
+      q<HTMLButtonElement>('.candidate:nth-child(2)')?.click();
+      fixture.detectChanges();
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledWith(cands[1]);
+    });
+
+    it('a retry after createRecipe fails reuses the fetched key', async () => {
+      await ready(result({}, undefined, cands));
+      createRecipe.mockReturnValueOnce(httpErr(500));
+      q('.save')?.click();
+      fixture.detectChanges();
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledTimes(1);
+      expect(createRecipe).toHaveBeenCalledTimes(2);
+      expect((createRecipe.mock.calls[1] as [RecipeInput])[0].imageKey).toBe('o/img.jpg');
+    });
+
+    it('changing candidate after a fetch discards the cached key', async () => {
+      await ready(result({}, undefined, cands));
+      createRecipe.mockReturnValueOnce(httpErr(500));
+      q('.save')?.click();
+      fixture.detectChanges();
+      q('.show-options')?.click();
+      fixture.detectChanges();
+      q<HTMLButtonElement>('.candidate:nth-child(2)')?.click();
+      fixture.detectChanges();
+      importImage.mockReturnValue(of({ imageKey: 'o/img2.jpg' }));
+      q('.save')?.click();
+      expect(importImage).toHaveBeenCalledTimes(2);
+      expect(importImage).toHaveBeenLastCalledWith(cands[1]);
+      expect((createRecipe.mock.calls[1] as [RecipeInput])[0].imageKey).toBe('o/img2.jpg');
+    });
   });
 
   it('discard returns to /recipes without saving', async () => {

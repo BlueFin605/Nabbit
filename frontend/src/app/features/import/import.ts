@@ -89,7 +89,7 @@ export function toImportRequest(value: string): ImportRequest {
           [recipe]="d.recipe"
           [previewImage]="chosenCandidate()"
           [candidates]="candidates()"
-          (candidateChosen)="chosenCandidate.set($event)"
+          (candidateChosen)="onCandidate($event)"
           [saving]="saving()"
           [error]="error()"
           (saved)="save($event)"
@@ -125,6 +125,13 @@ export class Import implements OnInit {
   });
 
   private sourceUrl: string | undefined;
+  /** Key returned by images/import for a candidate, kept so a Save retry does not re-fetch. */
+  private fetched: { candidate: string; imageKey: string } | undefined;
+
+  protected onCandidate(c: string | undefined): void {
+    if (c !== this.fetched?.candidate) this.fetched = undefined;
+    this.chosenCandidate.set(c);
+  }
 
   ngOnInit(): void {
     const shared = this.url()?.trim() || firstUrl(this.text()) || this.text()?.trim() || '';
@@ -164,7 +171,9 @@ export class Import implements OnInit {
     const recipe = { ...res.draft.recipe };
     if (this.sourceUrl && !recipe.sourceUrl) recipe.sourceUrl = this.sourceUrl;
     this.draft.set({ ...res.draft, recipe });
-    this.candidates.set(res.candidates ?? []);
+    // Always offer the found photo(s) so they can be re-picked after declining.
+    this.candidates.set(res.candidates?.length ? res.candidates : res.imageUrl ? [res.imageUrl] : []);
+    this.fetched = undefined;
     this.chosenCandidate.set(res.candidates?.[0] ?? res.imageUrl);
   }
 
@@ -189,8 +198,15 @@ export class Import implements OnInit {
       this.create(input);
       return;
     }
+    if (this.fetched?.candidate === chosen) {
+      this.create({ ...input, imageKey: this.fetched.imageKey });
+      return;
+    }
     this.api.importImage(chosen).subscribe({
-      next: ({ imageKey }) => this.create({ ...input, imageKey }),
+      next: ({ imageKey }) => {
+        this.fetched = { candidate: chosen, imageKey };
+        this.create({ ...input, imageKey });
+      },
       error: () => {
         this.snack.open('Saved without a photo - add one in the editor.', 'OK', { duration: 6000 });
         this.create(input);
