@@ -25,7 +25,9 @@ flowchart LR
   U[User: paste or share] --> F[Frontend /import]
   F -->|POST /recipes/import| I[Import Lambda]
   I -->|url| SF[safe-fetch] --> EX[extract-structured, else htmlToText + extract-text]
-  I -->|Instagram host| NT[422 needs_text, no fetch]
+  I -->|Instagram host| IG[safe-fetch, no cookies] --> IC[extract-instagram caption]
+  IC -->|caption| EX2
+  IC -->|login wall, empty, truncated, fetch error, or INSTAGRAM_AUTOFETCH=0| NT[422 needs_text]
   NT -.->|user pastes caption| F
   I -->|text| EX2[extract-text]
   EX -->|no structured data, low confidence| LLM[LlmParser: Bedrock]
@@ -40,7 +42,7 @@ flowchart LR
   F -->|POST /recipes| A[API Lambda] --> DB[(DynamoDB)]
 ```
 
-Instagram URLs (`instagram.com`, `www.instagram.com`, `m.instagram.com`, `instagr.am`, https; a trailing dot is ignored) are never fetched: the import route answers 422 `needs_text` and the frontend asks the user to paste the caption, which is then imported as text. A recipe that lives in a comment is pasted the same way (the "Recipe in a comment?" appender, merged into the existing preview). Comments cannot be fetched anonymously, so they are always pasted. Instagram auto-fetch is not built; see Key decisions and Known gaps.
+Instagram URLs (`instagram.com`, `www.instagram.com`, `m.instagram.com`, `instagr.am`, https; a trailing dot is ignored) are fetched anonymously through the same guarded fetch (no cookies, honest User-Agent). The caption is extracted from the page (`extract-instagram.ts`) and goes through the normal text path, including the LLM fallback. On a login wall, an empty or truncated caption, any fetch error, or `INSTAGRAM_AUTOFETCH=0`, the import route answers 422 `needs_text` and the frontend asks the user to paste the caption, which is then imported as text. A recipe that lives in a comment is pasted (the "Recipe in a comment?" appender, merged into the existing preview). Comments cannot be fetched anonymously, so they are always pasted. See Key decisions and Known gaps.
 
 Import saves nothing. The draft comes back with ingredients already parsed and metric-converted (`recipe-core`), plus ranked photo `candidates` for URL imports; the client previews and edits, then saves with `POST /recipes`. If a candidate photo is still chosen at Save, the client first calls `POST /recipes/images/import`, which downloads it through the SSRF guard into the image bucket and returns an `imageKey` for the recipe (on failure the recipe saves without a photo). Scaling in the recipe view is purely client-side and non-destructive; "Save as new size" does a `PUT` with the scaled ingredients.
 
@@ -61,7 +63,7 @@ Key builders and the `Db` interface are in `backend/src/db.ts`.
 ## Key decisions
 
 - **Deterministic first, LLM as a fallback only.** Import uses structured data (schema.org JSON-LD/microdata) plus deterministic text heuristics; conversion never blocks an import (unknown units pass through). Only when a text draft has fewer than 2 ingredients or fewer than 2 steps is an LLM (AWS Bedrock Converse, small Claude model, id from `LLM_MODEL_ID`, off when unset) asked to parse the text. Structured-data imports and good heuristic drafts never call it. The model has no tools, its input is treated as untrusted data, and its JSON output is schema-validated and re-run through `recipe-core` parsing and metric conversion. Any failure, timeout, invalid output or a result with fewer ingredients or fewer steps than the heuristic keeps the heuristic draft, so the LLM never fails an import. The result is flagged `confidence: 'ai'` and the user always reviews an editable preview. Caps: the 30/hour import limit plus 30 LLM calls per owner per UTC day. Details: `backend/SYSDOC.md`.
-- **Instagram's official APIs are not used.** The Basic Display API stopped answering on 2024-12-04; oEmbed needs a Meta app token plus App Review and is not known to return the caption; the Graph API targets business/creator accounts. No logged-in scraping, cookies or crawler impersonation. Instagram URLs currently always return `needs_text`. The anonymous auto-fetch spike is pending (NAB-98): auto-fetch will only be built if it returns GO.
+- **Instagram's official APIs are not used.** The Basic Display API stopped answering on 2024-12-04; oEmbed needs a Meta app token plus App Review and is not known to return the caption; the Graph API targets business/creator accounts. No logged-in scraping, cookies or crawler impersonation. Instead, Instagram post URLs get an anonymous auto-fetch of the caption, with paste as the fallback. It was gated by a spike (`backend/scripts/spike-instagram.mjs`) that returned GO: run from AWS CloudShell on 2026-11-07, 3 of 3 URLs usable (HTTP 200, `og:description` present, no login redirect, captions of 736, 771 and 1015 characters, none truncated). That is a small sample, Instagram's markup and blocking may change, and Lambda is unproven until Dean's smoke test. Kill switch: the env var `INSTAGRAM_AUTOFETCH=0` makes every Instagram URL return `needs_text`; it is read per request, and unset or any other value means on. The CDK stack does not set it, so flipping it on the deployed import Lambda needs a config/deploy change.
 - **Online only.** No offline data; the service worker caches the app shell and assets, never API responses.
 - **`ownerId` comes only from the JWT `sub`** (authorizer claim), never from a body or path. Another owner's record is always 404, not 403.
 - **SSRF guard** on URL import: https only, DNS resolved and every address checked, connection pinned to the validated IP, redirects re-validated, size and time capped (`backend/SYSDOC.md`).
@@ -81,7 +83,7 @@ Code and tests exist, but these have not been verified end to end:
 - `pinnedFetch` (the real TLS path of `safe-fetch`) has no automated test; the e2e fixture hook bypasses it.
 - `POST /recipes/images/import` and the photo candidate chooser are unverified on real infrastructure until Dean's smoke test (the import Lambda's S3 write and its new API Gateway route have never been exercised in AWS).
 - The Bedrock LLM path (model access, the scoped `bedrock:InvokeModel` grant, `LLM_MODEL_ID`, real model output) is unverified on real infrastructure until Dean's smoke test; unit and e2e tests use a stub parser. Bedrock model access must be enabled in the account first.
-- Instagram auto-fetch is not built and its spike (NAB-98) is pending: auto-fetch will only be built if it returns GO. Until then Instagram URLs always need a pasted caption.
+- Instagram auto-fetch is unverified on Lambda until Dean's smoke test: the spike (3 URLs, from CloudShell) is a small sample and the Lambda's egress IPs may be treated differently. If Instagram blocks it, imports degrade to `needs_text` (paste), not to an error.
 - The import rate limit is a fixed clock-hour bucket, so a burst of up to 60 is possible across an hour boundary.
 - `GET /health` exists only on the local server; the CDK stack has no health route.
 - A 401 body differs: `{error:'unauthorized'}` locally, `{"message":"Unauthorized"}` from the API Gateway authorizer.
