@@ -45,7 +45,9 @@ export interface Recipe {
 }
 
 /** A parsed-but-unsaved recipe, as produced by the importer. */
+export type DraftConfidence = 'structured' | 'heuristic' | 'ai';
+
 export interface RecipeDraft {
   recipe: Omit<Recipe, 'id' | 'version' | 'createdAt' | 'updatedAt'>;
-  confidence: 'structured' | 'heuristic';
+  confidence: DraftConfidence;
 }

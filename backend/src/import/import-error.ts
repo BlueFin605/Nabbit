@@ -6,7 +6,8 @@ export type ImportErrorCode =
   | 'bad_status'
   | 'not_html'
   | 'not_image'
-  | 'too_many_redirects';
+  | 'too_many_redirects'
+  | 'needs_text';
 
 export class ImportError extends Error {
   constructor(

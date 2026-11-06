@@ -22,6 +22,7 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorCode, string> = {
   not_html: "That link isn't a web page.",
   not_image: "That image can't be used.",
   too_many_redirects: 'That link redirects too many times.',
+  needs_text: "Instagram wouldn't let us read this post. Paste the caption (and the recipe comment if it's in the comments).",
 };
 export const RATE_LIMIT_MESSAGE = "You've imported a lot — try again in a while.";
 export const GENERIC_ERROR_MESSAGE = "Couldn't import that recipe.";

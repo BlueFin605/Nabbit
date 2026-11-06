@@ -5,8 +5,8 @@ import { Router, provideRouter } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
-import type { ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { Import, firstUrl, toImportRequest } from './import';
+import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
+import { IMPORT_ERROR_MESSAGES, Import, firstUrl, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -288,5 +288,29 @@ describe('Import', () => {
     q('.discard')?.click();
     expect(nav).toHaveBeenCalledWith(['/recipes']);
     expect(createRecipe).not.toHaveBeenCalled();
+  });
+});
+
+describe('IMPORT_ERROR_MESSAGES', () => {
+  const codes: ImportErrorCode[] = [
+    'bad_url',
+    'blocked_address',
+    'too_large',
+    'timeout',
+    'bad_status',
+    'not_html',
+    'not_image',
+    'too_many_redirects',
+    'needs_text',
+  ];
+
+  it.each(codes)('has a message for %s', (code) => {
+    expect(IMPORT_ERROR_MESSAGES[code]).toBeTruthy();
+  });
+
+  it('asks the user to paste the caption for needs_text', () => {
+    expect(IMPORT_ERROR_MESSAGES.needs_text).toBe(
+      "Instagram wouldn't let us read this post. Paste the caption (and the recipe comment if it's in the comments).",
+    );
   });
 });
