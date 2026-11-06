@@ -7,20 +7,26 @@
  *   POST /recipes/images/import  body `{ url }` (https) -> 200 { imageKey }: downloads the image through the SSRF guard
  *     and stores it at {ownerId}/{uuid}.{ext}; 400 bad url, 422 { error: <ImportError code> } (incl. not_image), 429 as above.
  *     Shares the import rate limit (same counter). Registered on the import Lambda only.
+ * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d).
+ * Instagram URLs are not fetched: 422 needs_text.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
  * (pk=OWNER#{id}, sk=RATE#import#{epoch hour}, ttl 2h), incremented BEFORE any fetch so failures still count.
  */
-import { ownerPk, rateSk, getDb } from '../db.js';
+import { ownerPk, rateSk, llmDaySk, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
+import { getLlmParser } from '../import/llm-parse.js';
+import type { RecipeDraft } from '@nabbit/recipe-core';
 import { safeFetch as realSafeFetch, safeFetchImage, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
 export const IMPORT_LIMIT_PER_HOUR = 30;
+export const LLM_LIMIT_PER_DAY = 30;
 export const MAX_IMPORT_TEXT = 50_000;
+const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'instagr.am']);
 const HOUR_MS = 3_600_000;
 
 export interface ImportDeps {
@@ -34,6 +40,35 @@ let deps: ImportDeps = defaults;
 /** Test hook: inject the fetcher / clock (pass undefined to reset). */
 export function setImportDeps(d: Partial<ImportDeps> | undefined): void {
   deps = { ...defaults, ...d };
+}
+
+function isInstagramUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:' && INSTAGRAM_HOSTS.has(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+/** Low-confidence heuristic drafts get one LLM attempt (daily cap per owner); any failure keeps the heuristic draft. */
+async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string): Promise<RecipeDraft> {
+  const h = heuristic.recipe;
+  if (h.ingredients.length >= 2 && h.steps.length >= 2) return heuristic;
+  const parser = getLlmParser();
+  if (!parser) return heuristic;
+  try {
+    const nowMs = deps.now();
+    const day = new Date(nowMs).toISOString().slice(0, 10);
+    const count = await getDb().incrementCounter(ownerPk(ownerId), llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
+    if (count > LLM_LIMIT_PER_DAY) return heuristic;
+    const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
+    if (!recipe) return heuristic;
+    if (recipe.ingredients.length < h.ingredients.length && recipe.steps.length < h.steps.length) return heuristic;
+    return { recipe, confidence: 'ai' };
+  } catch {
+    return heuristic;
+  }
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -68,7 +103,11 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     return { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': String(retryAfter) } };
   }
 
-  if (hasText) return { status: 200, body: { draft: extractFromText(body.text as string) } };
+  if (hasText) {
+    const text = body.text as string;
+    return { status: 200, body: { draft: await maybeLlm(ownerId, text, extractFromText(text)) } };
+  }
+  if (isInstagramUrl((body.url as string).trim())) return { status: 422, body: { error: 'needs_text' } };
 
   try {
     const page = await deps.safeFetch((body.url as string).trim());
@@ -80,7 +119,9 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
       delete draft.imageUrl;
       return { status: 200, body: { draft, ...images } };
     }
-    return { status: 200, body: { draft: extractFromText(htmlToText(page.html), { sourceUrl: page.url }), ...images } };
+    const text = htmlToText(page.html);
+    const heuristic = extractFromText(text, { sourceUrl: page.url });
+    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, page.url), ...images } };
   } catch (err) {
     if (err instanceof ImportError) return { status: 422, body: { error: err.code } };
     throw err;

@@ -67,6 +67,8 @@ export const memSk = (lowerName: string): string => `MEM#${lowerName}`;
 export const MEM_SK_PREFIX = 'MEM#';
 /** Per-owner rate-limit counter for `kind` in the given epoch hour. */
 export const rateSk = (kind: string, hour: number): string => `RATE#${kind}#${hour}`;
+/** Per-owner daily LLM counter for a UTC date (yyyy-mm-dd). */
+export const llmDaySk = (utcDate: string): string => `RATE#llm#${utcDate}`;
 
 /** DynamoDB-backed implementation. `AWS_ENDPOINT_URL` (local dev) is honoured by the SDK itself. */
 export function createDynamoDb(tableName = process.env.TABLE_NAME ?? '', client?: DynamoDBDocumentClient): Db {

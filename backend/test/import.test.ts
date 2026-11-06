@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
+import { setLlmParser } from '../src/import/llm-parse.js';
 import { registerImportRoutes, setImportDeps, IMPORT_LIMIT_PER_HOUR } from '../src/routes/import.js';
 import { setDb } from '../src/db.js';
 import { createMemoryDb } from '../src/db-memory.js';
@@ -281,5 +282,121 @@ describe('POST /recipes/images/import', () => {
     for (let i = 0; i < 29; i++) await call({ text: 'Soup' });
     expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(200);
     expect((await callImg({ url: 'https://example.com/p.jpg' })).status).toBe(429);
+  });
+});
+
+describe('LLM fallback and Instagram needs_text', () => {
+  const LOW = 'Mystery dish\n\nIngredients\n2 cups flour\n';
+  const LOW_WITH_STEP = 'Dish\n\nIngredients\n2 cups flour\n\nMethod\n1. Mix.';
+  const GOOD = 'Toast\n\nIngredients\n2 slices bread\n1 tbsp butter\n\nMethod\n1. Toast the bread.\n2. Butter it.';
+  const aiRecipe = {
+    title: 'AI Dish',
+    servings: 4,
+    ingredients: [{ name: 'flour', quantity: 240, unit: 'g' }],
+    steps: ['Mix.', 'Bake.'],
+    tags: [],
+  };
+  let parsed: { text: string; sourceUrl?: string }[];
+  let result: () => Promise<unknown>;
+
+  beforeEach(() => {
+    parsed = [];
+    result = async () => aiRecipe;
+    setLlmParser({
+      parse: async (text, ctx) => {
+        parsed.push({ text, sourceUrl: ctx.sourceUrl });
+        return (await result()) as never;
+      },
+    });
+  });
+  afterEach(() => setLlmParser(undefined));
+
+  it.each(['https://instagram.com/p/abc/', 'https://www.instagram.com/reel/abc/', 'https://instagr.am/p/abc', 'https://WWW.Instagram.com/p/x'])(
+    'instagram url %s -> 422 needs_text without fetching, still counted',
+    async (url) => {
+      const res = await call({ url });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(fetched).toEqual([]);
+      const hour = Math.floor(nowMs / 3_600_000);
+      expect(db.items.get(`OWNER#u1\u0000RATE#import#${hour}`)?.count).toBe(1);
+    },
+  );
+
+  it('lookalike hosts and http instagram are not treated as instagram', async () => {
+    page = async () => ({ url: 'https://notinstagram.com/r', html: LD_HTML });
+    expect((await call({ url: 'https://notinstagram.com/r' })).status).toBe(200);
+    expect(fetched).toEqual(['https://notinstagram.com/r']);
+  });
+
+  it('low-confidence text calls the parser and returns an ai draft', async () => {
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('ai');
+    expect(res.json.draft.recipe.title).toBe('AI Dish');
+    expect(res.json.draft.recipe.ingredients[0].unit).toBe('g');
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('page-text fallback passes sourceUrl to the parser', async () => {
+    page = async () => ({ url: 'https://example.com/r', html: '<html><body><p>Just some words</p></body></html>' });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.draft.confidence).toBe('ai');
+    expect(parsed[0].sourceUrl).toBe('https://example.com/r');
+  });
+
+  it('good heuristic text does not call the parser', async () => {
+    const res = await call({ text: GOOD });
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('structured data never calls the parser', async () => {
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.draft.confidence).toBe('structured');
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('parser returning undefined keeps the heuristic draft', async () => {
+    result = async () => undefined;
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('parser throwing keeps the heuristic draft', async () => {
+    result = async () => {
+      throw new Error('boom');
+    };
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('keeps the heuristic draft when the LLM has fewer ingredients and fewer steps', async () => {
+    result = async () => ({ ...aiRecipe, ingredients: [], steps: [] });
+    const res = await call({ text: LOW_WITH_STEP });
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('skips the parser once the daily cap is used, with a ttl on the counter', async () => {
+    for (let i = 0; i < 30; i++) {
+      await call({ text: LOW });
+      // keep under the hourly limit by moving to the next hour every 20 calls
+      if (i === 19) nowMs += 3_600_000;
+    }
+    expect(parsed).toHaveLength(30);
+    const res = await call({ text: LOW });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(parsed).toHaveLength(30);
+    const item = db.items.get('OWNER#u1\u0000RATE#llm#2026-11-02');
+    expect(item?.count).toBe(31);
+    expect(item?.ttl).toBe(Math.floor(nowMs / 1000) + 2 * 86400);
+  });
+
+  it('401 without a sub is unchanged', async () => {
+    const res = await call({ text: LOW }, null as never);
+    expect(res.status).toBe(401);
   });
 });
