@@ -172,6 +172,50 @@ describe('RecipeEditor', () => {
     expect(saved[0].imageKey).toBeUndefined();
   });
 
+  describe('photo candidates', () => {
+    const cands = ['https://a.example/1.jpg', 'https://a.example/2.jpg'];
+    async function withCandidates() {
+      await setup();
+      fixture.componentRef.setInput('previewImage', cands[0]);
+      fixture.componentRef.setInput('candidates', cands);
+      await settle();
+    }
+
+    it('shows the note and loads no image before the tap', async () => {
+      await withCandidates();
+      expect(q('.photo-note')?.textContent).toContain('Photo found, will be saved');
+      expect(qa('img')).toHaveLength(0);
+    });
+
+    it('loads thumbnails after the tap and emits the chosen candidate', async () => {
+      await withCandidates();
+      const chosen: (string | undefined)[] = [];
+      fixture.componentInstance.candidateChosen.subscribe((c) => chosen.push(c));
+      q('.show-options')?.click();
+      await settle();
+      const thumbs = qa<HTMLButtonElement>('.candidate');
+      expect(thumbs).toHaveLength(2);
+      expect(thumbs[0].classList).toContain('chosen');
+      expect(thumbs[0].querySelector('img')?.getAttribute('src')).toBe(cands[0]);
+      thumbs[1].click();
+      await settle();
+      expect(chosen).toEqual([cands[1]]);
+    });
+
+    it('uploading your own photo clears the candidate and hides the options', async () => {
+      await withCandidates();
+      const chosen: (string | undefined)[] = [];
+      fixture.componentInstance.candidateChosen.subscribe((c) => chosen.push(c));
+      const input = q<HTMLInputElement>('input.photo-input') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { value: [new File(['x'], 'p.png', { type: 'image/png' })], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      await settle();
+      expect(chosen).toEqual([undefined]);
+      expect(q('.photo-note')).toBeNull();
+      expect(q('.candidate')).toBeNull();
+    });
+  });
+
   it('shows the conflict prompt and keeps the form; Reload emits', async () => {
     await setup();
     await typeInto(q<HTMLInputElement>('input.title') as HTMLInputElement, 'Mine');

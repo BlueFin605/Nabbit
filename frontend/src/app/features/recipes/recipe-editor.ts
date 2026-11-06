@@ -66,9 +66,17 @@ interface StepRow {
       <img class="photo" [src]="src" alt="Recipe photo" />
     }
     @if (previewImage() && !imageKey()) {
-      <p class="photo-note" role="note">Photo not saved — add one in the editor.</p>
+      <p class="photo-note" role="note">Photo found, will be saved</p>
       @if (!showPreview()) {
-        <button mat-button type="button" class="show-original" (click)="showPreview.set(true)">Show original photo</button>
+        <button mat-button type="button" class="show-options" (click)="showPreview.set(true)">Show photo options</button>
+      } @else {
+        <div class="candidates">
+          @for (c of options(); track c) {
+            <button type="button" class="candidate" [class.chosen]="c === previewImage()" [attr.aria-pressed]="c === previewImage()" aria-label="Use this photo" (click)="candidateChosen.emit(c)">
+              <img [src]="c" alt="" width="72" height="72" />
+            </button>
+          }
+        </div>
       }
     }
     <div class="photo-actions">
@@ -77,7 +85,7 @@ interface StepRow {
         <span>{{ photoSrc() ? 'Change photo' : 'Add photo' }}</span>
       </label>
       @if (imageKey()) {
-        <button mat-button type="button" class="remove-photo" (click)="imageKey.set(undefined)">Remove photo</button>
+        <button mat-button type="button" class="remove-photo" (click)="removePhoto()">Remove photo</button>
       }
       @if (uploading()) {
         <span class="uploading" role="status"><mat-spinner diameter="20" /> Uploading…</span>
@@ -198,6 +206,8 @@ export class RecipeEditor {
   readonly recipe = input.required<RecipeInput>();
   /** Preview photo when the recipe has no stored image yet (e.g. an imported page's image). */
   readonly previewImage = input<string>();
+  /** Other photo candidates the user can pick between (shown as thumbnails after a tap). */
+  readonly candidates = input<string[]>([]);
   readonly saving = input(false);
   readonly error = input<string | null>(null);
   readonly conflict = input(false);
@@ -205,6 +215,8 @@ export class RecipeEditor {
   readonly cancelLabel = input('Discard');
 
   readonly saved = output<RecipeInput>();
+  /** A candidate was picked, or undefined when the user supplied/removed their own photo. */
+  readonly candidateChosen = output<string | undefined>();
   readonly cancelled = output<void>();
   readonly reload = output<void>();
 
@@ -237,6 +249,12 @@ export class RecipeEditor {
 
   /** A third-party preview image is only loaded after an explicit tap (no automatic hot-link / IP leak). */
   protected readonly showPreview = signal(false);
+
+  protected readonly options = computed(() => {
+    const all = this.candidates();
+    const chosen = this.previewImage();
+    return all.length ? all : chosen ? [chosen] : [];
+  });
 
   protected readonly photoSrc = computed(() => {
     const key = this.imageKey();
@@ -387,6 +405,7 @@ export class RecipeEditor {
       .subscribe({
         next: (key) => {
           this.imageKey.set(key);
+          this.candidateChosen.emit(undefined);
           this.uploading.set(false);
         },
         error: () => {
@@ -394,6 +413,11 @@ export class RecipeEditor {
           this.photoError.set('Could not upload that photo. Try again.');
         },
       });
+  }
+
+  protected removePhoto(): void {
+    this.imageKey.set(undefined);
+    this.candidateChosen.emit(undefined);
   }
 
   // ---- save ----

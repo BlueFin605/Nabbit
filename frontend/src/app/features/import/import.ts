@@ -5,6 +5,7 @@ import { RecipeEditor } from '../recipes/recipe-editor';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportRequest, ImportResult, RecipeDraft, RecipeInput } from '../../core/api/api.types';
@@ -86,7 +87,9 @@ export function toImportRequest(value: string): ImportRequest {
         }
         <app-recipe-editor
           [recipe]="d.recipe"
-          [previewImage]="imageUrl()"
+          [previewImage]="chosenCandidate()"
+          [candidates]="candidates()"
+          (candidateChosen)="chosenCandidate.set($event)"
           [saving]="saving()"
           [error]="error()"
           (saved)="save($event)"
@@ -99,6 +102,7 @@ export function toImportRequest(value: string): ImportRequest {
 export class Import implements OnInit {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
+  private readonly snack = inject(MatSnackBar);
 
   /** Web Share Target query params, bound via withComponentInputBinding. */
   readonly title = input<string>();
@@ -112,7 +116,9 @@ export class Import implements OnInit {
   protected readonly saving = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly draft = signal<RecipeDraft | null>(null);
-  protected readonly imageUrl = signal<string | undefined>(undefined);
+  protected readonly candidates = signal<string[]>([]);
+  /** The photo that will be fetched on save; undefined once the user supplies or removes their own. */
+  protected readonly chosenCandidate = signal<string | undefined>(undefined);
   protected readonly isEmpty = computed(() => {
     const d = this.draft();
     return !!d && d.recipe.ingredients.length === 0 && d.recipe.steps.length === 0;
@@ -158,7 +164,8 @@ export class Import implements OnInit {
     const recipe = { ...res.draft.recipe };
     if (this.sourceUrl && !recipe.sourceUrl) recipe.sourceUrl = this.sourceUrl;
     this.draft.set({ ...res.draft, recipe });
-    this.imageUrl.set(res.imageUrl);
+    this.candidates.set(res.candidates ?? []);
+    this.chosenCandidate.set(res.candidates?.[0] ?? res.imageUrl);
   }
 
   private messageFor(err: unknown): string {
@@ -177,6 +184,21 @@ export class Import implements OnInit {
     if (this.saving()) return;
     this.saving.set(true);
     this.error.set(null);
+    const chosen = this.chosenCandidate();
+    if (input.imageKey || !chosen) {
+      this.create(input);
+      return;
+    }
+    this.api.importImage(chosen).subscribe({
+      next: ({ imageKey }) => this.create({ ...input, imageKey }),
+      error: () => {
+        this.snack.open('Saved without a photo - add one in the editor.', 'OK', { duration: 6000 });
+        this.create(input);
+      },
+    });
+  }
+
+  private create(input: RecipeInput): void {
     this.api.createRecipe(input).subscribe({
       next: (created) => void this.router.navigate(['/recipes', created.id]),
       error: () => {
