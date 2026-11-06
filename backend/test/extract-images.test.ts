@@ -51,6 +51,16 @@ describe("extractImageCandidates", () => {
     expect(out.some((u) => /logo|sprite|small/.test(u))).toBe(false);
   });
 
+  it("excludes by whole file-name/path tokens, not substrings or host", () => {
+    const img = (src: string) => `<html><body><img src="${src}" width="800" height="600"></body></html>`;
+    const run = (src: string) => extractImageCandidates(img(src), P);
+    expect(run("https://cdn.example/silicone-mat.jpg")).toEqual(["https://cdn.example/silicone-mat.jpg"]);
+    expect(run("https://logo-cdn.pixel.example/photo.jpg")).toEqual(["https://logo-cdn.pixel.example/photo.jpg"]);
+    expect(run("https://cdn.example/logo.png")).toEqual([]);
+    expect(run("https://cdn.example/icons/x.png")).toEqual([]);
+    expect(run("https://cdn.example/pixel-tracker.gif")).toEqual([]);
+  });
+
   it("de-duplicates and caps at 6", () => {
     const out = extractImageCandidates(fx("images-many.html"), P);
     expect(out).toHaveLength(MAX_CANDIDATES);

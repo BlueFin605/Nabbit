@@ -16,7 +16,7 @@ import { extractImageCandidates } from '../import/extract-images.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
 import { safeFetch as realSafeFetch, safeFetchImage, type FetchedImage } from '../import/safe-fetch.js';
-import { putRecipeImage } from './images.js';
+import { putRecipeImage } from '../image-store.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
 export const IMPORT_LIMIT_PER_HOUR = 30;

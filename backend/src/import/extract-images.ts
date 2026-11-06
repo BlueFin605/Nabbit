@@ -8,7 +8,21 @@ const MAX_HTML = 5_000_000;
 const MAX_NODES = 20_000;
 const MAX_DEPTH = 64;
 const MIN_DIMENSION = 100;
-const EXCLUDE = /(sprite|icon|logo|avatar|pixel|tracking|badge)/i;
+const EXCLUDE_TOKENS = new Set(["sprite", "icon", "icons", "logo", "logos", "avatar", "avatars", "pixel", "tracking", "badge", "badges"]);
+
+/** True when a path segment of the URL (never the host), split on non-alphanumerics, is an icon-like token. */
+function isExcludedUrl(src: string): boolean {
+  let path = src;
+  try {
+    path = new URL(src, "https://x.invalid/").pathname;
+  } catch {
+    /* fall back to the raw string */
+  }
+  return path
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .some((t) => EXCLUDE_TOKENS.has(t));
+}
 
 /** Absolute https URL or undefined (resolves relative against `base`; drops http, data and unparseable). */
 function toHttps(v: string | undefined, base: string): string | undefined {
@@ -95,7 +109,7 @@ export function extractImageCandidates(
   const scored: Array<{ src: string; area: number; pos: number }> = [];
   imgs.forEach((img, pos) => {
     const src = img.getAttribute("src");
-    if (!src || EXCLUDE.test(src)) return;
+    if (!src || isExcludedUrl(src)) return;
     const w = dim(img.getAttribute("width"));
     const h = dim(img.getAttribute("height"));
     if (
