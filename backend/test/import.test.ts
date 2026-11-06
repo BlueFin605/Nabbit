@@ -73,6 +73,37 @@ describe('POST /recipes/import', () => {
     expect(keys.filter((k) => !k.startsWith('RATE#'))).toEqual([]);
   });
 
+  it('structured import returns ranked candidates with imageUrl first', async () => {
+    page = async () => ({
+      url: 'https://example.com/r',
+      html: LD_HTML.replace('</head>', '<meta property="og:image" content="/og.jpg"></head>'),
+    });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.candidates).toEqual(['https://example.com/p.jpg', 'https://example.com/og.jpg']);
+    expect(res.json.imageUrl).toBe(res.json.candidates[0]);
+  });
+
+  it('heuristic fallback returns candidates from og:image and the DOM', async () => {
+    page = async () => ({
+      url: 'https://example.com/r',
+      html: PLAIN_HTML.replace('<body>', '<head><meta property="og:image" content="https://example.com/og.jpg"></head><body><img src="/big.jpg" width="600" height="400">'),
+    });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(res.json.candidates).toEqual(['https://example.com/og.jpg', 'https://example.com/big.jpg']);
+    expect(res.json.imageUrl).toBe('https://example.com/og.jpg');
+  });
+
+  it('omits imageUrl and candidates when the page has no images, and for text imports', async () => {
+    page = async () => ({ url: 'https://example.com/r', html: PLAIN_HTML });
+    const res = await call({ url: 'https://example.com/r' });
+    expect(res.json).not.toHaveProperty('candidates');
+    expect(res.json).not.toHaveProperty('imageUrl');
+    const t = await call({ text: 'Toast\n\nIngredients\n2 slices bread\n\nMethod\n1. Toast.' });
+    expect(t.json).not.toHaveProperty('candidates');
+    expect(t.json).not.toHaveProperty('imageUrl');
+  });
+
   it('page without structured data falls back to heuristic', async () => {
     page = async () => ({ url: 'https://example.com/r', html: PLAIN_HTML });
     const res = await call({ url: 'https://example.com/r' });

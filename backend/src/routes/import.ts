@@ -1,7 +1,7 @@
 /**
  * Recipe import (owner from the JWT; NOTHING is saved, the client previews the draft then POSTs /recipes):
  *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars)
- *     200 { draft: RecipeDraft, imageUrl? }
+ *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[] }  (url imports only; imageUrl === candidates[0])
  *     400 { error } invalid body        422 { error: <ImportError code> }
  *     429 { error: 'rate_limited' } + retry-after (seconds)
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
@@ -9,6 +9,7 @@
  */
 import { ownerPk, rateSk, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
+import { extractImageCandidates } from '../import/extract-images.js';
 import { extractStructured } from '../import/extract-structured.js';
 import { ImportError } from '../import/import-error.js';
 import { safeFetch as realSafeFetch } from '../import/safe-fetch.js';
@@ -55,11 +56,14 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
   try {
     const page = await deps.safeFetch((body.url as string).trim());
     const structured = extractStructured(page.html, page.url);
+    const candidates = extractImageCandidates(page.html, page.url, structured?.imageUrl);
+    const images = candidates.length ? { imageUrl: candidates[0], candidates } : {};
     if (structured) {
-      const { imageUrl, ...draft } = structured;
-      return { status: 200, body: { draft, ...(imageUrl ? { imageUrl } : {}) } };
+      const draft = { ...structured };
+      delete draft.imageUrl;
+      return { status: 200, body: { draft, ...images } };
     }
-    return { status: 200, body: { draft: extractFromText(htmlToText(page.html), { sourceUrl: page.url }) } };
+    return { status: 200, body: { draft: extractFromText(htmlToText(page.html), { sourceUrl: page.url }), ...images } };
   } catch (err) {
     if (err instanceof ImportError) return { status: 422, body: { error: err.code } };
     throw err;
