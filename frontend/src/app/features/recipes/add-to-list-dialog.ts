@@ -7,9 +7,9 @@ import { MatSelectModule } from '@angular/material/select';
 import { formatQuantity, type Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ListSummary, NewListItem } from '../../core/api/api.types';
+import { DEFAULT_LIST_NAME, LAST_LIST_KEY, ListTarget } from '../lists/list-target';
 
-export const LAST_LIST_KEY = 'nabbit.lastListId';
-export const DEFAULT_LIST_NAME = 'Shopping';
+export { LAST_LIST_KEY, DEFAULT_LIST_NAME };
 
 export interface AddToListData {
   /** Already scaled to the servings shown in the recipe view. */
@@ -33,14 +33,6 @@ export function listItemName(i: Ingredient, mode: 'metric' | 'original'): string
   const raw = i.quantity === null ? '' : formatQuantity({ ...i, name: '', scalable: true }, mode).trim();
   const qty = raw === 'a pinch of' ? 'a pinch' : raw;
   return qty ? `${i.name} (${qty})` : i.name;
-}
-
-function readLast(): string | null {
-  try {
-    return localStorage.getItem(LAST_LIST_KEY);
-  } catch {
-    return null;
-  }
 }
 
 /** Pick a list and tick the (scaled) ingredients to add; one batch POST on confirm. */
@@ -91,6 +83,7 @@ function readLast(): string | null {
 })
 export class AddToListDialog implements OnInit {
   private readonly api = inject(ApiClient);
+  private readonly target = inject(ListTarget);
   private readonly ref = inject<MatDialogRef<AddToListDialog, AddToListResult>>(MatDialogRef);
   private readonly data = inject<AddToListData>(MAT_DIALOG_DATA);
 
@@ -135,7 +128,7 @@ export class AddToListDialog implements OnInit {
 
   private ready(rows: ListSummary[]): void {
     this.lists.set(rows);
-    const last = readLast();
+    const last = this.target.readLast();
     this.listId.set((rows.find((r) => r.id === last) ?? rows.find((r) => r.name === DEFAULT_LIST_NAME) ?? rows[0]).id);
     this.status.set('ok');
   }
@@ -159,11 +152,7 @@ export class AddToListDialog implements OnInit {
     this.error.set(null);
     this.api.addItems(listId, items).subscribe({
       next: (list) => {
-        try {
-          localStorage.setItem(LAST_LIST_KEY, listId);
-        } catch {
-          /* storage unavailable: remembered for this visit only */
-        }
+        this.target.remember(listId);
         this.ref.close({ listId, listName: list.name, count: items.length });
       },
       error: () => {
