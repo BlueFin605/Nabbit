@@ -1,12 +1,10 @@
 import { Component, inject, input, signal, viewChild, type OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
-import { MatSnackBar } from '@angular/material/snack-bar';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe, RecipeInput } from '../../core/api/api.types';
 import type { HasUnsavedChanges } from '../../core/guards/unsaved-changes-guard';
-import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
+import { RecipeDeleter } from './recipe-deleter';
 import { RecipeEditor, isVersionConflict } from './recipe-editor';
 
 type Load = { status: 'loading' } | { status: 'notFound' } | { status: 'error' } | { status: 'ok'; recipe: Recipe };
@@ -59,8 +57,7 @@ type Load = { status: 'loading' } | { status: 'notFound' } | { status: 'error' }
 export class RecipeEdit implements OnInit, HasUnsavedChanges {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
-  private readonly dialog = inject(MatDialog);
-  private readonly snackBar = inject(MatSnackBar);
+  private readonly deleter = inject(RecipeDeleter);
 
   /** Bound from the `:id` route param. */
   readonly id = input<string>();
@@ -144,42 +141,12 @@ export class RecipeEdit implements OnInit, HasUnsavedChanges {
   protected confirmDelete(): void {
     const r = this.recipe();
     if (!r) return;
-    const data: ConfirmDialogData = {
-      title: 'Delete this recipe?',
-      message: `"${r.title}" will be deleted. You can undo this for a short while.`,
-      confirmLabel: 'Delete',
-    };
-    this.dialog
-      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, { data })
-      .afterClosed()
-      .subscribe((ok) => {
-        if (ok === true) this.doDelete(r);
-      });
-  }
-
-  private doDelete(r: Recipe): void {
-    this.saving.set(true);
-    this.api.deleteRecipe(r.id).subscribe({
-      next: () => {
-        this.saving.set(false);
+    this.deleter.confirmAndDelete(r.id, {
+      onDeleted: () => {
         this.leaving = true;
         void this.router.navigate(['/recipes']);
-        this.snackBar
-          .open('Recipe deleted', 'Undo', { duration: 8000 })
-          .onAction()
-          .subscribe(() => this.undoDelete(r.id));
       },
-      error: () => {
-        this.saving.set(false);
-        this.error.set("Couldn't delete the recipe. Try again.");
-      },
-    });
-  }
-
-  private undoDelete(id: string): void {
-    this.api.restoreRecipe(id).subscribe({
-      next: () => void this.router.navigate(['/recipes', id]),
-      error: () => this.snackBar.open("Couldn't restore the recipe", undefined, { duration: 5000 }),
+      onError: (message) => this.error.set(message),
     });
   }
 }

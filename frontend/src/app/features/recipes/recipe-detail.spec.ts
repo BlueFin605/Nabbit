@@ -1,8 +1,9 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe } from '../../core/api/api.types';
@@ -36,6 +37,7 @@ const recipe = (): Recipe => ({
 describe('RecipeDetail', () => {
   let getRecipe: jest.Mock;
   let updateRecipe: jest.Mock;
+  let deleteRecipe: jest.Mock;
   let fixture: ComponentFixture<RecipeDetail>;
   const el = () => fixture.nativeElement as HTMLElement;
   const settle = async () => {
@@ -51,9 +53,10 @@ describe('RecipeDetail', () => {
 
   async function setup(impl: () => unknown = () => of(recipe())) {
     getRecipe = jest.fn(impl);
+    deleteRecipe = jest.fn(() => of(undefined));
     updateRecipe = jest.fn((_id: string, input: { servings: number }) => of({ ...recipe(), servings: input.servings, version: 2 }));
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: ApiClient, useValue: { getRecipe, updateRecipe } }],
+      providers: [provideRouter([]), { provide: ApiClient, useValue: { getRecipe, updateRecipe, deleteRecipe, restoreRecipe: jest.fn() } }],
     });
     fixture = TestBed.createComponent(RecipeDetail);
     fixture.componentRef.setInput('id', 'r1');
@@ -210,6 +213,18 @@ describe('RecipeDetail', () => {
       expect(el().querySelector('.conflict')).toBeNull();
       expect(el().querySelector('output')?.textContent).toBe('6');
     });
+  });
+
+  it('has a Delete button that confirms, deletes and goes back to the list', async () => {
+    await setup();
+    const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    jest.spyOn(TestBed.inject(MatSnackBar), 'open').mockReturnValue({ onAction: () => new Subject<void>() } as never);
+    const dialog = jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(true) } as never);
+    expect(el().querySelector('.actions .delete')).not.toBeNull();
+    await click('.actions .delete');
+    expect(dialog).toHaveBeenCalled();
+    expect(deleteRecipe).toHaveBeenCalledWith('r1');
+    expect(nav).toHaveBeenCalledWith(['/recipes']);
   });
 
   it('opens the add-to-list dialog with the scaled ingredients and unit mode', async () => {

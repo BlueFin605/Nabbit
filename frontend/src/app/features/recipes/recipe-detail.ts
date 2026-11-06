@@ -11,6 +11,7 @@ import type { Recipe, RecipeInput } from '../../core/api/api.types';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
 import { CONFLICT_MESSAGE, isVersionConflict } from './recipe-editor';
 import { imageUrl } from '../../core/api/image-url';
+import { RecipeDeleter } from './recipe-deleter';
 import { AddToListDialog, type AddToListData, type AddToListResult } from './add-to-list-dialog';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
@@ -126,6 +127,7 @@ function readMode(): Mode {
           <div class="actions">
             <a mat-stroked-button [routerLink]="['/recipes', r.id, 'edit']">Edit</a>
             <button mat-flat-button type="button" (click)="addToList()">Add to list</button>
+            <button mat-button type="button" class="delete" (click)="remove()">Delete</button>
           </div>
         }
       }
@@ -138,6 +140,7 @@ export class RecipeDetail implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
   private readonly router = inject(Router);
+  private readonly deleter = inject(RecipeDeleter);
 
   /** Bound from the `:id` route param via withComponentInputBinding. */
   readonly id = input<string>();
@@ -321,6 +324,12 @@ export class RecipeDetail implements OnInit {
     } catch {
       /* already released */
     }
+  }
+
+  protected remove(): void {
+    const id = this.recipe()?.id;
+    if (!id) return;
+    this.deleter.confirmAndDelete(id, { onDeleted: () => void this.router.navigate(['/recipes']) });
   }
 
   /** Opens the add-to-list dialog with the ingredients as currently scaled and in the current unit mode. */
