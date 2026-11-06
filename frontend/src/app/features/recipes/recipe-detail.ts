@@ -345,9 +345,9 @@ export class RecipeDetail implements OnInit {
   }
 
   protected remove(): void {
-    const id = this.recipe()?.id;
-    if (!id) return;
-    this.deleter.confirmAndDelete(id, { onDeleted: () => void this.router.navigate(['/recipes']) });
+    const r = this.recipe();
+    if (!r?.id) return;
+    this.deleter.confirmAndDelete(r.id, { onDeleted: () => void this.router.navigate(['/recipes']) }, r.title);
   }
 
   /** One-tap add of a single ingredient to the target list, with Undo. */
