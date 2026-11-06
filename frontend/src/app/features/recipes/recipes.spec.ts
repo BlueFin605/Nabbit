@@ -4,6 +4,7 @@ import { NEVER, of, throwError, type Observable } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { RecipeQuery, RecipeSummary } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
+import { RecipeDeleter, type DeleteHooks } from './recipe-deleter';
 import { Recipes, SEARCH_DEBOUNCE_MS } from './recipes';
 
 const mk = (id: string, title: string, tags: string[], imageKey?: string): RecipeSummary => ({
@@ -89,6 +90,60 @@ describe('Recipes', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(el().querySelectorAll('a.card')).toHaveLength(2);
+  });
+
+  describe('delete', () => {
+    let confirmAndDelete: jest.Mock<void, [string, DeleteHooks]>;
+    const hooksOf = () => confirmAndDelete.mock.calls[0][1];
+    const deleteBtns = () => Array.from(el().querySelectorAll<HTMLElement>('button.card-delete'));
+
+    async function setupDelete() {
+      confirmAndDelete = jest.fn<void, [string, DeleteHooks]>();
+      TestBed.overrideProvider(RecipeDeleter, { useValue: { confirmAndDelete } });
+      await setup();
+    }
+
+    it('renders a labelled delete button per card', async () => {
+      await setupDelete();
+      expect(deleteBtns().map((b) => b.getAttribute('aria-label'))).toEqual([
+        'Delete recipe Pancakes',
+        'Delete recipe Stew',
+      ]);
+    });
+
+    it('does not navigate when delete is clicked', async () => {
+      await setupDelete();
+      const router = TestBed.inject(Router);
+      const nav = jest.spyOn(router, 'navigate').mockResolvedValue(true);
+      const navUrl = jest.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+      deleteBtns()[0].click();
+      expect(confirmAndDelete).toHaveBeenCalledWith('1', expect.any(Object));
+      expect(nav).not.toHaveBeenCalled();
+      expect(navUrl).not.toHaveBeenCalled();
+    });
+
+    it('removes the card once deleted', async () => {
+      await setupDelete();
+      deleteBtns()[0].click();
+      hooksOf().onDeleted?.();
+      fixture.detectChanges();
+      expect(el().querySelectorAll('a.card')).toHaveLength(1);
+      expect(el().textContent).not.toContain('Pancakes');
+      expect(listRecipes).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-fetches the list on undo', async () => {
+      await setupDelete();
+      deleteBtns()[0].click();
+      const hooks = hooksOf();
+      hooks.onDeleted?.();
+      fixture.detectChanges();
+      hooks.onRestored?.('1');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(listRecipes).toHaveBeenCalledTimes(2);
+      expect(el().querySelectorAll('a.card')).toHaveLength(2);
+    });
   });
 
   it('FAB navigates to /import', async () => {

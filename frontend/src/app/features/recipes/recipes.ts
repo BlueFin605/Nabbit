@@ -1,5 +1,6 @@
 import { Component, DestroyRef, computed, inject, signal, type OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
@@ -9,6 +10,7 @@ import { Subject, catchError, debounceTime, map, of, startWith, switchMap } from
 import { ApiClient } from '../../core/api/api-client';
 import type { RecipeSummary } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
+import { RecipeDeleter } from './recipe-deleter';
 
 export const SEARCH_DEBOUNCE_MS = 250;
 
@@ -17,7 +19,7 @@ type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipe
 /** Recipe list: card grid with debounced search and tag filter chips. */
 @Component({
   selector: 'app-recipes',
-  imports: [RouterLink, MatButtonModule, MatChipsModule, MatFormFieldModule, MatInputModule],
+  imports: [NgTemplateOutlet, RouterLink, MatButtonModule, MatChipsModule, MatFormFieldModule, MatInputModule],
   styleUrl: './recipes.scss',
   template: `
     <h1>Recipes</h1>
@@ -61,6 +63,7 @@ type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipe
         } @else {
           <div class="grid">
             @for (r of recipes(); track r.id) {
+              <div class="card-wrap">
               <a class="card" [routerLink]="['/recipes', r.id]">
                 @if (r.imageKey) {
                   <img class="photo" [src]="imageSrc(r.imageKey)" alt="" loading="lazy" />
@@ -78,11 +81,25 @@ type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipe
                   }
                 </div>
               </a>
+              <ng-container [ngTemplateOutlet]="deleteBtn" [ngTemplateOutletContext]="{ $implicit: r }" />
+              </div>
             }
           </div>
         }
       }
     }
+
+    <ng-template #deleteBtn let-r>
+      <button
+        mat-icon-button
+        type="button"
+        class="card-delete"
+        [attr.aria-label]="'Delete recipe ' + r.title"
+        (click)="onDelete($event, r.id)"
+      >
+        <span aria-hidden="true">🗑</span>
+      </button>
+    </ng-template>
 
     <button mat-fab class="fab" type="button" aria-label="Add recipe" (click)="add()">+</button>
   `,
@@ -90,6 +107,7 @@ type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipe
 export class Recipes implements OnInit {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
+  private readonly deleter = inject(RecipeDeleter);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly skeletons = [1, 2, 3, 4];
@@ -152,6 +170,18 @@ export class Recipes implements OnInit {
 
   protected imageSrc(key: string): string {
     return imageUrl(key);
+  }
+
+  protected onDelete(event: Event, id: string): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.deleter.confirmAndDelete(id, {
+      onDeleted: () =>
+        this.load.update((l) =>
+          l.status === 'ok' ? { status: 'ok', recipes: l.recipes.filter((r) => r.id !== id) } : l,
+        ),
+      onRestored: () => this.refresh(),
+    });
   }
 
   protected add(): void {
