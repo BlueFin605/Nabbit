@@ -60,7 +60,14 @@ type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipe
 
     @switch (load().status) {
       @case ('loading') {
-        <div class="grid" aria-busy="true" aria-label="Loading recipes">
+        <div
+          class="grid"
+          aria-busy="true"
+          aria-label="Loading recipes"
+          [class.view-large]="view() === 'large'"
+          [class.view-small]="view() === 'small'"
+          [class.view-list]="view() === 'list'"
+        >
           @for (n of skeletons; track n) {
             <div class="card skeleton"><div class="photo"></div><div class="body"><div class="bar"></div></div></div>
           }

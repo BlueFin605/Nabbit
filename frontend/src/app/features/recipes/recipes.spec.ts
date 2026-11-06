@@ -196,6 +196,41 @@ describe('Recipes', () => {
     });
   });
 
+  describe('layouts', () => {
+    beforeEach(() => localStorage.clear());
+    const deleteBtns = () => el().querySelectorAll('button.card-delete');
+
+    for (const v of ['large', 'small', 'list']) {
+      it(`${v}: lazy photo, delete button per card`, async () => {
+        localStorage.setItem(RECIPE_VIEW_KEY, v);
+        await setup();
+        expect(el().querySelector('.grid')?.classList.contains(`view-${v}`)).toBe(true);
+        const img = el().querySelector('a.card img.photo');
+        expect(img?.getAttribute('loading')).toBe('lazy');
+        expect(img?.getAttribute('src')).toBe(imageUrl('o/img1'));
+        expect(deleteBtns()).toHaveLength(2);
+      });
+
+      it(`${v}: skeleton follows the active view`, async () => {
+        localStorage.setItem(RECIPE_VIEW_KEY, v);
+        await setup(() => NEVER);
+        const sk = el().querySelector('.grid[aria-busy="true"]');
+        expect(sk?.classList.contains(`view-${v}`)).toBe(true);
+        expect(sk?.querySelectorAll('.skeleton').length).toBeGreaterThan(0);
+      });
+    }
+
+    it('list: renders a thumbnail with title and tags in the row', async () => {
+      localStorage.setItem(RECIPE_VIEW_KEY, 'list');
+      await setup();
+      const card = el().querySelector('a.card') as HTMLElement;
+      expect(card.querySelector('img.photo')).not.toBeNull();
+      expect(card.querySelector('.body h2')?.textContent).toContain('Pancakes');
+      expect(card.querySelectorAll('.card-tags li')).toHaveLength(2);
+      expect(el().querySelectorAll('.placeholder')).toHaveLength(1);
+    });
+  });
+
   it('FAB navigates to /import', async () => {
     await setup();
     const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
