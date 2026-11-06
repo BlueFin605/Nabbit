@@ -5,7 +5,7 @@ import { ApiClient } from '../../core/api/api-client';
 import type { RecipeQuery, RecipeSummary } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
 import { RecipeDeleter, type DeleteHooks } from './recipe-deleter';
-import { Recipes, SEARCH_DEBOUNCE_MS } from './recipes';
+import { RECIPE_VIEW_KEY, Recipes, SEARCH_DEBOUNCE_MS } from './recipes';
 
 const mk = (id: string, title: string, tags: string[], imageKey?: string): RecipeSummary => ({
   id,
@@ -143,6 +143,56 @@ describe('Recipes', () => {
       fixture.detectChanges();
       expect(listRecipes).toHaveBeenCalledTimes(2);
       expect(el().querySelectorAll('a.card')).toHaveLength(2);
+    });
+  });
+
+  describe('view mode', () => {
+    const grid = () => el().querySelector('.grid') as HTMLElement;
+    const toggle = (v: string) => el().querySelector<HTMLElement>(`mat-button-toggle[value="${v}"] button`) as HTMLElement;
+    beforeEach(() => localStorage.clear());
+    afterEach(() => jest.restoreAllMocks());
+
+    it('defaults to large with empty storage', async () => {
+      await setup();
+      expect(grid().classList.contains('view-large')).toBe(true);
+      expect(el().querySelector('mat-button-toggle-group')?.getAttribute('aria-label')).toBe('Recipe view');
+      expect(el().querySelectorAll('mat-button-toggle')).toHaveLength(3);
+    });
+
+    it('restores a stored view', async () => {
+      localStorage.setItem(RECIPE_VIEW_KEY, 'small');
+      await setup();
+      expect(grid().classList.contains('view-small')).toBe(true);
+      expect(grid().classList.contains('view-large')).toBe(false);
+    });
+
+    it('falls back to large for an invalid stored value', async () => {
+      localStorage.setItem(RECIPE_VIEW_KEY, 'huge');
+      await setup();
+      expect(grid().classList.contains('view-large')).toBe(true);
+    });
+
+    it('clicking a toggle sets the class and persists it', async () => {
+      await setup();
+      toggle('list').click();
+      fixture.detectChanges();
+      expect(grid().classList.contains('view-list')).toBe(true);
+      expect(grid().classList.contains('view-large')).toBe(false);
+      expect(localStorage.getItem(RECIPE_VIEW_KEY)).toBe('list');
+    });
+
+    it('survives localStorage that throws', async () => {
+      jest.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('blocked');
+      });
+      await setup();
+      expect(grid().classList.contains('view-large')).toBe(true);
+      toggle('small').click();
+      fixture.detectChanges();
+      expect(grid().classList.contains('view-small')).toBe(true);
     });
   });
 

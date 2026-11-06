@@ -3,6 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -14,20 +15,40 @@ import { RecipeDeleter } from './recipe-deleter';
 
 export const SEARCH_DEBOUNCE_MS = 250;
 
+export type RecipeView = 'large' | 'small' | 'list';
+export const RECIPE_VIEW_KEY = 'nabbit.recipeView';
+const VIEWS: readonly RecipeView[] = ['large', 'small', 'list'];
+
+function readStoredView(): RecipeView {
+  try {
+    const v = localStorage.getItem(RECIPE_VIEW_KEY);
+    return VIEWS.includes(v as RecipeView) ? (v as RecipeView) : 'large';
+  } catch {
+    return 'large';
+  }
+}
+
 type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipes: RecipeSummary[] };
 
 /** Recipe list: card grid with debounced search and tag filter chips. */
 @Component({
   selector: 'app-recipes',
-  imports: [NgTemplateOutlet, RouterLink, MatButtonModule, MatChipsModule, MatFormFieldModule, MatInputModule],
+  imports: [NgTemplateOutlet, RouterLink, MatButtonModule, MatButtonToggleModule, MatChipsModule, MatFormFieldModule, MatInputModule],
   styleUrl: './recipes.scss',
   template: `
     <h1>Recipes</h1>
 
-    <mat-form-field class="search" appearance="outline" subscriptSizing="dynamic">
-      <mat-label>Search recipes</mat-label>
-      <input matInput type="search" [value]="q()" (input)="onSearch($event)" />
-    </mat-form-field>
+    <div class="toolbar">
+      <mat-form-field class="search" appearance="outline" subscriptSizing="dynamic">
+        <mat-label>Search recipes</mat-label>
+        <input matInput type="search" [value]="q()" (input)="onSearch($event)" />
+      </mat-form-field>
+      <mat-button-toggle-group class="view-toggle" aria-label="Recipe view" [value]="view()" (change)="setView($event.value)">
+        <mat-button-toggle value="large" aria-label="Large cards"><span aria-hidden="true">▣</span></mat-button-toggle>
+        <mat-button-toggle value="small" aria-label="Small cards"><span aria-hidden="true">▦</span></mat-button-toggle>
+        <mat-button-toggle value="list" aria-label="List"><span aria-hidden="true">☰</span></mat-button-toggle>
+      </mat-button-toggle-group>
+    </div>
 
     @if (allTags().length > 0) {
       <mat-chip-listbox class="tags" aria-label="Filter by tag">
@@ -61,7 +82,12 @@ type Load = { status: 'loading' } | { status: 'error' } | { status: 'ok'; recipe
             }
           </p>
         } @else {
-          <div class="grid">
+          <div
+            class="grid"
+            [class.view-large]="view() === 'large'"
+            [class.view-small]="view() === 'small'"
+            [class.view-list]="view() === 'list'"
+          >
             @for (r of recipes(); track r.id) {
               <div class="card-wrap">
               <a class="card" [routerLink]="['/recipes', r.id]">
@@ -111,6 +137,7 @@ export class Recipes implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly skeletons = [1, 2, 3, 4];
+  protected readonly view = signal<RecipeView>(readStoredView());
   protected readonly q = signal('');
   protected readonly tag = signal<string | null>(null);
   protected readonly load = signal<Load>({ status: 'loading' });
@@ -153,6 +180,15 @@ export class Recipes implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
+  }
+
+  protected setView(v: RecipeView): void {
+    this.view.set(v);
+    try {
+      localStorage.setItem(RECIPE_VIEW_KEY, v);
+    } catch {
+      // storage unavailable; the choice just won't persist
+    }
   }
 
   protected refresh(): void {
