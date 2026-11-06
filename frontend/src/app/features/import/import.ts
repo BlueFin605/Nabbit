@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { ApiClient } from '../../core/api/api-client';
+import { environment } from '../../../environments/environment';
 import type { ImportErrorCode, ImportRequest, ImportResult, RecipeDraft, RecipeInput } from '../../core/api/api.types';
 
 const FALLBACK = 'Paste the recipe text instead.';
@@ -47,7 +48,8 @@ const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instag
 export function isInstagramUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    return INSTAGRAM_HOSTS.has(new URL(url).hostname.toLowerCase().replace(/\.$/, ''));
+    const host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+    return INSTAGRAM_HOSTS.has(host) || (environment.extraInstagramHosts ?? []).includes(host);
   } catch {
     return false;
   }

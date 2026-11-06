@@ -42,6 +42,23 @@ describe('extractInstagramCaption', () => {
   });
 });
 
+describe('isInstagramUrl e2e host override', () => {
+  const dev = { NODE_ENV: 'development', NABBIT_E2E_INSTAGRAM_HOSTS: 'ig.nabbit-fixtures.test, other.test' };
+  const u = 'https://ig.nabbit-fixtures.test/instagram-post.html';
+  it('counts the listed hosts as Instagram when NODE_ENV=development', () => {
+    expect(isInstagramUrl(u, dev)).toBe(true);
+    expect(isInstagramUrl('https://other.test/p/a', dev)).toBe(true);
+    expect(isInstagramUrl('https://nabbit-fixtures.test/pasta.html', dev)).toBe(false);
+    expect(isInstagramUrl('http://ig.nabbit-fixtures.test/x', dev)).toBe(false);
+  });
+  it('ignores the override in production, when NODE_ENV is unset, and in test', () => {
+    expect(isInstagramUrl(u, { ...dev, NODE_ENV: 'production' })).toBe(false);
+    expect(isInstagramUrl(u, { NABBIT_E2E_INSTAGRAM_HOSTS: dev.NABBIT_E2E_INSTAGRAM_HOSTS })).toBe(false);
+    expect(isInstagramUrl(u, { ...dev, NODE_ENV: 'test' })).toBe(false);
+    expect(isInstagramUrl('https://www.instagram.com/p/a/', { NODE_ENV: 'production' })).toBe(true);
+  });
+});
+
 describe('isInstagramUrl', () => {
   it('includes m.instagram.com in the host list', () => expect(INSTAGRAM_HOSTS).toContain('m.instagram.com'));
   it.each(['https://instagram.com/p/a/', 'https://www.instagram.com/reel/a/', 'https://instagr.am/p/a', 'https://WWW.Instagram.com/p/x', 'https://instagram.com./p/a/', 'https://m.instagram.com/p/a/'])(

@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { FIXTURE_HOST, fixtureFetchDeps } from '../src/e2e-fixture-fetch.js';
+import { FIXTURE_HOST, FIXTURE_IG_HOST, fixtureFetchDeps } from '../src/e2e-fixture-fetch.js';
 import { installE2eFixtureFetch } from '../src/local.js';
 import { handler as importHandler } from '../src/handlers/import.js';
 import { resetRoutes } from '../src/router.js';
@@ -45,6 +45,7 @@ describe('fixture deps are confined to the fixture host', () => {
     await expect(deps.resolve!('localhost')).rejects.toThrow();
     await expect(deps.fetchImpl!('https://example.com/x')).rejects.toThrow();
     expect(await deps.resolve!(FIXTURE_HOST)).toHaveLength(1);
+    expect(await deps.resolve!(FIXTURE_IG_HOST)).toHaveLength(1);
   });
 
   describe('end to end through the real guard', () => {

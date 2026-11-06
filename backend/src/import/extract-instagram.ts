@@ -3,10 +3,20 @@ import { parse, type HTMLElement } from 'node-html-parser';
 /** Hosts treated as Instagram (https only, exact match after lowercasing and dropping one trailing dot). */
 export const INSTAGRAM_HOSTS: readonly string[] = ['instagram.com', 'www.instagram.com', 'm.instagram.com', 'instagr.am'];
 
-export function isInstagramUrl(rawUrl: string): boolean {
+/**
+ * E2E hook: extra hostnames (comma separated) that count as Instagram, so a fixture host can exercise the
+ * auto-fetch path. Honoured ONLY when NODE_ENV=development (the local dev server); a production build ignores it.
+ */
+function e2eInstagramHosts(env: NodeJS.ProcessEnv): string[] {
+  if (env.NODE_ENV !== 'development' || !env.NABBIT_E2E_INSTAGRAM_HOSTS) return [];
+  return env.NABBIT_E2E_INSTAGRAM_HOSTS.split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+}
+
+export function isInstagramUrl(rawUrl: string, env: NodeJS.ProcessEnv = process.env): boolean {
   try {
     const u = new URL(rawUrl);
-    return u.protocol === 'https:' && INSTAGRAM_HOSTS.includes(u.hostname.toLowerCase().replace(/\.$/, ''));
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
+    return u.protocol === 'https:' && (INSTAGRAM_HOSTS.includes(host) || e2eInstagramHosts(env).includes(host));
   } catch {
     return false;
   }
