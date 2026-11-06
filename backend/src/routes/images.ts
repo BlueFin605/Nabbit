@@ -11,8 +11,9 @@
  * The S3 call is behind `setImageSigner` so unit tests never touch AWS.
  */
 import { randomUUID } from 'node:crypto';
-import { S3Client } from '@aws-sdk/client-s3';
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { createPresignedPost } from '@aws-sdk/s3-presigned-post';
+import type { ImageContentType } from '../import/safe-fetch.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
 import { MAX_IMAGE_BYTES } from '../image-limits.js';
@@ -34,11 +35,14 @@ export interface SignedPost {
 export type ImageSigner = (req: SignRequest) => Promise<SignedPost>;
 
 let s3: S3Client | undefined;
+function getS3(): S3Client {
+  s3 ??= new S3Client({});
+  return s3;
+}
 const s3Signer: ImageSigner = async (req) => {
   const bucket = process.env.IMAGE_BUCKET;
   if (!bucket) throw new Error('IMAGE_BUCKET is not set');
-  s3 ??= new S3Client({});
-  return createPresignedPost(s3, {
+  return createPresignedPost(getS3(), {
     Bucket: bucket,
     Key: req.key,
     Conditions: [['content-length-range', 0, req.maxBytes], ['eq', '$Content-Type', req.contentType]],
@@ -51,6 +55,30 @@ let signer: ImageSigner = s3Signer;
 /** Test seam: replace the S3 signer. */
 export function setImageSigner(s: ImageSigner): void {
   signer = s;
+}
+
+/** `{ownerId}/{uuid}.{ext}` - the prefix always comes from the JWT, never the client. */
+export function imageKeyFor(ownerId: string, contentType: ImageContentType): string {
+  return `${ownerId}/${randomUUID()}.${EXT[contentType]}`;
+}
+
+export type ImagePutter = (req: { key: string; contentType: string; bytes: Uint8Array }) => Promise<void>;
+const s3Putter: ImagePutter = async (req) => {
+  const bucket = process.env.IMAGE_BUCKET;
+  if (!bucket) throw new Error('IMAGE_BUCKET is not set');
+  await getS3().send(new PutObjectCommand({ Bucket: bucket, Key: req.key, Body: req.bytes, ContentType: req.contentType }));
+};
+let putter: ImagePutter = s3Putter;
+/** Test seam: replace the S3 putter (pass undefined to reset). */
+export function setImagePutter(p: ImagePutter | undefined): void {
+  putter = p ?? s3Putter;
+}
+
+/** Server-side upload (used by the image-import route). Returns the new imageKey. */
+export async function putRecipeImage(ownerId: string, contentType: ImageContentType, bytes: Uint8Array): Promise<string> {
+  const key = imageKeyFor(ownerId, contentType);
+  await putter({ key, contentType, bytes });
+  return key;
 }
 
 async function createUpload({ ownerId, body }: RequestCtx) {
