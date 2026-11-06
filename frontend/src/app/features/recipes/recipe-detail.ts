@@ -1,5 +1,6 @@
 import { Component, DestroyRef, computed, inject, input, signal, type OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
+import { map, switchMap } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatButtonModule } from '@angular/material/button';
@@ -12,7 +13,8 @@ import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dial
 import { CONFLICT_MESSAGE, isVersionConflict } from './recipe-editor';
 import { imageUrl } from '../../core/api/image-url';
 import { RecipeDeleter } from './recipe-deleter';
-import { AddToListDialog, type AddToListData, type AddToListResult } from './add-to-list-dialog';
+import { AddToListDialog, listItemName, type AddToListData, type AddToListResult } from './add-to-list-dialog';
+import { ListTarget } from '../lists/list-target';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
 export const MIN_SERVINGS = 1;
@@ -109,6 +111,15 @@ function readMode(): Mode {
                 @if (line.note) {
                   <span class="note">, {{ line.note }}</span>
                 }
+                <button
+                  mat-icon-button
+                  type="button"
+                  class="add-one"
+                  [attr.aria-label]="'Add ' + line.name + ' to shopping list'"
+                  (click)="addOne(line.id)"
+                >
+                  <span aria-hidden="true">{{ added().has(line.id) ? '✓' : '+' }}</span>
+                </button>
               </li>
             }
           </ul>
@@ -141,6 +152,7 @@ export class RecipeDetail implements OnInit {
   private readonly snack = inject(MatSnackBar);
   private readonly router = inject(Router);
   private readonly deleter = inject(RecipeDeleter);
+  private readonly listTarget = inject(ListTarget);
 
   /** Bound from the `:id` route param via withComponentInputBinding. */
   readonly id = input<string>();
@@ -153,6 +165,9 @@ export class RecipeDetail implements OnInit {
   protected readonly max = MAX_SERVINGS;
   protected readonly load = signal<Load>({ status: 'loading' });
   protected readonly mode = signal<Mode>(readMode());
+  /** Ingredient ids added to the list since servings or units last changed. */
+  protected readonly added = signal<ReadonlySet<string>>(new Set());
+  private readonly adding = new Set<string>();
   /** null until the user touches the stepper; then overrides the recipe's stored servings. */
   private readonly chosen = signal<number | null>(null);
 
@@ -178,6 +193,7 @@ export class RecipeDetail implements OnInit {
   protected readonly lines = computed(() =>
     this.scaledIngredients().map((i) => ({
       id: i.id,
+      name: i.name,
       text: formatQuantity(i, this.mode()),
       note: i.note,
       fixed: !i.scalable,
@@ -290,10 +306,12 @@ export class RecipeDetail implements OnInit {
 
   protected step(delta: number): void {
     this.chosen.set(Math.min(MAX_SERVINGS, Math.max(MIN_SERVINGS, this.servings() + delta)));
+    this.added.set(new Set());
   }
 
   protected setMode(mode: Mode): void {
     this.mode.set(mode);
+    this.added.set(new Set());
     try {
       localStorage.setItem(UNIT_MODE_KEY, mode);
     } catch {
@@ -330,6 +348,48 @@ export class RecipeDetail implements OnInit {
     const id = this.recipe()?.id;
     if (!id) return;
     this.deleter.confirmAndDelete(id, { onDeleted: () => void this.router.navigate(['/recipes']) });
+  }
+
+  /** One-tap add of a single ingredient to the target list, with Undo. */
+  protected addOne(ingredientId: string): void {
+    const ing = this.scaledIngredients().find((i) => i.id === ingredientId);
+    if (!ing || this.adding.has(ingredientId)) return;
+    const name = listItemName(ing, this.mode());
+    this.adding.add(ingredientId);
+    this.listTarget
+      .resolve()
+      .pipe(switchMap((list) => this.api.addItems(list.id, [{ name }]).pipe(map((res) => ({ list, res })))))
+      .subscribe({
+        next: ({ list, res }) => {
+          this.adding.delete(ingredientId);
+          this.listTarget.remember(list.id);
+          this.setAdded(ingredientId, true);
+          this.snack
+            .open(`Added to ${list.name}`, 'Undo', { duration: 5000 })
+            .onAction()
+            .subscribe(() => {
+              const created = [...res.items].reverse().find((it) => it.name === name);
+              if (!created) return;
+              this.api.deleteItem(list.id, created.id).subscribe({
+                next: () => this.setAdded(ingredientId, false),
+                error: () => this.snack.open("Couldn't undo that", 'OK', { duration: 5000 }),
+              });
+            });
+        },
+        error: () => {
+          this.adding.delete(ingredientId);
+          this.snack.open("Couldn't add that ingredient", 'OK', { duration: 5000 });
+        },
+      });
+  }
+
+  private setAdded(id: string, on: boolean): void {
+    this.added.update((cur) => {
+      const next = new Set(cur);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }
 
   /** Opens the add-to-list dialog with the ingredients as currently scaled and in the current unit mode. */

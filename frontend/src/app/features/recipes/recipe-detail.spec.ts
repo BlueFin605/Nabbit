@@ -7,6 +7,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe } from '../../core/api/api.types';
+import { ListTarget } from '../lists/list-target';
 import { RecipeDetail, UNIT_MODE_KEY } from './recipe-detail';
 
 const flour: Ingredient = {
@@ -38,6 +39,10 @@ describe('RecipeDetail', () => {
   let getRecipe: jest.Mock;
   let updateRecipe: jest.Mock;
   let deleteRecipe: jest.Mock;
+  let addItems: jest.Mock;
+  let deleteItem: jest.Mock;
+  let resolve: jest.Mock;
+  let remember: jest.Mock;
   let fixture: ComponentFixture<RecipeDetail>;
   const el = () => fixture.nativeElement as HTMLElement;
   const settle = async () => {
@@ -55,8 +60,18 @@ describe('RecipeDetail', () => {
     getRecipe = jest.fn(impl);
     deleteRecipe = jest.fn(() => of(undefined));
     updateRecipe = jest.fn((_id: string, input: { servings: number }) => of({ ...recipe(), servings: input.servings, version: 2 }));
+    addItems = jest.fn((_l: string, items: { name: string }[]) =>
+      of({ id: 'L1', name: 'Shopping', items: [{ id: 'old', name: 'milk' }, { id: 'new1', name: items[0].name }], version: 2, updatedAt: '' }),
+    );
+    deleteItem = jest.fn(() => of(undefined));
+    resolve = jest.fn(() => of({ id: 'L1', name: 'Shopping' }));
+    remember = jest.fn();
     TestBed.configureTestingModule({
-      providers: [provideRouter([]), { provide: ApiClient, useValue: { getRecipe, updateRecipe, deleteRecipe, restoreRecipe: jest.fn() } }],
+      providers: [
+        provideRouter([]),
+        { provide: ApiClient, useValue: { getRecipe, updateRecipe, deleteRecipe, restoreRecipe: jest.fn(), addItems, deleteItem } },
+        { provide: ListTarget, useValue: { resolve, remember } },
+      ],
     });
     fixture = TestBed.createComponent(RecipeDetail);
     fixture.componentRef.setInput('id', 'r1');
@@ -236,5 +251,89 @@ describe('RecipeDetail', () => {
     const data = open.mock.calls[0][1]?.data as { ingredients: Ingredient[]; mode: string };
     expect(data.mode).toBe('metric');
     expect(data.ingredients[0].quantity).toBe(3);
+  });
+
+  describe('add one ingredient to the list', () => {
+    const action = new Subject<void>();
+    let snackOpen: jest.SpyInstance;
+    const stubSnack = () => {
+      snackOpen = jest.spyOn(TestBed.inject(MatSnackBar), 'open').mockReturnValue({ onAction: () => action } as never);
+    };
+    const addBtn = (n: number) => el().querySelectorAll<HTMLButtonElement>('.ingredients li .add-one')[n];
+
+    it('has a labelled button on every ingredient row, including to-taste', async () => {
+      await setup();
+      expect(addBtn(0).getAttribute('aria-label')).toBe('Add flour to shopping list');
+      expect(addBtn(1).getAttribute('aria-label')).toBe('Add salt to shopping list');
+    });
+
+    it('posts exactly one item with the metric text, remembers the list, shows a check and snackbar', async () => {
+      await setup();
+      stubSnack();
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(addItems).toHaveBeenCalledTimes(1);
+      expect(addItems).toHaveBeenCalledWith('L1', [{ name: 'flour (480 ml)' }]);
+      expect(remember).toHaveBeenCalledWith('L1');
+      expect(snackOpen).toHaveBeenCalledWith('Added to Shopping', 'Undo', { duration: 5000 });
+      expect(addBtn(0).textContent).toContain('✓');
+      expect(addBtn(1).textContent).not.toContain('✓');
+    });
+
+    it('posts the original-mode text', async () => {
+      await setup();
+      stubSnack();
+      await click('mat-button-toggle[value="original"] button');
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(addItems).toHaveBeenCalledWith('L1', [{ name: 'flour (2 cups)' }]);
+    });
+
+    it('adds a to-taste ingredient by name only', async () => {
+      await setup();
+      stubSnack();
+      await click('.ingredients li:nth-child(2) .add-one');
+      expect(addItems).toHaveBeenCalledWith('L1', [{ name: 'salt' }]);
+    });
+
+    it('Undo deletes the created item and clears the check', async () => {
+      await setup();
+      stubSnack();
+      await click('.ingredients li:nth-child(1) .add-one');
+      action.next();
+      await settle();
+      expect(deleteItem).toHaveBeenCalledWith('L1', 'new1');
+      expect(addBtn(0).textContent).not.toContain('✓');
+    });
+
+    it('check resets on servings change and on unit mode change', async () => {
+      await setup();
+      stubSnack();
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(addBtn(0).textContent).toContain('✓');
+      await click('[aria-label="More servings"]');
+      expect(addBtn(0).textContent).not.toContain('✓');
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(addBtn(0).textContent).toContain('✓');
+      await click('mat-button-toggle[value="original"] button');
+      expect(addBtn(0).textContent).not.toContain('✓');
+    });
+
+    it('ignores taps while a request is in flight', async () => {
+      await setup();
+      stubSnack();
+      addItems.mockReturnValue(new Subject<unknown>());
+      await click('.ingredients li:nth-child(1) .add-one');
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(addItems).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows an error snackbar and no check when the add fails', async () => {
+      await setup();
+      stubSnack();
+      addItems.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      await click('.ingredients li:nth-child(1) .add-one');
+      expect(snackOpen).toHaveBeenCalledWith("Couldn't add that ingredient", 'OK', { duration: 5000 });
+      expect(addBtn(0).textContent).not.toContain('✓');
+      expect(remember).not.toHaveBeenCalled();
+    });
   });
 });
