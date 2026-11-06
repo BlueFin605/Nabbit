@@ -181,7 +181,9 @@
     overflow: hidden;
   }
   .card-delete {
-    position: static;
+    position: relative; // positioned ancestor for Material's absolute touch-target/focus layers; top/right reset so it stays a flex item
+    top: auto;
+    right: auto;
     flex: none;
     width: 48px;
     height: 48px;
