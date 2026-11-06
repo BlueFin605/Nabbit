@@ -26,7 +26,7 @@ import { HttpError, route, type RequestCtx } from '../router.js';
 export const IMPORT_LIMIT_PER_HOUR = 30;
 export const LLM_LIMIT_PER_DAY = 30;
 export const MAX_IMPORT_TEXT = 50_000;
-const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'instagr.am']);
+const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com', 'instagr.am']);
 const HOUR_MS = 3_600_000;
 
 export interface ImportDeps {
@@ -45,7 +45,7 @@ export function setImportDeps(d: Partial<ImportDeps> | undefined): void {
 function isInstagramUrl(raw: string): boolean {
   try {
     const u = new URL(raw);
-    return u.protocol === 'https:' && INSTAGRAM_HOSTS.has(u.hostname.toLowerCase());
+    return u.protocol === 'https:' && INSTAGRAM_HOSTS.has(u.hostname.toLowerCase().replace(/\.$/, ''));
   } catch {
     return false;
   }
@@ -55,16 +55,16 @@ function isInstagramUrl(raw: string): boolean {
 async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string): Promise<RecipeDraft> {
   const h = heuristic.recipe;
   if (h.ingredients.length >= 2 && h.steps.length >= 2) return heuristic;
-  const parser = getLlmParser();
-  if (!parser) return heuristic;
   try {
+    const parser = getLlmParser();
+    if (!parser) return heuristic;
     const nowMs = deps.now();
     const day = new Date(nowMs).toISOString().slice(0, 10);
     const count = await getDb().incrementCounter(ownerPk(ownerId), llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
     if (count > LLM_LIMIT_PER_DAY) return heuristic;
     const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
     if (!recipe) return heuristic;
-    if (recipe.ingredients.length < h.ingredients.length && recipe.steps.length < h.steps.length) return heuristic;
+    if (recipe.ingredients.length < h.ingredients.length || recipe.steps.length < h.steps.length) return heuristic;
     return { recipe, confidence: 'ai' };
   } catch {
     return heuristic;
@@ -95,13 +95,8 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     throw new HttpError(400, `text must be 1-${MAX_IMPORT_TEXT} characters`);
   }
 
-  const nowMs = deps.now();
-  const hour = Math.floor(nowMs / HOUR_MS);
-  const count = await getDb().incrementCounter(ownerPk(ownerId), rateSk('import', hour), Math.floor(nowMs / 1000) + 2 * 3600);
-  if (count > IMPORT_LIMIT_PER_HOUR) {
-    const retryAfter = Math.max(1, Math.ceil(((hour + 1) * HOUR_MS - nowMs) / 1000));
-    return { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': String(retryAfter) } };
-  }
+  const limited = await countImport(ownerId);
+  if (limited) return limited;
 
   if (hasText) {
     const text = body.text as string;

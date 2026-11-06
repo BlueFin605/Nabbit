@@ -41,13 +41,13 @@ export function toImportRequest(value: string): ImportRequest {
   return v.toLowerCase().startsWith('https://') ? { url: v } : { text: v };
 }
 
-const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'instagr.am']);
+const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com', 'instagr.am']);
 
-/** True for a URL whose hostname is exactly instagram.com / www.instagram.com / instagr.am. */
+/** True for a URL whose hostname (one trailing dot ignored) is exactly instagram.com / www. / m. / instagr.am. */
 export function isInstagramUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
-    return INSTAGRAM_HOSTS.has(new URL(url).hostname.toLowerCase());
+    return INSTAGRAM_HOSTS.has(new URL(url).hostname.toLowerCase().replace(/\.$/, ''));
   } catch {
     return false;
   }
@@ -68,10 +68,11 @@ function appendNew<T>(base: T[], extra: T[], key: (t: T) => string): T[] {
   return out;
 }
 
-/** Adds the ingredients and steps of `extra` to `base`, skipping duplicates (same lower-cased text). */
+/** Adds the ingredients and steps of `extra` to `base`, skipping duplicates (same lower-cased text). Confidence is 'ai' if either side is. */
 export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft {
   return {
     ...base,
+    confidence: base.confidence === 'ai' || extra.confidence === 'ai' ? 'ai' : base.confidence,
     recipe: {
       ...base.recipe,
       ingredients: appendNew(base.recipe.ingredients, extra.recipe.ingredients, (i) => i.original ?? i.name),
@@ -93,6 +94,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     .banner { padding: 12px 16px; border-radius: 12px; margin: 12px 0; background: var(--mat-sys-tertiary-container, #fde7b0); }
     .info { padding: 12px 16px; border-radius: 12px; margin: 8px 0; background: var(--mat-sys-secondary-container, #e8def8); }
     .comment-appender { margin: 16px 0; }
+    .hint { margin: 4px 0 8px; }
     .comment-appender summary { cursor: pointer; margin-bottom: 8px; }
     .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
     .loading { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
@@ -142,7 +144,10 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
               <mat-label>Paste the comment</mat-label>
               <textarea matInput rows="4" [value]="comment()" (input)="onComment($event)"></textarea>
             </mat-form-field>
-            <button mat-stroked-button type="button" class="add-comment" [disabled]="loading() || !comment().trim()" (click)="addComment()">
+            @if (editorDirty()) {
+              <p class="hint" role="note">You've edited the recipe below. Save or discard your edits before adding a comment, or they would be lost.</p>
+            }
+            <button mat-stroked-button type="button" class="add-comment" [disabled]="loading() || !comment().trim() || editorDirty()" (click)="addComment()">
               Add and re-import
             </button>
             @if (error(); as e) {
@@ -175,6 +180,9 @@ export class Import implements OnInit {
   readonly url = input<string>();
 
   private readonly box = viewChild<ElementRef<HTMLTextAreaElement>>('box');
+  private readonly editor = viewChild(RecipeEditor);
+  /** The editor resets when the draft changes, so the appender is off while the user has unsaved edits. */
+  protected readonly editorDirty = computed(() => this.editor()?.dirty() ?? false);
 
   protected readonly value = signal('');
   protected readonly loading = signal(false);
@@ -229,26 +237,31 @@ export class Import implements OnInit {
   protected doImport(): void {
     const v = this.value().trim();
     if (!v || this.loading()) return;
-    // After needs_text the box holds a caption: always send it as text, even if it starts with https://.
+    // After needs_text the box holds a caption, sent as text even if it starts with https://. The exception is
+    // a single non-Instagram https URL: the user gave up on the caption and pasted another link, so import it normally.
+    if (this.needsText() && /^https:\/\/\S+$/i.test(v) && !isInstagramUrl(v)) {
+      this.needsText.set(false);
+      this.pendingUrl = undefined;
+    }
     const request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
     this.sourceUrl = request.url ?? this.pendingUrl;
     this.caption = request.text;
     this.igSource.set(isInstagramUrl(request.url) || this.needsText());
-    this.run(request, false);
+    this.run(request, 'fresh');
   }
 
-  private run(request: ImportRequest, merge: boolean): void {
+  private run(request: ImportRequest, mode: 'fresh' | 'replace' | 'merge'): void {
     this.error.set(null);
     this.info.set(null);
     this.loading.set(true);
     this.api.importRecipe(request).subscribe({
       next: (res) => {
         this.needsText.set(false);
-        this.onResult(res, merge);
+        this.onResult(res, mode);
       },
       error: (err: unknown) => {
         this.loading.set(false);
-        if (!merge && this.isNeedsText(err)) {
+        if (mode === 'fresh' && this.isNeedsText(err)) {
           this.pendingUrl = request.url ?? this.pendingUrl;
           this.needsText.set(true);
           this.value.set('');
@@ -256,7 +269,7 @@ export class Import implements OnInit {
         } else {
           this.error.set(this.messageFor(err));
         }
-        if (!merge) setTimeout(() => this.box()?.nativeElement.focus());
+        if (mode === 'fresh') setTimeout(() => this.box()?.nativeElement.focus());
       },
     });
   }
@@ -266,31 +279,32 @@ export class Import implements OnInit {
   }
 
   /**
-   * Re-imports caption + comment (or just the comment when the caption was auto-fetched server-side and
-   * is not available here) and ALWAYS merges the result into the existing preview: new ingredients and
-   * steps are appended, duplicates (same lower-cased text) skipped. One code path for both cases.
+   * Known caption (pasted here): re-imports caption + comment and REPLACES the draft with the result (spec 2c).
+   * Unknown caption (auto-fetched server-side): imports just the comment and MERGES it into the preview,
+   * appending new ingredients and steps and skipping duplicates (same lower-cased text).
    */
   protected addComment(): void {
     const c = this.comment().trim();
     if (!c || this.loading()) return;
-    this.run({ text: this.caption ? `${this.caption}
+    if (this.caption) this.run({ text: `${this.caption}
 
-${c}` : c }, true);
+${c}` }, 'replace');
+    else this.run({ text: c }, 'merge');
   }
 
   private isNeedsText(err: unknown): boolean {
     return err instanceof HttpErrorResponse && err.status === 422 && (err.error as { error?: string } | null)?.error === 'needs_text';
   }
 
-  private onResult(res: ImportResult, merge: boolean): void {
+  private onResult(res: ImportResult, mode: 'fresh' | 'replace' | 'merge'): void {
     this.loading.set(false);
     const existing = this.draft();
-    const incoming = merge && existing ? mergeDrafts(existing, res.draft) : res.draft;
+    const incoming = mode === 'merge' && existing ? mergeDrafts(existing, res.draft) : res.draft;
     const recipe = { ...incoming.recipe };
     if (this.sourceUrl && !recipe.sourceUrl) recipe.sourceUrl = this.sourceUrl;
     this.draft.set({ ...incoming, recipe });
     this.comment.set('');
-    if (merge) return; // keep the photo choice the user already has
+    if (mode !== 'fresh') return; // keep the photo choice the user already has
     // Always offer the found photo(s) so they can be re-picked after declining.
     this.candidates.set(res.candidates?.length ? res.candidates : res.imageUrl ? [res.imageUrl] : []);
     this.fetched = undefined;

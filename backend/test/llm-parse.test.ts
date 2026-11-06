@@ -84,7 +84,7 @@ describe('createBedrockParser', () => {
     expect(ra.messages[0].content[0].text).toContain(evil);
     expect(ra.toolConfig).toBeUndefined();
     expect(ra.inferenceConfig.temperature).toBe(0);
-    expect(ra.inferenceConfig.maxTokens).toBe(2000);
+    expect(ra.inferenceConfig.maxTokens).toBe(4000);
   });
 
   it('returns undefined within the timeout when the client never resolves', async () => {
@@ -122,6 +122,15 @@ describe('validateModelOutput', () => {
     expect(validateModelOutput({ ...GOOD, steps: [1] })).toBeUndefined();
     expect(validateModelOutput({ ...GOOD, ingredients: ['x'.repeat(301)] })).toBeUndefined();
   });
+  it('drops blank ingredient and step strings and applies min counts to the rest', () => {
+    expect(validateModelOutput({ ...GOOD, ingredients: ['1 cup flour', '  ', ''], steps: ['Mix.', ' '] })).toEqual({
+      ...GOOD,
+      ingredients: ['1 cup flour'],
+      steps: ['Mix.'],
+    });
+    expect(validateModelOutput({ ...GOOD, ingredients: ['  ', ''] })).toBeUndefined();
+    expect(validateModelOutput({ ...GOOD, steps: [' '] })).toBeUndefined();
+  });
   it('allows missing servings and tags-less defaults', () => {
     const rest: Record<string, unknown> = { ...GOOD };
     delete rest.servings;
@@ -142,6 +151,12 @@ describe('getLlmParser / setLlmParser', () => {
     expect(getLlmParser()).toBeUndefined();
     process.env.LLM_MODEL_ID = 'some-model';
     expect(getLlmParser()).toBeDefined();
+  });
+
+  it('caches the parser per model id', () => {
+    delete process.env.LLM_MODEL_ID;
+    process.env.LLM_MODEL_ID = 'cache-model';
+    expect(getLlmParser()).toBe(getLlmParser());
   });
 
   it('override wins and undefined resets', () => {

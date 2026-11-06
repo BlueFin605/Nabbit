@@ -6,7 +6,7 @@ import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, firstUrl, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -369,8 +369,55 @@ describe('Import', () => {
       expect(q('.comment-appender')).toBeNull();
     });
 
-    it('re-imports caption + comment and merges, skipping duplicates', async () => {
+    async function toAppender(impl: () => unknown, caption = 'the caption') {
+      await setup({}, onlyOnce(needsText, impl));
+      type(IG);
+      await tapImport();
+      type(caption);
+      await tapImport();
+    }
+    function writeComment(text: string) {
+      const area = q<HTMLTextAreaElement>('.comment-appender textarea') as HTMLTextAreaElement;
+      area.value = text;
+      area.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+    function editTitle(text: string) {
+      const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      title.value = text;
+      title.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('with a known caption, re-imports caption + comment and REPLACES the draft', async () => {
       const comment = result({
+        recipe: {
+          title: 'Other',
+          servings: 2,
+          ingredients: [withIng('1 cup flour', 'flour'), withIng('2 eggs', 'eggs')],
+          steps: ['Mix', 'Bake'],
+          tags: [],
+        },
+      });
+      await toAppender(onlyOnce(() => of(result({}, undefined, ['https://a.example/1.jpg'])), () => of(comment)));
+      writeComment('the comment');
+      q('.add-comment')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment' });
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('Other');
+      expect(el().querySelectorAll('.ingredient')).toHaveLength(2);
+      expect(q('.photo-note')).not.toBeNull(); // photo choice kept
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      const body = (createRecipe.mock.calls[0] as [RecipeInput])[0];
+      expect(body.ingredients.map((i) => i.name)).toEqual(['flour', 'eggs']);
+      expect(body.steps).toEqual(['Mix', 'Bake']);
+    });
+
+    it('with an unknown caption, sends just the comment and MERGES, skipping duplicates', async () => {
+      const comment = result({
+        confidence: 'ai',
         recipe: {
           title: 'Other',
           servings: 2,
@@ -379,21 +426,16 @@ describe('Import', () => {
           tags: [],
         },
       });
-      await setup({}, onlyOnce(needsText, onlyOnce(() => of(result()), () => of(comment))));
+      await setup({}, onlyOnce(() => of(result()), () => of(comment)));
       type(IG);
       await tapImport();
-      type('the caption');
-      await tapImport();
-      const area = q<HTMLTextAreaElement>('.comment-appender textarea') as HTMLTextAreaElement;
-      area.value = 'the comment';
-      area.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
+      writeComment('the comment');
       q('.add-comment')?.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment' });
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment' });
       expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
-      expect(el().querySelectorAll('.ingredient')).toHaveLength(2);
+      expect(q('.banner')?.textContent).toContain('AI-assisted');
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
       const body = (createRecipe.mock.calls[0] as [RecipeInput])[0];
@@ -401,16 +443,73 @@ describe('Import', () => {
       expect(body.steps).toEqual(['Mix', 'Fry', 'Bake']);
     });
 
-    it('sends just the comment when the caption came from the server auto-fetch', async () => {
-      await setup({}, () => of(result()));
+    it('mergeDrafts is ai when either side is ai', () => {
+      const d = (confidence: 'ai' | 'heuristic' | 'structured') => result({ confidence }).draft;
+      expect(mergeDrafts(d('heuristic'), d('ai')).confidence).toBe('ai');
+      expect(mergeDrafts(d('ai'), d('heuristic')).confidence).toBe('ai');
+      expect(mergeDrafts(d('heuristic'), d('structured')).confidence).toBe('heuristic');
+    });
+
+    it('disables the appender once the editor is dirty so edits are never wiped', async () => {
+      await toAppender(() => of(result()));
+      writeComment('the comment');
+      expect(q<HTMLButtonElement>('.add-comment')?.disabled).toBe(false);
+      editTitle('My edited title');
+      expect(q<HTMLButtonElement>('.add-comment')?.disabled).toBe(true);
+      expect(q('.comment-appender .hint')).not.toBeNull();
+      q('.add-comment')?.click();
+      expect(importRecipe).toHaveBeenCalledTimes(2); // IG needs_text + caption only
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('My edited title');
+    });
+
+    it('a caption starting with https:// plus more text is still sent as {text} after needs_text', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
       type(IG);
       await tapImport();
-      const area = q<HTMLTextAreaElement>('.comment-appender textarea') as HTMLTextAreaElement;
-      area.value = 'the comment';
-      area.dispatchEvent(new Event('input'));
-      fixture.detectChanges();
-      q('.add-comment')?.click();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment' });
+      type('https://example.com/r great pancakes\n2 eggs');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'https://example.com/r great pancakes\n2 eggs' });
+    });
+
+    it('a single non-Instagram https URL after needs_text is a normal URL import', async () => {
+      await setup({}, onlyOnce(needsText, () => of(result())));
+      type(IG);
+      await tapImport();
+      type('https://example.com/r');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: 'https://example.com/r' });
+      expect(q('.comment-appender')).toBeNull();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://example.com/r' }));
+    });
+
+    it('trailing-dot and m. hosts count as Instagram', () => {
+      expect(isInstagramUrl('https://instagram.com./p/x')).toBe(true);
+      expect(isInstagramUrl('https://m.instagram.com/p/x')).toBe(true);
+      expect(isInstagramUrl('https://instagram.com.evil.com/p/x')).toBe(false);
+      expect(isInstagramUrl('https://instagram.com@evil.com/p/x')).toBe(false);
+    });
+
+    it('appender failure shows the alert, keeps the draft, and does not set needsText or move focus', async () => {
+      await toAppender(onlyOnce(() => of(result()), needsText));
+      document.body.appendChild(el());
+      writeComment('the comment');
+      (document.activeElement as HTMLElement | null)?.blur();
+      jest.useFakeTimers();
+      try {
+        q('.add-comment')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        expect(q('.comment-appender [role="alert"]')?.textContent).toContain("Instagram wouldn't let us read this post");
+        expect(q('.info')).toBeNull();
+        expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+        expect(q('mat-label')?.textContent ?? '').not.toContain('Paste the caption');
+        expect(document.activeElement).not.toBe(q('textarea'));
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 

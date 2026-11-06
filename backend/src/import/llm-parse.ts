@@ -41,6 +41,14 @@ function strArray(v: unknown, minLen: number, maxLen: number, maxStr: number): s
   return v.every((s) => isStr(s, maxStr)) ? (v as string[]) : undefined;
 }
 
+/** Like strArray, but blank entries are dropped and the min count applies to what remains. */
+function nonBlankArray(v: unknown, minLen: number, maxLen: number, maxStr: number): string[] | undefined {
+  const arr = strArray(v, 0, maxLen, maxStr);
+  if (!arr) return undefined;
+  const kept = arr.filter((s) => s.trim() !== '');
+  return kept.length >= minLen ? kept : undefined;
+}
+
 export function validateModelOutput(
   raw: unknown,
 ): { title: string; servings?: number; tags: string[]; ingredients: string[]; steps: string[] } | undefined {
@@ -53,8 +61,8 @@ export function validateModelOutput(
     servings = o.servings;
   }
   const tags = strArray(o.tags, 0, 10, 40);
-  const ingredients = strArray(o.ingredients, 1, 100, 300);
-  const steps = strArray(o.steps, 1, 100, 2000);
+  const ingredients = nonBlankArray(o.ingredients, 1, 100, 300);
+  const steps = nonBlankArray(o.steps, 1, 100, 2000);
   if (!tags || !ingredients || !steps) return undefined;
   return { title: o.title, ...(servings !== undefined ? { servings } : {}), tags, ingredients, steps };
 }
@@ -65,10 +73,24 @@ function stripFence(s: string): string {
   return m ? m[1].trim() : t;
 }
 
+// One SDK client per region for the life of the Lambda container, created lazily.
+const clients = new Map<string, BedrockLike>();
+function sharedClient(region: string | undefined): BedrockLike {
+  const key = region ?? '';
+  let c = clients.get(key);
+  if (!c) {
+    c = new BedrockRuntimeClient({ region }) as unknown as BedrockLike;
+    clients.set(key, c);
+  }
+  return c;
+}
+
+// Parsers are cached per model id so each import reuses them.
+const parsers = new Map<string, LlmParser>();
+
 export function createBedrockParser(opts: BedrockParserOptions): LlmParser {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const client: BedrockLike =
-    opts.client ?? (new BedrockRuntimeClient({ region: opts.region }) as unknown as BedrockLike);
+  const client: BedrockLike = opts.client ?? sharedClient(opts.region);
 
   return {
     async parse(text, ctx) {
@@ -79,7 +101,7 @@ export function createBedrockParser(opts: BedrockParserOptions): LlmParser {
           modelId: opts.modelId,
           system: [{ text: SYSTEM_PROMPT }],
           messages: [{ role: 'user', content: [{ text: text.slice(0, MAX_INPUT_CHARS) }] }],
-          inferenceConfig: { temperature: 0, maxTokens: 2000 },
+          inferenceConfig: { temperature: 0, maxTokens: 4000 },
         });
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
@@ -123,5 +145,13 @@ export function setLlmParser(p: LlmParser | undefined): void {
 export function getLlmParser(): LlmParser | undefined {
   if (override) return override;
   const modelId = process.env.LLM_MODEL_ID;
-  return modelId ? createBedrockParser({ modelId, region: process.env.AWS_REGION }) : undefined;
+  if (!modelId) return undefined;
+  const region = process.env.AWS_REGION;
+  const key = `${modelId}|${region ?? ''}`;
+  let p = parsers.get(key);
+  if (!p) {
+    p = createBedrockParser({ modelId, region });
+    parsers.set(key, p);
+  }
+  return p;
 }

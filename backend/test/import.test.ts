@@ -323,10 +323,27 @@ describe('LLM fallback and Instagram needs_text', () => {
     },
   );
 
-  it('lookalike hosts and http instagram are not treated as instagram', async () => {
-    page = async () => ({ url: 'https://notinstagram.com/r', html: LD_HTML });
-    expect((await call({ url: 'https://notinstagram.com/r' })).status).toBe(200);
-    expect(fetched).toEqual(['https://notinstagram.com/r']);
+  it.each(['https://instagram.com./p/abc/', 'https://www.instagram.com./p/abc/', 'https://m.instagram.com/p/abc/'])(
+    'trailing-dot and mobile host %s -> needs_text',
+    async (url) => {
+      const res = await call({ url });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(fetched).toEqual([]);
+    },
+  );
+
+  it.each([
+    'https://notinstagram.com/r',
+    'http://instagram.com/p/abc',
+    'https://instagram.com.evil.com/p/abc',
+    'https://instagram.com@evil.com/p/abc',
+    'https://instagram.com..evil.com/p/abc',
+  ])('lookalike %s is not treated as instagram', async (url) => {
+    page = async () => ({ url, html: LD_HTML });
+    const res = await call({ url });
+    expect(res.json).not.toEqual({ error: 'needs_text' });
+    expect(fetched).toEqual([url]);
   });
 
   it('low-confidence text calls the parser and returns an ai draft', async () => {
@@ -370,6 +387,25 @@ describe('LLM fallback and Instagram needs_text', () => {
     };
     const res = await call({ text: LOW });
     expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('keeps the heuristic draft when the LLM has more ingredients but fewer steps', async () => {
+    result = async () => ({
+      ...aiRecipe,
+      ingredients: [
+        { name: 'flour', quantity: 240, unit: 'g' },
+        { name: 'egg', quantity: 2 },
+      ],
+      steps: [],
+    });
+    const res = await call({ text: LOW_WITH_STEP });
+    expect(res.json.draft.confidence).toBe('heuristic');
+  });
+
+  it('keeps the heuristic draft when the LLM has more steps but fewer ingredients', async () => {
+    result = async () => ({ ...aiRecipe, ingredients: [], steps: ['Mix.', 'Bake.'] });
+    const res = await call({ text: LOW_WITH_STEP });
     expect(res.json.draft.confidence).toBe('heuristic');
   });
 

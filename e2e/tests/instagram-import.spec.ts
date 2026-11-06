@@ -30,7 +30,7 @@ test.describe('journey 11: Instagram paste and AI-assisted import', () => {
     expect((await api.recipe(recipes[0].id)).sourceUrl).toBe(IG_URL);
   });
 
-  test('"Recipe in a comment?" appends new ingredients to the preview without duplicating lines', async ({ page }) => {
+  test('"Recipe in a comment?" re-imports caption + comment and replaces the draft, steps included', async ({ page }) => {
     await importViaPaste(page);
     const rows = page.locator('.ingredient .preview summary');
     await expect(rows).toHaveCount(3);
@@ -39,9 +39,19 @@ test.describe('journey 11: Instagram paste and AI-assisted import', () => {
     await page.getByLabel('Paste the comment').fill('Ingredients\n1 cup rice\n2 eggs\n3 carrots\n\nMethod\n1. Cook the rice.\n2. Stir in the eggs.');
     await page.getByRole('button', { name: 'Add and re-import' }).click();
 
-    await expect(rows).toHaveCount(5);
-    const texts = (await rows.allInnerTexts()).map((t) => t.trim().toLowerCase());
-    expect(new Set(texts).size).toBe(texts.length);
+    await expect(rows).toHaveCount(3);
+    await expect(page.locator('textarea.step').first()).toHaveValue('Cook the rice.');
+    await expect(page.locator('textarea.step')).toHaveCount(2);
+  });
+
+  test('the comment appender is disabled once the user has edited the preview, so edits survive', async ({ page }) => {
+    await importViaPaste(page);
+    await page.getByText('Recipe in a comment?').click();
+    await page.getByLabel('Paste the comment').fill('1 cup rice');
+    await expect(page.getByRole('button', { name: 'Add and re-import' })).toBeEnabled();
+    await page.locator('input.title').fill('My own soup title');
+    await expect(page.getByRole('button', { name: 'Add and re-import' })).toBeDisabled();
+    await expect(page.locator('input.title')).toHaveValue('My own soup title');
   });
 
   test('a normal structured page is unaffected: no AI banner', async ({ page }) => {
