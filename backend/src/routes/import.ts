@@ -10,6 +10,8 @@
  * LLM fallback: low-confidence text drafts try the LLM parser, max 30/owner/UTC day (RATE#llm#{date}, ttl 2d),
  * plus an app-wide cap per UTC day (pk=GLOBAL, same sk; LLM_GLOBAL_DAILY_LIMIT, default 300, read per request)
  * so many accounts cannot multiply the spend. The global counter is only bumped once the owner is under their cap.
+ * JS-rendered pages (Gatsby page-data.json, Next.js __NEXT_DATA__) with no usable server-rendered recipe: the embedded app data
+ * is reduced to text for the LLM (same caps/validation), or used directly when it holds a schema.org Recipe; nothing usable -> needs_text.
  * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
  * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
@@ -20,11 +22,12 @@ import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
 import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
 import { extractStructured } from '../import/extract-structured.js';
+import { extractAppData, MAX_APP_DATA_BYTES } from '../import/extract-app-data.js';
 import { ImportError } from '../import/import-error.js';
 import { stripTrackingParams } from '../import/source-url.js';
 import { getLlmParser } from '../import/llm-parse.js';
 import type { RecipeDraft } from '@nabbit/recipe-core';
-import { safeFetch as realSafeFetch, safeFetchImage, type FetchedImage } from '../import/safe-fetch.js';
+import { safeFetch as realSafeFetch, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
@@ -39,9 +42,16 @@ const HOUR_MS = 3_600_000;
 export interface ImportDeps {
   safeFetch: (url: string) => Promise<{ url: string; html: string }>;
   fetchImage: (url: string) => Promise<FetchedImage>;
+  /** Same-origin embedded-app-data fetch (Gatsby page-data.json); SSRF-guarded and size-capped like safeFetch. */
+  fetchJson: (url: string) => Promise<{ url: string; text: string }>;
   now: () => number;
 }
-const defaults: ImportDeps = { safeFetch: (u) => realSafeFetch(u), fetchImage: (u) => safeFetchImage(u), now: () => Date.now() };
+const defaults: ImportDeps = {
+  safeFetch: (u) => realSafeFetch(u),
+  fetchImage: (u) => safeFetchImage(u),
+  fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES),
+  now: () => Date.now(),
+};
 let deps: ImportDeps = defaults;
 
 /** Test hook: inject the fetcher / clock (pass undefined to reset). */
@@ -160,6 +170,20 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     }
     const text = htmlToText(page.html);
     const heuristic = extractFromText(text, { sourceUrl });
+    if (heuristic.recipe.ingredients.length < 2 || heuristic.recipe.steps.length < 2) {
+      // Gatsby page-data.json / Next.js __NEXT_DATA__: runs before the JS-shell decision below and falls through to it when it yields nothing.
+      const app = await extractAppData(page.html, page.url, deps.fetchJson).catch(() => undefined);
+      if (app?.structured) {
+        const draft = { ...app.structured };
+        const appImages = extractImageCandidates(page.html, page.url, draft.imageUrl);
+        delete draft.imageUrl;
+        return { status: 200, body: { draft, ...(appImages.length ? { imageUrl: appImages[0], candidates: appImages } : {}) } };
+      }
+      if (app?.text) {
+        const ai = await maybeLlm(ownerId, app.text, extractFromText('', { sourceUrl }), sourceUrl);
+        if (ai.confidence === 'ai') return { status: 200, body: { draft: ai, ...images } };
+      }
+    }
     // Client-rendered shell (e.g. Gatsby): essentially no text and nothing parsed -> ask the user to paste; never call the LLM.
     if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && heuristic.recipe.steps.length === 0) {
       return { status: 422, body: { error: 'needs_text' } };

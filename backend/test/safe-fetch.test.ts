@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { request as httpRequest } from 'node:http';
 import { createServer, type AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
-import { safeFetch, safeFetchImage, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
+import { safeFetch, safeFetchImage, safeFetchJson, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
 import { ImportError } from '../src/import/import-error.js';
 
 const PUBLIC = '93.184.216.34';
@@ -445,5 +445,36 @@ describe('safeFetchImage', () => {
   it('times out', async () => {
     const fetchImpl = vi.fn(() => new Promise<Response>(() => undefined));
     expect(await codeOf(safeFetchImage('https://example.com/', { resolve: resolvePublic, fetchImpl: fetchImpl as never, timeoutMs: 20 }))).toBe('timeout');
+  });
+});
+
+describe('safeFetchJson', () => {
+  const json = (body = '{"a":1}', type = 'application/json; charset=utf-8') => new Response(body, { status: 200, headers: { 'content-type': type } });
+
+  it('returns final url and text, pinned like safeFetch', async () => {
+    const fetchImpl = vi.fn(async () => json());
+    const r = await safeFetchJson('https://example.com/page-data/x/page-data.json', { resolve: resolvePublic, fetchImpl: fetchImpl as never }, 1000);
+    expect(r).toEqual({ url: 'https://example.com/page-data/x/page-data.json', text: '{"a":1}' });
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+    expect(init.pinnedAddress).toBe(PUBLIC);
+  });
+  it('blocks private addresses', async () => {
+    const fetchImpl = vi.fn(async () => json());
+    expect(await codeOf(safeFetchJson('https://example.com/p.json', { resolve: async () => ['169.254.169.254'], fetchImpl: fetchImpl as never }, 1000))).toBe('blocked_address');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it('rejects non-JSON content types', async () => {
+    const fetchImpl = vi.fn(async () => html());
+    expect(await codeOf(safeFetchJson('https://example.com/p.json', { resolve: resolvePublic, fetchImpl: fetchImpl as never }, 1000))).toBe('not_html');
+  });
+  it('accepts +json types and rejects bodies over the cap', async () => {
+    const ok = vi.fn(async () => json('{}', 'application/vnd.api+json'));
+    expect((await safeFetchJson('https://example.com/p.json', { resolve: resolvePublic, fetchImpl: ok as never }, 10)).text).toBe('{}');
+    const big = vi.fn(async () => json('{"a":"xxxxxxxxxxxxxxxx"}'));
+    expect(await codeOf(safeFetchJson('https://example.com/p.json', { resolve: resolvePublic, fetchImpl: big as never }, 10))).toBe('too_large');
+  });
+  it('bad_status on 404', async () => {
+    const nf = vi.fn(async () => new Response('nope', { status: 404, headers: { 'content-type': 'application/json' } }));
+    expect(await codeOf(safeFetchJson('https://example.com/p.json', { resolve: resolvePublic, fetchImpl: nf as never }, 1000))).toBe('bad_status');
   });
 });

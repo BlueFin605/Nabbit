@@ -489,3 +489,18 @@ export async function safeFetchImage(rawUrl: string, deps: SafeFetchDeps = {}): 
   if (sniffImageType(r.bytes) !== declared) throw new ImportError('not_image', 'Image content does not match its type');
   return { url: r.url, contentType: declared as ImageContentType, bytes: r.bytes };
 }
+
+function isJsonType(contentType: string | null): boolean {
+  const t = (contentType ?? '').split(';')[0]!.trim().toLowerCase();
+  return t === 'application/json' || t === 'text/json' || t.endsWith('+json');
+}
+
+/** Same SSRF guard / redirect / timeout handling as safeFetch, for a small JSON document (e.g. Gatsby page-data.json). */
+export async function safeFetchJson(rawUrl: string, deps: SafeFetchDeps = {}, maxBytes: number = MAX_BYTES): Promise<{ url: string; text: string }> {
+  const r = await guardedFetch(
+    rawUrl,
+    { accept: 'application/json', isAllowedType: isJsonType, notAllowedCode: 'not_html', maxBytes },
+    deps,
+  );
+  return { url: r.url, text: new TextDecoder('utf-8').decode(r.bytes) };
+}
