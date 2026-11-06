@@ -12,6 +12,8 @@ import { safeFetch, safeFetchImage } from './import/safe-fetch.js';
 // Importing the module registers POST /recipes/import on the shared router; production serves it from
 // handlers/import.ts, and handlers/api.ts deliberately does not include it.
 import { setImportDeps } from './routes/import.js';
+import { setLlmParser } from './import/llm-parse.js';
+import { parseIngredient, toMetric } from '@nabbit/recipe-core';
 import { sendLambdaResult, toLambdaEvent, type LocalHandler } from './local-adapter.js';
 
 /**
@@ -23,6 +25,31 @@ export function installE2eFixtureFetch(env: NodeJS.ProcessEnv = process.env): bo
   const deps = fixtureFetchDeps(env);
   if (!deps) return false;
   setImportDeps({ safeFetch: (u) => safeFetch(u, deps), fetchImage: (u) => safeFetchImage(u, deps) });
+  return true;
+}
+
+/** Marker a pasted text must contain for the e2e fake LLM to answer. */
+export const FAKE_LLM_MARKER = '[[fake-llm]]';
+
+/**
+ * Local-dev-only e2e hook: when NODE_ENV=development and NABBIT_E2E_FAKE_LLM=1, the import route's LLM
+ * parser is a deterministic stub (no Bedrock). Returns a fixed recipe for text containing FAKE_LLM_MARKER,
+ * otherwise undefined (so the heuristic draft stands). Never called from the Lambda handlers.
+ */
+export function installE2eFakeLlm(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.NODE_ENV !== 'development' || env.NABBIT_E2E_FAKE_LLM !== '1') return false;
+  setLlmParser({
+    parse: async (text) =>
+      text.includes(FAKE_LLM_MARKER)
+        ? {
+            title: 'Fake AI Soup',
+            servings: 4,
+            ingredients: ['2 cups fake stock', '1 onion', '3 carrots'].map((l) => toMetric(parseIngredient(l))),
+            steps: ['Chop the onion and carrots.', 'Simmer everything in the stock.', 'Serve hot.'],
+            tags: [],
+          }
+        : undefined,
+  });
   return true;
 }
 
@@ -61,6 +88,7 @@ export function start(port = Number(process.env.PORT ?? 3000)): Promise<Server> 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   installE2eFixtureFetch();
+  installE2eFakeLlm();
   const server = await start();
   const addr = server.address();
   console.log(`Nabbit API listening on port ${typeof addr === 'object' && addr ? addr.port : addr}`);

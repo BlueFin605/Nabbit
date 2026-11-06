@@ -16,6 +16,7 @@ export interface ApiRecipe {
   servings: number;
   version: number;
   imageKey?: string;
+  sourceUrl?: string;
   ingredients: { name: string; quantity: number | null; unit: string }[];
 }
 

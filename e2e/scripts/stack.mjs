@@ -122,6 +122,7 @@ async function up() {
           PORT: String(backend),
           ALLOWED_ORIGIN: `http://127.0.0.1:${frontend}`,
           IMAGE_BASE_URL: `http://127.0.0.1:${localstack}/${bucket}`,
+          NABBIT_E2E_FAKE_LLM: '1',
           NABBIT_E2E_FIXTURE_FETCH: '1',
           NABBIT_E2E_FIXTURE_ORIGIN: `http://127.0.0.1:${fixture}`,
         },
