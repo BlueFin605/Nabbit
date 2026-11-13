@@ -112,3 +112,53 @@
 .size-error {
   color: var(--mat-sys-error, #b3261e);
 }
+
+.scale-by-field,
+.anchor-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scale-by,
+.anchor-amount,
+.anchor-unit {
+  min-height: 48px;
+  padding: 0 12px;
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid var(--mat-sys-outline, #79747e);
+  background: transparent;
+  color: inherit;
+}
+
+.anchor-amount {
+  width: 6em;
+}
+
+.reset-scale {
+  min-height: 48px;
+  min-width: 48px;
+}
+
+.scale-summary {
+  display: inline-flex;
+  gap: 12px;
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.scale-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--mat-sys-error, #b3261e);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

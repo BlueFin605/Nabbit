@@ -421,4 +421,161 @@ describe('RecipeDetail', () => {
       expect(remember).not.toHaveBeenCalled();
     });
   });
+
+  describe('scale by ingredient', () => {
+    const milk: Ingredient = { id: 'milk', original: '4 l milk', quantity: 4, unit: 'l', name: 'milk', scalable: true, metric: { quantity: 4000, unit: 'ml' } };
+    const rennet: Ingredient = { id: 'ren', original: '1 tsp rennet', quantity: 1, unit: 'tsp', name: 'rennet', scalable: true };
+    const cheese = (scaleBy?: string): Recipe => ({ ...recipe(), ingredients: [milk, rennet, salt], ...(scaleBy ? { scaleBy } : {}) });
+    const scaleSelect = () => el().querySelector<HTMLSelectElement>('select.scale-by');
+    const amountBox = () => el().querySelector<HTMLInputElement>('input.anchor-amount');
+    const unitSelect = () => el().querySelector<HTMLSelectElement>('select.anchor-unit');
+    const reset = () => el().querySelector<HTMLButtonElement>('button.reset-scale');
+    const factorText = () => el().querySelector('.factor')?.textContent ?? '';
+    const choose = async (sel: HTMLSelectElement | null, value: string) => {
+      (sel as HTMLSelectElement).value = value;
+      sel?.dispatchEvent(new Event('change'));
+      await settle();
+    };
+    const type = async (value: string) => {
+      (amountBox() as HTMLInputElement).value = value;
+      amountBox()?.dispatchEvent(new Event('input'));
+      await settle();
+    };
+
+    it('lists Servings plus only scalable ingredients with a quantity, with a label', async () => {
+      await setup(() => of(cheese()));
+      const labels = Array.from(scaleSelect()?.options ?? []).map((o) => o.textContent?.trim());
+      expect(labels).toEqual(['Servings', 'milk', 'rennet']);
+      expect(el().querySelector('label[for="scale-by"]')?.textContent).toContain('Scale by');
+    });
+
+    it('opens in Servings mode (stepper, no Reset) when the recipe has no scaleBy', async () => {
+      await setup(() => of(cheese()));
+      expect(el().querySelector('.stepper')).not.toBeNull();
+      expect(amountBox()).toBeNull();
+      expect(reset()).toBeNull();
+    });
+
+    it('opens in ingredient mode on scaleBy, preset to the stored amount', async () => {
+      await setup(() => of(cheese('milk')));
+      expect(scaleSelect()?.value).toBe('milk');
+      expect(el().querySelector('.stepper')).toBeNull();
+      expect(amountBox()?.value).toBe('4');
+      expect(unitSelect()?.value).toBe('l');
+      expect(reset()).toBeNull();
+    });
+
+    it('ignores a scaleBy that is not an anchor', async () => {
+      await setup(() => of(cheese('salt')));
+      expect(el().querySelector('.stepper')).not.toBeNull();
+    });
+
+    it('milk 4 l -> 6 l gives x1.5, derived servings and scaled ingredients', async () => {
+      await setup(() => of(cheese('milk')));
+      await click('mat-button-toggle[value="original"] button');
+      await type('6');
+      expect(factorText()).toContain('×1.5');
+      expect(el().querySelector('.derived-servings')?.textContent).toContain('6');
+      expect(ingredients()[0]).toContain('6 l milk');
+      expect(ingredients()[1]).toContain('1½ tsp rennet');
+    });
+
+    it('rounds derived servings to the nearest 0.5', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('4.3');
+      expect(el().querySelector('.derived-servings')?.textContent).toContain('4.5');
+    });
+
+    it('switching the unit ml -> l keeps the same target', async () => {
+      await setup(() => of(cheese('milk')));
+      await choose(unitSelect(), 'ml');
+      await type('6000');
+      expect(factorText()).toContain('×1.5');
+      await choose(unitSelect(), 'l');
+      await type('6');
+      expect(factorText()).toContain('×1.5');
+    });
+
+    it('a comma decimal is accepted', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6,0');
+      expect(factorText()).toContain('×1.5');
+    });
+
+    it('a wrong-family unit is not offered, but a bad programmatic unit shows an alert and keeps the factor', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      const sel = unitSelect() as HTMLSelectElement;
+      const opt = document.createElement('option');
+      opt.value = 'g';
+      sel.appendChild(opt);
+      await choose(sel, 'g');
+      const err = el().querySelector('.scale-error');
+      expect(err?.getAttribute('role')).toBe('alert');
+      expect(err?.textContent).toMatch(/can't convert/i);
+      expect(factorText()).toContain('×1.5');
+    });
+
+    it('invalid amount shows an error and keeps the previous factor', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      await type('abc');
+      expect(el().querySelector('.scale-error')?.textContent).toMatch(/greater than zero/);
+      expect(factorText()).toContain('×1.5');
+      await type('0');
+      expect(factorText()).toContain('×1.5');
+      await type('8');
+      expect(el().querySelector('.scale-error')).toBeNull();
+      expect(factorText()).toContain('×2');
+    });
+
+    it('the unit select only offers the same family', async () => {
+      await setup(() => of(cheese('milk')));
+      const opts = Array.from(unitSelect()?.options ?? []).map((o) => o.value);
+      expect(opts).toContain('ml');
+      expect(opts).not.toContain('g');
+    });
+
+    it('Reset appears once scaled and restores the stored amount', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      expect(reset()).not.toBeNull();
+      await click('button.reset-scale');
+      expect(reset()).toBeNull();
+      expect(amountBox()?.value).toBe('4');
+      expect(ingredients()[0]).toContain('4 l milk');
+      expect(el().querySelector('.scale-error')).toBeNull();
+    });
+
+    it('Reset also works in Servings mode', async () => {
+      await setup();
+      await click('[aria-label="More servings"]');
+      expect(reset()).not.toBeNull();
+      await click('button.reset-scale');
+      expect(el().querySelector('.stepper output')?.textContent).toBe('4');
+      expect(reset()).toBeNull();
+    });
+
+    it('switching back to Servings shows the stepper at the stored servings', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      await choose(scaleSelect(), 'servings');
+      expect(el().querySelector('.stepper output')?.textContent).toBe('4');
+      expect(reset()).toBeNull();
+    });
+
+    it('add-to-list receives the ingredient-scaled ingredients', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      const open = jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+      await click('.actions button');
+      const data = open.mock.calls[0][1]?.data as { ingredients: Ingredient[] };
+      expect(data.ingredients[0].quantity).toBe(6);
+    });
+
+    it('announces the factor and servings politely', async () => {
+      await setup(() => of(cheese('milk')));
+      expect(el().querySelector('.scale-summary')?.getAttribute('aria-live')).toBe('polite');
+    });
+  });
 });

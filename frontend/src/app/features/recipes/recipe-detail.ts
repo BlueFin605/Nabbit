@@ -9,12 +9,15 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import {
   convertTemperatures,
+  anchorAmount,
   formatQuantity,
+  isScaleAnchor,
   mapSteps,
-  scaleRecipeIngredients,
+  scaleIngredient,
   type Ingredient,
   type StepGroup,
   type StepNode,
+  type Unit,
 } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe, RecipeInput } from '../../core/api/api.types';
@@ -24,12 +27,14 @@ import { imageUrl } from '../../core/api/image-url';
 import { RecipeDeleter } from './recipe-deleter';
 import { AddToListDialog, listItemName, type AddToListData, type AddToListResult } from './add-to-list-dialog';
 import { ListTarget } from '../lists/list-target';
+import { anchorFactor, formatFactor, roundHalf, unitsInFamily } from './scale-state';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
 export const MIN_SERVINGS = 1;
 export const MAX_SERVINGS = 99;
 
 type Mode = 'metric' | 'original';
+type ScaleMode = 'servings' | { ingredientId: string };
 type Load = { status: 'loading' } | { status: 'notFound' } | { status: 'error' } | { status: 'ok'; recipe: Recipe };
 
 interface WakeLockSentinelLike {
@@ -76,12 +81,53 @@ function readMode(): Mode {
           <h1>{{ r.title }}</h1>
 
           <div class="controls">
-            <div class="stepper" role="group" aria-label="Servings">
-              <button mat-stroked-button type="button" aria-label="Fewer servings" [disabled]="servings() <= min" (click)="step(-1)">−</button>
-              <output aria-live="polite">{{ servings() }}</output>
-              <button mat-stroked-button type="button" aria-label="More servings" [disabled]="servings() >= max" (click)="step(1)">+</button>
-              <span>servings</span>
+            <div class="scale-by-field">
+              <label for="scale-by">Scale by</label>
+              <select id="scale-by" class="scale-by" [value]="scaleValue()" (change)="chooseScale($event)">
+                <option value="servings" [selected]="scaleValue() === 'servings'">Servings</option>
+                @for (a of anchors(); track a.id) {
+                  <option [value]="a.id" [selected]="scaleValue() === a.id">{{ a.name }}</option>
+                }
+              </select>
             </div>
+
+            @if (anchor(); as a) {
+              <div class="anchor-box" role="group" [attr.aria-label]="'Amount of ' + a.name">
+                <label for="anchor-amount">Amount of {{ a.name }}</label>
+                <input
+                  id="anchor-amount"
+                  class="anchor-amount"
+                  type="text"
+                  inputmode="decimal"
+                  [value]="amountValue()"
+                  [attr.aria-invalid]="scaleError() ? 'true' : null"
+                  (input)="setAmount($event)"
+                />
+                <label for="anchor-unit" class="visually-hidden">Unit</label>
+                <select id="anchor-unit" class="anchor-unit" [value]="unitValue()" (change)="setUnit($event)">
+                  @for (u of anchorUnits(); track u) {
+                    <option [value]="u" [selected]="u === unitValue()">{{ u || '(none)' }}</option>
+                  }
+                </select>
+              </div>
+              <p class="scale-summary" aria-live="polite">
+                <span class="factor">×{{ factorText() }}</span>
+                <span class="derived-servings">≈ {{ servings() }} servings</span>
+              </p>
+            } @else {
+              <div class="stepper" role="group" aria-label="Servings">
+                <button mat-stroked-button type="button" aria-label="Fewer servings" [disabled]="servings() <= min" (click)="step(-1)">−</button>
+                <output aria-live="polite">{{ servings() }}</output>
+                <button mat-stroked-button type="button" aria-label="More servings" [disabled]="servings() >= max" (click)="step(1)">+</button>
+                <span>servings</span>
+              </div>
+            }
+            @if (scaleError(); as e) {
+              <p class="scale-error" role="alert">{{ e }}</p>
+            }
+            @if (resized()) {
+              <button mat-stroked-button type="button" class="reset-scale" (click)="resetScale()">Reset</button>
+            }
 
             <mat-button-toggle-group aria-label="Units" [value]="mode()" (change)="setMode($event.value)">
               <mat-button-toggle value="metric">Metric</mat-button-toggle>
@@ -192,27 +238,49 @@ export class RecipeDetail implements OnInit {
   /** Ingredient ids added to the list since servings or units last changed. */
   protected readonly added = signal<ReadonlySet<string>>(new Set());
   private readonly adding = new Set<string>();
-  /** null until the user touches the stepper; then overrides the recipe's stored servings. */
-  private readonly chosen = signal<number | null>(null);
+  /** The ONE scale factor (1 = stored recipe); both the stepper and the ingredient amount box set it. */
+  private readonly factor = signal(1);
+  protected readonly scaleMode = signal<ScaleMode>('servings');
+  /** Typed amount / unit for the anchor box; null = the stored anchor amount and unit. */
+  private readonly amountText = signal<string | null>(null);
+  private readonly amountUnit = signal<Unit | null>(null);
+  protected readonly scaleError = signal<string | null>(null);
 
   protected readonly recipe = computed(() => {
     const l = this.load();
     return l.status === 'ok' ? l.recipe : null;
   });
-  protected readonly servings = computed(() => this.chosen() ?? this.recipe()?.servings ?? 1);
+  /** Derived from the factor, rounded to the nearest 0.5. */
+  protected readonly servings = computed(() => roundHalf((this.recipe()?.servings ?? 1) * this.factor()));
+
+  protected readonly anchors = computed(() => (this.recipe()?.ingredients ?? []).filter(isScaleAnchor));
+  /** The stored ingredient the amount box scales by, or null in Servings mode. */
+  protected readonly anchor = computed((): Ingredient | null => {
+    const m = this.scaleMode();
+    return m === 'servings' ? null : (this.anchors().find((i) => i.id === m.ingredientId) ?? null);
+  });
+  protected readonly scaleValue = computed(() => this.anchor()?.id ?? 'servings');
+  protected readonly amountValue = computed(() => {
+    const a = this.anchor();
+    return this.amountText() ?? (a ? String(Number(anchorAmount(a).quantity.toFixed(3))) : '');
+  });
+  protected readonly unitValue = computed((): Unit => {
+    const a = this.anchor();
+    return this.amountUnit() ?? (a ? anchorAmount(a).unit : '');
+  });
+  protected readonly anchorUnits = computed(() => unitsInFamily(this.anchor()?.unit ?? ''));
+  protected readonly factorText = computed(() => formatFactor(this.factor()));
 
   /** The stored ingredients scaled to the chosen servings (a new array; the recipe is untouched). */
   readonly scaledIngredients = computed<Ingredient[]>(() => {
     const r = this.recipe();
     if (!r) return [];
-    return scaleRecipeIngredients(r.ingredients, r.servings, this.servings());
+    const f = this.factor();
+    return r.ingredients.map((i) => scaleIngredient(i, f));
   });
 
-  /** The stepper differs from the stored servings. */
-  protected readonly resized = computed(() => {
-    const r = this.recipe();
-    return !!r && this.servings() !== r.servings;
-  });
+  /** The size differs from the stored recipe (either mode). */
+  protected readonly resized = computed(() => !!this.recipe() && this.factor() !== 1);
 
   protected readonly lines = computed(() =>
     this.scaledIngredients().map((i) => ({
@@ -265,7 +333,7 @@ export class RecipeDetail implements OnInit {
   protected reload(): void {
     this.conflict.set(false);
     this.sizeError.set(null);
-    this.chosen.set(null);
+    this.resetScale();
     this.fetch();
   }
 
@@ -276,7 +344,10 @@ export class RecipeDetail implements OnInit {
       return;
     }
     this.api.getRecipe(id).subscribe({
-      next: (recipe) => this.load.set(recipe.deletedAt ? { status: 'notFound' } : { status: 'ok', recipe }),
+      next: (recipe) => {
+        this.load.set(recipe.deletedAt ? { status: 'notFound' } : { status: 'ok', recipe });
+        this.openScaleMode(recipe);
+      },
       error: (err: { status?: number }) =>
         this.load.set({ status: err?.status === 404 || err?.status === 410 ? 'notFound' : 'error' }),
     });
@@ -322,7 +393,7 @@ export class RecipeDetail implements OnInit {
     this.api.updateRecipe(id, input, version).subscribe({
       next: (updated) => {
         this.savingSize.set(false);
-        this.chosen.set(null);
+        this.resetScale();
         this.load.set({ status: 'ok', recipe: updated });
       },
       error: (err: unknown) => {
@@ -338,7 +409,56 @@ export class RecipeDetail implements OnInit {
   }
 
   protected step(delta: number): void {
-    this.chosen.set(Math.min(MAX_SERVINGS, Math.max(MIN_SERVINGS, this.servings() + delta)));
+    const r = this.recipe();
+    if (!r) return;
+    const next = Math.min(MAX_SERVINGS, Math.max(MIN_SERVINGS, this.servings() + delta));
+    this.factor.set(next / r.servings);
+    this.added.set(new Set());
+  }
+
+  /** Opens in ingredient mode when the recipe's scaleBy names an anchor ingredient, else Servings. */
+  private openScaleMode(r: Recipe): void {
+    const by = r.scaleBy && r.ingredients.find((i) => i.id === r.scaleBy && isScaleAnchor(i));
+    this.scaleMode.set(by ? { ingredientId: by.id } : 'servings');
+    this.resetScale();
+  }
+
+  protected chooseScale(ev: Event): void {
+    const v = (ev.target as HTMLSelectElement).value;
+    this.scaleMode.set(v === 'servings' ? 'servings' : { ingredientId: v });
+    this.resetScale();
+  }
+
+  /** Back to the stored servings / stored anchor amount (factor 1). Non-destructive. */
+  protected resetScale(): void {
+    this.factor.set(1);
+    this.amountText.set(null);
+    this.amountUnit.set(null);
+    this.scaleError.set(null);
+    this.added.set(new Set());
+  }
+
+  protected setAmount(ev: Event): void {
+    this.amountText.set((ev.target as HTMLInputElement).value);
+    this.applyAnchor();
+  }
+
+  protected setUnit(ev: Event): void {
+    this.amountUnit.set((ev.target as HTMLSelectElement).value as Unit);
+    this.applyAnchor();
+  }
+
+  /** Recomputes the factor from the amount box; on bad input shows an error and keeps the previous factor. */
+  private applyAnchor(): void {
+    const a = this.anchor();
+    if (!a) return;
+    const res = anchorFactor(a, this.amountValue(), this.unitValue());
+    if ('error' in res) {
+      this.scaleError.set(res.error);
+      return;
+    }
+    this.scaleError.set(null);
+    this.factor.set(res.factor);
     this.added.set(new Set());
   }
 
