@@ -1,0 +1,49 @@
+{
+    "id": "8bbec652-97a9-4b07-b162-07a3f9a397ef",
+    "name": "30 update recipe remove originalSize",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{scaleRecipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Scaled Pancakes\",\"servings\":4,\"ingredients\":[{\"id\":\"ing-flour\",\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"id\":\"ing-milk\",\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix.\",\"Fry.\"],\"tags\":[\"breakfast\"],\"scaleBy\":\"ing-milk\",\"version\":{{scaleVersion}}}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"version\",\n    \"scaleBy\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"const\": \"Scaled Pancakes\"\n    },\n    \"scaleBy\": {\n      \"const\": \"ing-milk\"\n    },\n    \"ingredients\": {\n      \"type\": \"array\",\n      \"minItems\": 2,\n      \"maxItems\": 2,\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"unit\",\n          \"scalable\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"unit\": {\n            \"type\": \"string\"\n          },\n          \"scalable\": {\n            \"type\": \"boolean\"\n          },\n          \"quantity\": {\n            \"type\": [\n              \"number\",\n              \"null\"\n            ]\n          }\n        }\n      }\n    },\n    \"version\": {\n      \"const\": 3\n    },\n    \"originalSize\": false\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "scaleVersion",
+            "from": "body",
+            "path": "$.version",
+            "id": "38fa1e6c-5f55-4849-8626-f35e8346eaef"
+        }
+    ]
+}
