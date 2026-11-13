@@ -3,7 +3,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router, provideRouter } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
-import type { Ingredient } from '@nabbit/recipe-core';
+import type { Ingredient, StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
 import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
@@ -164,6 +164,24 @@ describe('Import', () => {
     expect(q('input.title')).not.toBeNull();
     q('.save')?.click();
     expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://example.com/r' }));
+  });
+
+  it('empty banner shows for a draft whose only step is an empty group', async () => {
+    await setup({}, () =>
+      of(result({ confidence: 'heuristic', recipe: { title: '', servings: 4, ingredients: [], steps: [{ heading: 'Empty', steps: [] }], tags: [] } })),
+    );
+    type('x');
+    await tapImport();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain("couldn't find a recipe");
+  });
+
+  it('empty banner is absent when a group holds a leaf step', async () => {
+    await setup({}, () =>
+      of(result({ confidence: 'structured', recipe: { title: 'T', servings: 4, ingredients: [], steps: [{ heading: 'G', steps: ['Mix'] }], tags: [] } })),
+    );
+    type('x');
+    await tapImport();
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain("couldn't find a recipe");
   });
 
   it('save posts the (edited) recipe and navigates to it', async () => {
@@ -520,6 +538,40 @@ describe('Import', () => {
       expect(mergeDrafts(d('heuristic'), d('ai')).confidence).toBe('ai');
       expect(mergeDrafts(d('ai'), d('heuristic')).confidence).toBe('ai');
       expect(mergeDrafts(d('heuristic'), d('structured')).confidence).toBe('heuristic');
+    });
+
+    describe('mergeDrafts steps', () => {
+      const draft = (steps: StepNode[]) => result({ recipe: { title: 'T', servings: 4, ingredients: [], steps, tags: [] } }).draft;
+
+      it('merges flat into flat, skipping case-insensitive duplicates', () => {
+        const out = mergeDrafts(draft(['Mix', 'Fry']), draft(['mix', 'Bake']));
+        expect(out.recipe.steps).toEqual(['Mix', 'Fry', 'Bake']);
+      });
+
+      it('does not re-add an extra step already inside a base group', () => {
+        const base = draft([{ heading: 'Batter', steps: ['Mix', 'Rest'] }, 'Fry']);
+        const out = mergeDrafts(base, draft(['MIX', 'Serve']));
+        expect(out.recipe.steps).toEqual([{ heading: 'Batter', steps: ['Mix', 'Rest'] }, 'Fry', 'Serve']);
+      });
+
+      it('appends an extra group at the top level with its structure', () => {
+        const g: StepNode = { heading: 'Sauce', steps: ['Whisk', { heading: 'Finish', steps: ['Pour'] }] };
+        expect(mergeDrafts(draft(['Mix']), draft([g])).recipe.steps).toEqual(['Mix', g]);
+      });
+
+      it('drops inner duplicates from an extra group and groups left empty', () => {
+        const base = draft(['Mix', 'Fry']);
+        const extra = draft([
+          { heading: 'Dupes', steps: ['mix', { heading: 'Deep', steps: ['FRY'] }] },
+          { heading: 'Part', steps: ['Mix', 'Bake'] },
+        ]);
+        expect(mergeDrafts(base, extra).recipe.steps).toEqual(['Mix', 'Fry', { heading: 'Part', steps: ['Bake'] }]);
+      });
+
+      it('dedupes within the extra draft itself', () => {
+        const out = mergeDrafts(draft([]), draft(['Mix', { heading: 'G', steps: ['mix', 'Fry'] }]));
+        expect(out.recipe.steps).toEqual(['Mix', { heading: 'G', steps: ['Fry'] }]);
+      });
     });
 
     it('disables the appender once the editor is dirty so edits are never wiped', async () => {
