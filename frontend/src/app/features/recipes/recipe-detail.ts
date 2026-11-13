@@ -27,6 +27,7 @@ import { imageUrl } from '../../core/api/image-url';
 import { RecipeDeleter } from './recipe-deleter';
 import { AddToListDialog, listItemName, type AddToListData, type AddToListResult } from './add-to-list-dialog';
 import { ListTarget } from '../lists/list-target';
+import { RestoreSizeDialog, type RestoreSizeData } from './restore-size-dialog';
 import { anchorFactor, formatFactor, roundHalf, unitsInFamily } from './scale-state';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
@@ -154,6 +155,13 @@ function readMode(): Mode {
               @if (!servingsInBounds()) {
                 <p id="size-bounds" class="size-bounds">Resulting servings must be between {{ min }} and {{ max }}.</p>
               }
+            </div>
+          }
+          @if (r.originalSize) {
+            <div class="restore">
+              <button mat-stroked-button type="button" class="restore-original" [disabled]="savingSize()" (click)="confirmRestore()">
+                Restore original size
+              </button>
             </div>
           }
           @if (conflict()) {
@@ -399,6 +407,8 @@ export class RecipeDetail implements OnInit {
     void [_c, _u, _d];
     const input: RecipeInput = {
       ...rest,
+      // The first resize keeps the pre-save size as a backup; later saves leave it as is.
+      originalSize: r.originalSize ?? { servings: r.servings, ingredients: r.ingredients },
       servings,
       // The scaled quantity no longer matches the original text, so drop it from scaled lines.
       ingredients: this.scaledIngredients().map((i, n) => {
@@ -420,6 +430,46 @@ export class RecipeDetail implements OnInit {
         this.savingSize.set(false);
         if (isVersionConflict(err)) this.conflict.set(true);
         else this.sizeError.set("Couldn't save the new size. Try again.");
+      },
+    });
+  }
+
+  /** Compare dialog (current -> first size), then PUT the first size back with the backup removed. */
+  protected confirmRestore(): void {
+    const r = this.recipe();
+    const original = r?.originalSize;
+    if (!r || !original) return;
+    const data: RestoreSizeData = {
+      currentServings: r.servings,
+      originalServings: original.servings,
+      current: r.ingredients,
+      original: original.ingredients,
+      mode: this.mode(),
+    };
+    this.dialog
+      .open<RestoreSizeDialog, RestoreSizeData, boolean>(RestoreSizeDialog, { data })
+      .afterClosed()
+      .subscribe((ok) => {
+        if (ok === true) this.restore(r, original);
+      });
+  }
+
+  private restore(r: Recipe, original: NonNullable<Recipe['originalSize']>): void {
+    const { id, version, createdAt: _c, updatedAt: _u, deletedAt: _d, originalSize: _o, ...rest } = r;
+    void [_c, _u, _d, _o];
+    const input: RecipeInput = { ...rest, servings: original.servings, ingredients: original.ingredients };
+    this.savingSize.set(true);
+    this.sizeError.set(null);
+    this.api.updateRecipe(id, input, version).subscribe({
+      next: (updated) => {
+        this.savingSize.set(false);
+        this.resetScale();
+        this.load.set({ status: 'ok', recipe: updated });
+      },
+      error: (err: unknown) => {
+        this.savingSize.set(false);
+        if (isVersionConflict(err)) this.conflict.set(true);
+        else this.sizeError.set("Couldn't restore the original size. Try again.");
       },
     });
   }

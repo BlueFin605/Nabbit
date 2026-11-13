@@ -639,4 +639,122 @@ describe('RecipeDetail', () => {
       expect(el().querySelector('.scale-summary')?.getAttribute('aria-live')).toBe('polite');
     });
   });
+
+  describe('first-size backup and restore original size', () => {
+    const milk: Ingredient = { id: 'milk', original: '4 l milk', quantity: 4, unit: 'l', name: 'milk', scalable: true, metric: { quantity: 4000, unit: 'ml' } };
+    const cheese = (extra: Partial<Recipe> = {}): Recipe => ({ ...recipe(), ingredients: [milk, salt], scaleBy: 'milk', ...extra });
+    const backup = { servings: 3, ingredients: [{ ...milk, quantity: 3, original: '3 l milk', metric: { quantity: 3000, unit: 'ml' as const } }, salt] };
+    const stubDialog = (ok: boolean) =>
+      jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(ok) } as never);
+    const typeAmount = async (v: string) => {
+      const box = el().querySelector<HTMLInputElement>('input.anchor-amount') as HTMLInputElement;
+      box.value = v;
+      box.dispatchEvent(new Event('input'));
+      await settle();
+    };
+    const restoreBtn = () => el().querySelector<HTMLButtonElement>('button.restore-original');
+    const body = () => (updateRecipe.mock.calls[0] as [string, { servings: number; ingredients: Ingredient[]; scaleBy?: string; originalSize?: unknown }])[1];
+
+    it('ingredient mode: milk 4 l -> 6 l with 4 servings saves 6 servings, keeps scaleBy', async () => {
+      await setup(() => of(cheese()));
+      await typeAmount('6');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().servings).toBe(6);
+      expect(body().scaleBy).toBe('milk');
+      expect(body().ingredients[0]).toMatchObject({ id: 'milk', quantity: 6 });
+    });
+
+    it('first save writes originalSize with the pre-save stored values', async () => {
+      const r = cheese();
+      await setup(() => of(r));
+      await typeAmount('6');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().originalSize).toEqual({ servings: 4, ingredients: [milk, salt] });
+    });
+
+    it('the stepper path also writes the first backup', async () => {
+      await setup(() => of(recipe()));
+      await click('button[aria-label="More servings"]');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().originalSize).toEqual({ servings: 4, ingredients: [flour, salt] });
+    });
+
+    it('a later save sends the existing originalSize unchanged', async () => {
+      await setup(() => of(cheese({ servings: 6, originalSize: backup })));
+      await typeAmount('8');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().originalSize).toEqual(backup);
+      expect(body().servings).toBe(12); // stored 6 servings at 4 l; 8 l is x2
+    });
+
+    it('hides Restore without a backup', async () => {
+      await setup(() => of(cheese()));
+      expect(restoreBtn()).toBeNull();
+    });
+
+    it('shows Restore with a backup', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      expect(restoreBtn()?.textContent).toContain('Restore original size');
+    });
+
+    it('opens the compare dialog with current and original, then PUTs the original without originalSize', async () => {
+      const r = cheese({ servings: 6, originalSize: backup });
+      await setup(() => of(r));
+      const open = stubDialog(true);
+      await click('button.restore-original');
+      const data = open.mock.calls[0][1]?.data as { currentServings: number; originalServings: number; mode: string };
+      expect(data.currentServings).toBe(6);
+      expect(data.originalServings).toBe(3);
+      expect(data.mode).toBe('metric');
+      expect(updateRecipe).toHaveBeenCalledTimes(1);
+      const [id, b, version] = updateRecipe.mock.calls[0] as [string, Record<string, unknown>, number];
+      expect(id).toBe('r1');
+      expect(version).toBe(1);
+      expect(b['servings']).toBe(3);
+      expect(b['ingredients']).toEqual(backup.ingredients);
+      expect(b).not.toHaveProperty('originalSize');
+      expect(b['scaleBy']).toBe('milk');
+      expect(b['title']).toBe('Pancakes');
+      expect(b).not.toHaveProperty('version');
+    });
+
+    it('cancelled restore sends nothing', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      stubDialog(false);
+      await click('button.restore-original');
+      expect(updateRecipe).not.toHaveBeenCalled();
+    });
+
+    it('a 409 on restore shows the reload offer', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'version_conflict' } })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(el().querySelector('.conflict')?.textContent).toContain('reload');
+      getRecipe.mockReturnValue(of(cheese({ version: 3 })));
+      await click('.reload');
+      expect(getRecipe).toHaveBeenCalledTimes(2);
+      expect(el().querySelector('.conflict')).toBeNull();
+    });
+
+    it('a non-conflict restore failure shows an error', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(el().querySelector('.size-error')?.textContent).toContain("Couldn't restore");
+    });
+
+    it('after a successful restore the view shows the restored recipe and hides Restore', async () => {
+      await setup(() => of(cheese({ servings: 6, originalSize: backup })));
+      updateRecipe.mockImplementation((_i: string, input: { servings: number }) => of({ ...cheese(), servings: input.servings, version: 2 }));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(restoreBtn()).toBeNull();
+    });
+  });
 });
