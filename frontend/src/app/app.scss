@@ -4,6 +4,25 @@
   min-height: 100dvh;
 }
 
+.top-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-sizing: content-box;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  background: var(--mat-sys-surface-container, #f3f3f3);
+  border-bottom: 1px solid var(--mat-sys-outline-variant, #ddd);
+}
+
+.app-name {
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
 .content {
   flex: 1;
   padding: 16px;
