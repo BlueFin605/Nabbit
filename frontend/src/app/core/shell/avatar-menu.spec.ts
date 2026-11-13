@@ -31,7 +31,7 @@ describe('avatarColour', () => {
     expect(avatarColour('abc')).toMatch(/^hsl\(\d{1,3}, \d{1,3}%, \d{1,3}%\)$/);
     expect(avatarColour('')).toMatch(/^hsl\(/);
   });
-  it('gives white text at least 4.5:1 contrast for every possible hue', () => {
+  it('gives white text at least 4.5:1 contrast for every hue 0..359', () => {
     const lum = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
     function hslToLum(h: number, s: number, l: number): number {
       const a = s * Math.min(l, 1 - l);
@@ -41,10 +41,18 @@ describe('avatarColour', () => {
       };
       return 0.2126 * lum(f(0)) + 0.7152 * lum(f(8)) + 0.0722 * lum(f(4));
     }
-    for (let id = 0; id < 2000; id++) {
-      const m = /^hsl\((\d+), (\d+)%, (\d+)%\)$/.exec(avatarColour(`id-${id}`))!;
-      const contrast = 1.05 / (hslToLum(+m[1], +m[2] / 100, +m[3] / 100) + 0.05);
+    // Take the saturation/lightness the implementation really emits, then sweep every hue.
+    const m = /^hsl\((\d+), (\d+)%, (\d+)%\)$/.exec(avatarColour('x'))!;
+    for (let hue = 0; hue < 360; hue++) {
+      const contrast = 1.05 / (hslToLum(hue, +m[2] / 100, +m[3] / 100) + 0.05);
       expect(contrast).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+  it('maps ids to hues within 0..359', () => {
+    for (let id = 0; id < 500; id++) {
+      const hue = +/^hsl\((\d+),/.exec(avatarColour(`id-${id}`))![1];
+      expect(hue).toBeGreaterThanOrEqual(0);
+      expect(hue).toBeLessThan(360);
     }
   });
 });
@@ -68,6 +76,7 @@ describe('AvatarMenu', () => {
   const el = (): HTMLElement => fixture.nativeElement as HTMLElement;
   const btn = () => el().querySelector<HTMLButtonElement>('button.avatar-btn')!;
   const menu = () => el().querySelector<HTMLElement>('[role="menu"]');
+  const popover = () => el().querySelector<HTMLElement>('.popover');
   const item = () => el().querySelector<HTMLButtonElement>('[role="menuitem"]');
 
   async function settle() {
@@ -109,8 +118,12 @@ describe('AvatarMenu', () => {
     await open();
     expect(btn().getAttribute('aria-expanded')).toBe('true');
     expect(menu()).not.toBeNull();
-    expect(menu()!.textContent).toContain('Local Dev User');
-    expect(menu()!.textContent).toContain('dev@example.com');
+    expect(popover()!.textContent).toContain('Local Dev User');
+    expect(popover()!.textContent).toContain('dev@example.com');
+    expect(menu()!.textContent).not.toContain('dev@example.com');
+    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(1);
+    expect(menu()!.getAttribute('aria-labelledby')).toBe(btn().id);
+    expect(btn().getAttribute('aria-controls')).toBe(menu()!.id);
     expect(item()!.textContent).toContain('Sign out');
     expect(document.activeElement).toBe(item());
   });
@@ -144,7 +157,10 @@ describe('AvatarMenu', () => {
 
   it('does not close on a click inside the popover', async () => {
     await open();
-    menu()!.click();
+    popover()!.click();
+    await settle();
+    expect(menu()).not.toBeNull();
+    el().querySelector<HTMLElement>('.name')!.click();
     await settle();
     expect(menu()).not.toBeNull();
   });
@@ -157,11 +173,22 @@ describe('AvatarMenu', () => {
     expect(document.activeElement).toBe(btn());
   });
 
-  it('closes when closeRequested changes', async () => {
+  it('closes when closeRequested changes, on every change', async () => {
     await open();
     host.nav.set(1);
     await settle();
     expect(menu()).toBeNull();
+    await open();
+    host.nav.set(2);
+    await settle();
+    expect(menu()).toBeNull();
+  });
+
+  it('stays open when closeRequested is set to the same value', async () => {
+    await open();
+    host.nav.set(0);
+    await settle();
+    expect(menu()).not.toBeNull();
   });
 
   it('emits signOut and closes when Sign out is clicked', async () => {
@@ -170,6 +197,20 @@ describe('AvatarMenu', () => {
     await settle();
     expect(host.signedOut).toBe(1);
     expect(menu()).toBeNull();
+  });
+
+  it('only listens for document clicks while open', async () => {
+    const add = jest.spyOn(document, 'addEventListener');
+    const remove = jest.spyOn(document, 'removeEventListener');
+    const clicks = (spy: { mock: { calls: unknown[][] } }) =>
+      spy.mock.calls.filter((c) => c[0] === 'click').length;
+    await open();
+    expect(clicks(add)).toBe(1);
+    btn().click();
+    await settle();
+    expect(clicks(remove)).toBe(1);
+    add.mockRestore();
+    remove.mockRestore();
   });
 
   it('works with an Auth that only exposes user (no other Auth calls)', async () => {
@@ -184,7 +225,7 @@ describe('AvatarMenu', () => {
     const longEmail = `${'very.long.address'.repeat(8)}@example.com`;
     user.set({ userId: 'u2', email: longEmail, displayName: longName });
     await open();
-    expect(menu()!.textContent).toContain(longName);
-    expect(menu()!.textContent).toContain(longEmail);
+    expect(popover()!.textContent).toContain(longName);
+    expect(popover()!.textContent).toContain(longEmail);
   });
 });
