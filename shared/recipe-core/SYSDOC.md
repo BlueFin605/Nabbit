@@ -4,6 +4,7 @@ What this is: `@nabbit/recipe-core`, the pure TypeScript library shared by backe
 
 ## Public API (`src/index.ts`)
 
+- Steps are a tree: `StepNode = string | StepGroup` (`StepGroup = {heading?, steps}`); a flat `string[]` is still a valid `steps` value and existing recipes need no migration. Helpers (`src/steps.ts`): `isStepGroup`, `flattenSteps` (leaf strings, headings dropped), `countSteps`, `stepDepth` (a flat list is depth 1), `mapSteps` (apply a function to every leaf, structure kept), `dropBlankSteps`. Caps: `MAX_STEP_DEPTH = 5`, `MAX_STEP_COUNT = 100` leaves; the backend validator and the editor both enforce them.
 - Types: `Recipe`, `RecipeDraft` (recipe fields minus id/version/timestamps, plus `confidence: 'structured' | 'heuristic'`), `Ingredient` (`quantity` may be null, optional `quantityMax` for ranges, `unit`, `name`, `note`, `original`, `metric`, `scalable`), `MetricAmount`, unit types, `ShoppingList`, `ListItem`.
 - `parseIngredient(line)` — free text to `Ingredient` (fractions, ranges, sizes in brackets; "to taste" items are `scalable: false`).
 - `toMetric`, `roundMetric`, `convertTemperatures`, `fToC` — volume to ml/l, weight to g/kg (a cup is 240 ml), Fahrenheit in text to Celsius, with cooking-friendly rounding. Unrecognised input passes through unchanged.
