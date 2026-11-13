@@ -10,6 +10,9 @@ const token = `${b64url({ alg: 'none' })}.${b64url({ sub: DEV_SUB })}.dev`;
 
 export const PANCAKES = readFileSync(new URL('./pancakes.txt', import.meta.url), 'utf8');
 
+/** A step is plain text, or a group with a heading holding more steps (mirrors @nabbit/recipe-core StepNode). */
+export type StepNode = string | { heading?: string; steps: StepNode[] };
+
 export interface ApiRecipe {
   id: string;
   title: string;
@@ -17,6 +20,7 @@ export interface ApiRecipe {
   version: number;
   imageKey?: string;
   sourceUrl?: string;
+  steps: StepNode[];
   ingredients: { name: string; quantity: number | null; unit: string }[];
 }
 
@@ -39,7 +43,7 @@ export class Api {
    * Save the Fluffy Pancakes recipe straight through POST /recipes (not the importer, so seeding does not
    * burn the 30 imports/hour rate limit). Same shape the importer produces for pancakes.txt.
    */
-  async seedRecipe(title = 'Fluffy Pancakes'): Promise<ApiRecipe> {
+  async seedRecipe(title = 'Fluffy Pancakes', steps?: StepNode[]): Promise<ApiRecipe> {
     const ing = (id: string, name: string, quantity: number | null, unit: string, extra: object = {}) => ({
       id, name, quantity, unit, scalable: quantity !== null, ...extra,
     });
@@ -47,7 +51,7 @@ export class Api {
       title,
       servings: 4,
       tags: [],
-      steps: ['Whisk the flour and milk together.', 'Cook in a hot pan at 176°C until golden.'],
+      steps: steps ?? ['Whisk the flour and milk together.', 'Cook in a hot pan at 176°C until golden.'],
       ingredients: [
         ing('i-flour', 'all-purpose flour', 2, 'cup', { original: '2 cups all-purpose flour', metric: { quantity: 480, unit: 'ml' } }),
         ing('i-milk', 'milk', 1, 'cup', { original: '1 cup milk', metric: { quantity: 240, unit: 'ml' } }),

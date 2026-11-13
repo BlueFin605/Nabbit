@@ -15,7 +15,7 @@
 .row-controls button { min-height: 48px; min-width: 48px; }
 .level-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .level-actions button { min-height: 48px; }
-.step-field { flex: 1; }
+.step-field { flex: 1 1 160px; min-width: 160px; }
 .row-head { display: flex; justify-content: space-between; align-items: center; }
 .handle { min-width: 48px; min-height: 48px; border: 0; background: none; font-size: 1.4rem; cursor: grab; touch-action: none; }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
