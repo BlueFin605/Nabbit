@@ -1,17 +1,21 @@
 import { CdkDrag, CdkDragHandle, CdkDropList, moveItemInArray, type CdkDragDrop } from '@angular/cdk/drag-drop';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
+import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule, type MatChipInputEvent } from '@angular/material/chips';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { flattenSteps, formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
+import { formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
 import { map, switchMap } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImageContentType, RecipeInput } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
+import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
+import { addGroup, addStep, canIndent, canOutdent, fromRows, hasChildren, indent, moveWithin, outdent, removeRow, setHeading, setText, shape, stepNumber, toRows, type StepRow } from './step-rows';
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const IMAGE_TYPES: readonly ImageContentType[] = ['image/jpeg', 'image/png', 'image/webp'];
@@ -39,11 +43,6 @@ export function isVersionConflict(err: unknown): boolean {
   return err instanceof HttpErrorResponse && err.status === 409;
 }
 
-interface StepRow {
-  id: string;
-  text: string;
-}
-
 /**
  * Reusable recipe form used by the edit screen and the import preview. Holds its own working copy;
  * emits `saved` with a full RecipeInput. Editing an ingredient re-runs `toMetric` and drops `original`.
@@ -58,6 +57,7 @@ interface StepRow {
     MatChipsModule,
     MatFormFieldModule,
     MatInputModule,
+    NgTemplateOutlet,
     MatProgressSpinnerModule,
   ],
   styleUrl: './recipe-editor.scss',
@@ -172,19 +172,52 @@ interface StepRow {
     <button mat-button type="button" class="add-ingredient" (click)="addIngredient()">Add ingredient</button>
 
     <h2>Steps</h2>
-    <div class="list steps" cdkDropList (cdkDropListDropped)="dropStep($event)">
-      @for (s of steps(); track s.id; let i = $index) {
-        <div class="step-row" cdkDrag>
-          <button type="button" class="handle" cdkDragHandle aria-label="Reorder step">⠿</button>
-          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="step-field">
-            <mat-label>Step {{ i + 1 }}</mat-label>
-            <textarea matInput class="step" rows="2" [value]="s.text" (input)="setStep(i, $event)"></textarea>
-          </mat-form-field>
-          <button mat-button type="button" class="remove-step" [attr.aria-label]="'Remove step ' + (i + 1)" (click)="removeStep(i)">Remove</button>
-        </div>
-      }
+    <div class="steps">
+      <ng-container *ngTemplateOutlet="level; context: { $implicit: steps(), parent: null }" />
     </div>
-    <button mat-button type="button" class="add-step" (click)="addStep()">Add step</button>
+
+    <ng-template #level let-rows let-parent="parent">
+      <div class="level list" cdkDropList (cdkDropListDropped)="dropRow($event, parent)">
+        @for (r of rows; track r.id; let i = $index) {
+          @if (r.kind === 'step') {
+            <div class="step-row" cdkDrag>
+              <button type="button" class="handle" cdkDragHandle aria-label="Reorder step">⠿</button>
+              <mat-form-field appearance="outline" subscriptSizing="dynamic" class="step-field">
+                <mat-label>Step {{ stepNo(rows, i) }}</mat-label>
+                <textarea matInput class="step" rows="2" [value]="r.text" (input)="setStep(r.id, $event)"></textarea>
+              </mat-form-field>
+              <div class="row-controls">
+                <button mat-button type="button" class="indent" [disabled]="!canIndentRow(r.id)" [attr.aria-label]="'Indent ' + rowLabel(rows, i)" (click)="indentRow(r.id)">Indent</button>
+                <button mat-button type="button" class="outdent" [disabled]="!canOutdentRow(r.id)" [attr.aria-label]="'Outdent ' + rowLabel(rows, i)" (click)="outdentRow(r.id)">Outdent</button>
+                <button mat-button type="button" class="remove-step" [attr.aria-label]="'Remove ' + rowLabel(rows, i)" (click)="removeStepRow(r.id)">Remove</button>
+              </div>
+            </div>
+          } @else {
+            <div class="group-row" cdkDrag>
+              <div class="group-head">
+                <button type="button" class="handle" cdkDragHandle aria-label="Reorder group">⠿</button>
+                <mat-form-field appearance="outline" subscriptSizing="dynamic" class="step-field">
+                  <mat-label>Group heading</mat-label>
+                  <input matInput class="group-heading" [value]="r.heading" (input)="setGroupHeading(r.id, $event)" />
+                </mat-form-field>
+              </div>
+              <div class="row-controls">
+                <button mat-button type="button" class="indent" [disabled]="!canIndentRow(r.id)" [attr.aria-label]="'Indent ' + rowLabel(rows, i)" (click)="indentRow(r.id)">Indent</button>
+                <button mat-button type="button" class="outdent" [disabled]="!canOutdentRow(r.id)" [attr.aria-label]="'Outdent ' + rowLabel(rows, i)" (click)="outdentRow(r.id)">Outdent</button>
+                <button mat-button type="button" class="remove-group" [attr.aria-label]="'Remove ' + rowLabel(rows, i)" (click)="removeGroupRow(r)">Remove group</button>
+              </div>
+              <div class="group-body">
+                <ng-container *ngTemplateOutlet="level; context: { $implicit: r.children, parent: r.id }" />
+              </div>
+            </div>
+          }
+        }
+      </div>
+      <div class="level-actions">
+        <button mat-button type="button" class="add-step" (click)="addStepRow(parent)">Add step</button>
+        <button mat-button type="button" class="add-group" (click)="addGroupRow(parent)">Add group</button>
+      </div>
+    </ng-template>
 
     @if (conflict()) {
       <div class="conflict" role="alert">
@@ -204,6 +237,7 @@ interface StepRow {
 })
 export class RecipeEditor {
   private readonly api = inject(ApiClient);
+  private readonly dialog = inject(MatDialog);
 
   /** The recipe to edit; changing this input resets the form (e.g. after Reload). */
   readonly recipe = input.required<RecipeInput>();
@@ -244,7 +278,7 @@ export class RecipeEditor {
       tags: this.tags(),
       imageKey: this.imageKey() ?? null,
       ingredients: this.ingredients(),
-      steps: this.steps().map((s) => s.text),
+      steps: shape(this.steps()),
     }),
   );
   /** True when the form differs from what was loaded. */
@@ -277,8 +311,7 @@ export class RecipeEditor {
     this.tags.set([...r.tags]);
     this.imageKey.set(r.imageKey);
     this.ingredients.set(r.ingredients.map((i) => ({ ...i })));
-    // Groups are flattened until the tree editor lands (NAB-137).
-    this.steps.set(flattenSteps(r.steps).map((text) => ({ id: newId(), text })));
+    this.steps.set(toRows(r.steps));
     this.photoError.set(null);
     this.baseline.set(this.snapshot());
   }
@@ -365,25 +398,76 @@ export class RecipeEditor {
 
   // ---- steps ----
 
-  protected setStep(index: number, e: Event): void {
-    const text = this.val(e);
-    this.steps.update((all) => all.map((s, i) => (i === index ? { ...s, text } : s)));
+  protected setStep(id: string, e: Event): void {
+    this.steps.update((rows) => setText(rows, id, this.val(e)));
   }
 
-  protected addStep(): void {
-    this.steps.update((all) => [...all, { id: newId(), text: '' }]);
+  protected setGroupHeading(id: string, e: Event): void {
+    this.steps.update((rows) => setHeading(rows, id, this.val(e)));
   }
 
-  protected removeStep(index: number): void {
-    this.steps.update((all) => all.filter((_, i) => i !== index));
+  protected stepNo(level: StepRow[], index: number): number {
+    return stepNumber(level, index);
   }
 
-  dropStep(e: CdkDragDrop<unknown>): void {
-    this.steps.update((all) => {
-      const next = [...all];
-      moveItemInArray(next, e.previousIndex, e.currentIndex);
-      return next;
-    });
+  /** Per-row name used in button aria-labels: "step 2" or `group "Dough"`. */
+  protected rowLabel(level: StepRow[], index: number): string {
+    const r = level[index];
+    if (r.kind === 'step') return `step ${stepNumber(level, index)}`;
+    const heading = r.heading.trim();
+    return heading ? `group "${heading}"` : `group ${level.slice(0, index + 1).filter((x) => x.kind === 'group').length}`;
+  }
+
+  protected addStepRow(parentId: string | null): void {
+    this.steps.update((rows) => addStep(rows, parentId));
+  }
+
+  protected addGroupRow(parentId: string | null): void {
+    this.steps.update((rows) => addGroup(rows, parentId));
+  }
+
+  protected canIndentRow(id: string): boolean {
+    return canIndent(this.steps(), id);
+  }
+
+  protected canOutdentRow(id: string): boolean {
+    return canOutdent(this.steps(), id);
+  }
+
+  protected indentRow(id: string): void {
+    this.steps.update((rows) => indent(rows, id));
+  }
+
+  protected outdentRow(id: string): void {
+    this.steps.update((rows) => outdent(rows, id));
+  }
+
+  protected removeStepRow(id: string): void {
+    this.steps.update((rows) => removeRow(rows, id));
+  }
+
+  /** Removing a group takes its children with it, so a non-empty one asks first. */
+  protected removeGroupRow(group: StepRow): void {
+    if (!hasChildren(group)) {
+      this.removeStepRow(group.id);
+      return;
+    }
+    const data: ConfirmDialogData = {
+      title: 'Remove this group?',
+      message: 'The group and every step inside it will be removed.',
+      confirmLabel: 'Remove',
+    };
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, { data })
+      .afterClosed()
+      .subscribe((ok) => {
+        if (ok === true) this.removeStepRow(group.id);
+      });
+  }
+
+  /** Reorders within one level; `parentId` is the group whose children moved (null = top level). */
+  dropRow(e: CdkDragDrop<unknown>, parentId: string | null): void {
+    this.steps.update((rows) => moveWithin(rows, parentId, e.previousIndex, e.currentIndex));
   }
 
   // ---- photo: pick -> presign -> direct upload to S3 -> imageKey ----
@@ -441,7 +525,7 @@ export class RecipeEditor {
       servings: this.servings(),
       tags: this.tags(),
       ingredients: this.ingredients().filter((i) => i.name.trim()),
-      steps: this.steps().map((s) => s.text).filter((s) => s.trim()),
+      steps: fromRows(this.steps()),
     };
     const key = this.imageKey();
     if (key) out.imageKey = key;

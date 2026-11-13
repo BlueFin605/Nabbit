@@ -4,7 +4,7 @@ import { Router, provideRouter } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Subject, of, throwError, type Observable } from 'rxjs';
-import type { Ingredient } from '@nabbit/recipe-core';
+import type { Ingredient, StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe } from '../../core/api/api.types';
 import { unsavedChangesGuard } from '../../core/guards/unsaved-changes-guard';
@@ -86,6 +86,14 @@ describe('RecipeEdit', () => {
     q('.save')?.click();
     expect(api.updateRecipe).toHaveBeenCalledWith('r1', expect.objectContaining({ title: 'Better' }), 3);
     expect(nav).toHaveBeenCalledWith(['/recipes', 'r1']);
+  });
+
+  it('a grouped recipe round-trips: change only the title, save, and the PUT steps equal the stored tree', async () => {
+    const tree: StepNode[] = ['Prep', { heading: 'Dough', steps: ['Mix', { steps: ['Knead', 'Rest'] }] }, { heading: 'Bake', steps: ['Heat'] }, 'Serve'];
+    await setup(() => of(recipe({ steps: tree })));
+    await edit('input.title', 'Better');
+    q('.save')?.click();
+    expect(api.updateRecipe).toHaveBeenCalledWith('r1', expect.objectContaining({ title: 'Better', steps: tree }), 3);
   });
 
   it('409 shows the reload prompt and keeps the local edits; Reload refetches', async () => {

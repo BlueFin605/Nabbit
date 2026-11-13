@@ -1,9 +1,11 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { of, throwError } from 'rxjs';
-import type { Ingredient } from '@nabbit/recipe-core';
+import { MAX_STEP_DEPTH, type Ingredient, type StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { RecipeInput } from '../../core/api/api.types';
 import { RecipeEditor } from './recipe-editor';
+import { shape } from './step-rows';
 
 const flour = (): Ingredient => ({
   id: 'i1',
@@ -84,7 +86,7 @@ describe('RecipeEditor', () => {
   it('adds and removes ingredients and steps', async () => {
     await setup();
     q('.add-ingredient')?.click();
-    q('.add-step')?.click();
+    q('.steps > .level-actions .add-step')?.click();
     await settle();
     expect(qa('.ingredient')).toHaveLength(3);
     expect(qa('textarea.step')).toHaveLength(3);
@@ -92,16 +94,16 @@ describe('RecipeEditor', () => {
     qa('.remove-step')[0].click();
     await settle();
     expect(qa('.ingredient')).toHaveLength(2);
-    expect(fixture.componentInstance.steps().map((s) => s.text)).toEqual(['Fry', '']);
+    expect(shape(fixture.componentInstance.steps())).toEqual(['Fry', '']);
   });
 
   it('reorders ingredients and steps on drop', async () => {
     await setup();
     fixture.componentInstance.dropIngredient({ previousIndex: 0, currentIndex: 1 } as never);
-    fixture.componentInstance.dropStep({ previousIndex: 1, currentIndex: 0 } as never);
+    fixture.componentInstance.dropRow({ previousIndex: 1, currentIndex: 0 } as never, null);
     await settle();
     expect(fixture.componentInstance.ingredients().map((i) => i.name)).toEqual(['salt', 'flour']);
-    expect(fixture.componentInstance.steps().map((s) => s.text)).toEqual(['Fry', 'Mix']);
+    expect(shape(fixture.componentInstance.steps())).toEqual(['Fry', 'Mix']);
   });
 
   it('is clean until edited, then dirty', async () => {
@@ -116,7 +118,7 @@ describe('RecipeEditor', () => {
   it('emits the edited recipe, keeping unedited fields and dropping blank rows', async () => {
     await setup();
     await typeInto(q<HTMLInputElement>('input.title') as HTMLInputElement, 'New title');
-    q('.add-step')?.click();
+    q('.steps > .level-actions .add-step')?.click();
     q('.add-ingredient')?.click();
     await settle();
     q('.save')?.click();
@@ -227,5 +229,125 @@ describe('RecipeEditor', () => {
     expect(q<HTMLInputElement>('input.title')?.value).toBe('Mine');
     q('.reload')?.click();
     expect(reload).toHaveBeenCalled();
+  });
+
+  describe('nested steps', () => {
+    const grouped = (): StepNode[] => ['Prep', { heading: 'Dough', steps: ['Mix', { steps: ['Knead'] }] }, 'Serve'];
+    const topAdd = (cls: string) => q<HTMLButtonElement>(`.steps > .level-actions ${cls}`);
+    const click = async (el: HTMLElement | undefined | null) => {
+      el?.click();
+      await settle();
+    };
+    const stubConfirm = (ok: boolean) => jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(ok) } as never);
+    const rowByText = (t: string) => qa<HTMLTextAreaElement>('textarea.step').find((x) => x.value === t)!.closest('.step-row') as HTMLElement;
+    const btn = (row: HTMLElement, cls: string) => row.querySelector<HTMLButtonElement>(cls) as HTMLButtonElement;
+
+    it('loads a nested tree into group rows with headings and saves it back unchanged', async () => {
+      await setup({ ...base(), steps: grouped() });
+      expect(qa<HTMLInputElement>('input.group-heading').map((i) => i.value)).toEqual(['Dough', '']);
+      expect(fixture.componentInstance.dirty()).toBe(false);
+      await typeInto(q<HTMLInputElement>('input.title') as HTMLInputElement, 'Renamed');
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual(grouped());
+      expect(saved[0].title).toBe('Renamed');
+    });
+
+    it('a flat recipe still saves flat, with no wrapper group', async () => {
+      await setup();
+      expect(qa('.group-row')).toHaveLength(0);
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual(['Mix', 'Fry']);
+    });
+
+    it('adds a group at the top level and a step inside it', async () => {
+      await setup();
+      await click(topAdd('.add-group'));
+      expect(qa('.group-row')).toHaveLength(1);
+      await click(q('.group-row .add-step'));
+      await typeInto(q<HTMLInputElement>('input.group-heading') as HTMLInputElement, 'Sauce');
+      await typeInto(qa<HTMLTextAreaElement>('.group-row textarea.step')[0], 'Simmer');
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual(['Mix', 'Fry', { heading: 'Sauce', steps: ['Simmer'] }]);
+    });
+
+    it('indent moves a step into the group above; outdent moves it back out after the group', async () => {
+      await setup({ ...base(), steps: [{ heading: 'G', steps: ['a'] }, 'b'] });
+      await click(btn(rowByText('b'), '.indent'));
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual([{ heading: 'G', steps: ['a', 'b'] }]);
+      await click(btn(rowByText('b'), '.outdent'));
+      q('.save')?.click();
+      expect(saved[1].steps).toEqual([{ heading: 'G', steps: ['a'] }, 'b']);
+    });
+
+    it('disables Indent with no group above and Outdent at the top level, with per-button labels', async () => {
+      await setup({ ...base(), steps: ['a', { heading: 'G', steps: ['b'] }] });
+      const a = rowByText('a');
+      expect(btn(a, '.indent').disabled).toBe(true);
+      expect(btn(a, '.outdent').disabled).toBe(true);
+      expect(btn(a, '.indent').getAttribute('aria-label')).toBe('Indent step 1');
+      const b = rowByText('b');
+      expect(btn(b, '.outdent').disabled).toBe(false);
+      expect(btn(b, '.outdent').getAttribute('aria-label')).toBe('Outdent step 1');
+      expect(btn(q('.group-row') as HTMLElement, '.outdent').getAttribute('aria-label')).toContain('G');
+    });
+
+    it('disables Indent when it would exceed the depth limit', async () => {
+      let deep: StepNode = 'leaf';
+      for (let i = 1; i < MAX_STEP_DEPTH; i++) deep = { steps: [deep] };
+      await setup({ ...base(), steps: [{ steps: ['x'] }, deep] });
+      const last = qa<HTMLElement>('.steps > .level > .group-row').at(-1) as HTMLElement;
+      expect(btn(last, '.row-controls .indent').disabled).toBe(true);
+    });
+
+    it('drops blank steps and a group left empty on save, keeping real content', async () => {
+      await setup({ ...base(), steps: ['Mix'] });
+      await click(topAdd('.add-group'));
+      await click(q('.group-row .add-step'));
+      await click(topAdd('.add-step'));
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual(['Mix']);
+    });
+
+    it('deleting a group with children asks first; cancel keeps it, confirm removes it', async () => {
+      await setup({ ...base(), steps: [{ heading: 'G', steps: ['a'] }, 'b'] });
+      const open = stubConfirm(false);
+      await click(q('.remove-group'));
+      expect(open).toHaveBeenCalled();
+      expect(qa('.group-row')).toHaveLength(1);
+      open.mockReturnValue({ afterClosed: () => of(true) } as never);
+      await click(q('.remove-group'));
+      expect(qa('.group-row')).toHaveLength(0);
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual(['b']);
+    });
+
+    it('deleting an empty group does not ask', async () => {
+      await setup();
+      await click(topAdd('.add-group'));
+      const open = stubConfirm(true);
+      await click(q('.remove-group'));
+      expect(open).not.toHaveBeenCalled();
+      expect(qa('.group-row')).toHaveLength(0);
+    });
+
+    it('reorders within one level, leaving other levels alone', async () => {
+      await setup({ ...base(), steps: [{ heading: 'G', steps: ['a', 'b', 'c'] }, 'x', 'y'] });
+      const c = fixture.componentInstance;
+      const gid = c.steps()[0].id;
+      c.dropRow({ previousIndex: 0, currentIndex: 2 } as never, gid);
+      c.dropRow({ previousIndex: 2, currentIndex: 1 } as never, null);
+      await settle();
+      q('.save')?.click();
+      expect(saved[0].steps).toEqual([{ heading: 'G', steps: ['b', 'c', 'a'] }, 'y', 'x']);
+    });
+
+    it('becomes dirty when a step is indented, and clean again when undone', async () => {
+      await setup({ ...base(), steps: [{ heading: 'G', steps: ['a'] }, 'b'] });
+      await click(btn(rowByText('b'), '.indent'));
+      expect(fixture.componentInstance.dirty()).toBe(true);
+      await click(btn(rowByText('b'), '.outdent'));
+      expect(fixture.componentInstance.dirty()).toBe(false);
+    });
   });
 });
