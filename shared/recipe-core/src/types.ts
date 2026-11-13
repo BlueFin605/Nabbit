@@ -27,6 +27,13 @@ export interface Ingredient {
   scalable: boolean;
 }
 
+export interface StepGroup {
+  heading?: string;
+  steps: StepNode[];
+}
+/** A method step: plain text, or a (nestable) group of steps. */
+export type StepNode = string | StepGroup;
+
 export interface Recipe {
   id: string;
   title: string;
@@ -34,7 +41,7 @@ export interface Recipe {
   imageKey?: string;
   servings: number;
   ingredients: Ingredient[];
-  steps: string[];
+  steps: StepNode[];
   tags: string[];
   version: number;
   /** ISO-8601 timestamps. */
