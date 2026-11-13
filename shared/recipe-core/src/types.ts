@@ -34,6 +34,12 @@ export interface StepGroup {
 /** A method step: plain text, or a (nestable) group of steps. */
 export type StepNode = string | StepGroup;
 
+/** The recipe's size as first saved, kept so scaling can always be reset or recomputed from it. */
+export interface OriginalSize {
+  servings: number;
+  ingredients: Ingredient[];
+}
+
 export interface Recipe {
   id: string;
   title: string;
@@ -42,6 +48,9 @@ export interface Recipe {
   servings: number;
   ingredients: Ingredient[];
   steps: StepNode[];
+  /** Ingredient.id of the default anchor ingredient for scale-by-ingredient. */
+  scaleBy?: string;
+  originalSize?: OriginalSize;
   tags: string[];
   version: number;
   /** ISO-8601 timestamps. */

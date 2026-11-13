@@ -1,4 +1,5 @@
 import { toMetric } from './metric';
+import { G_PER, ML_PER } from './units';
 import type { Ingredient, MetricAmount, Unit } from './types';
 
 /** Returns a scaled copy. Non-scalable ingredients are returned unchanged. Metric is recomputed from the scaled quantity. */
@@ -15,7 +16,40 @@ export function scaleRecipeIngredients(ings: Ingredient[], from: number, to: num
   return ings.map((i) => scaleIngredient(i, factor));
 }
 
-const FRACTIONS: [number, string][] = [
+export type AnchorTarget = { quantity: number; unit: Unit };
+
+/** True when the ingredient can anchor scaling: quantity !== null and scalable. */
+export function isScaleAnchor(i: Ingredient): boolean {
+  return i.scalable && i.quantity !== null;
+}
+
+/** Family and base amount per unit. Count units ('piece', '') are each their own family. */
+function baseOf(unit: Unit): [string, number] {
+  if (Object.hasOwn(ML_PER, unit)) return ['volume', ML_PER[unit as keyof typeof ML_PER]];
+  if (Object.hasOwn(G_PER, unit)) return ['weight', G_PER[unit as keyof typeof G_PER]];
+  return [`count:${unit}`, 1];
+}
+
+/**
+ * Factor that makes ingredient `i` equal `target`. Throws RangeError if target.quantity <= 0.
+ * Returns null when the units are in different families (volume, weight, or the same count unit)
+ * or `i` is not an anchor. Ranges anchor on `quantity`. No density: volume vs weight is null.
+ */
+export function factorFromTarget(i: Ingredient, target: AnchorTarget): number | null {
+  if (!(target.quantity > 0)) throw new RangeError('target quantity must be greater than zero');
+  if (!isScaleAnchor(i) || !((i.quantity as number) > 0)) return null;
+  const [fi, bi] = baseOf(i.unit);
+  const [ft, bt] = baseOf(target.unit);
+  if (fi !== ft) return null;
+  return (target.quantity * bt) / ((i.quantity as number) * bi);
+}
+
+/** Current anchor amount of `i` in `i.unit`, for presetting the amount box. */
+export function anchorAmount(i: Ingredient): AnchorTarget {
+  return { quantity: i.quantity as number, unit: i.unit };
+}
+
+const FRACTIONS:[number, string][] = [
   [0, ''],
   [1 / 8, '⅛'],
   [1 / 4, '¼'],
