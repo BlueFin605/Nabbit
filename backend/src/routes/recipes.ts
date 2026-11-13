@@ -8,13 +8,12 @@
  *   POST   /recipes/{id}/restore  undo a soft delete within the 30 days
  * Stored as pk=OWNER#{ownerId}, sk=RECIPE#{id}; attributes are the Recipe fields plus `ttl` when deleted.
  */
-import { newId, toMetric, type Ingredient, type Recipe } from '@nabbit/recipe-core';
+import { MAX_STEP_COUNT, MAX_STEP_DEPTH, countSteps, newId, toMetric, type Ingredient, type Recipe, type StepNode } from '@nabbit/recipe-core';
 import { ConditionFailedError, RECIPE_SK_PREFIX, getDb, ownerPk, recipeSk, type Item } from '../db.js';
 import { HttpError, assertMaxBytes, route, type RequestCtx } from '../router.js';
 
 const MAX_TITLE = 200;
 const MAX_INGREDIENTS = 200;
-const MAX_STEPS = 100;
 const MAX_TAGS = 50;
 const MAX_STRING = 5000;
 /** Serialized recipe cap, well under DynamoDB's 400 KB item limit. */
@@ -34,6 +33,27 @@ function str(v: unknown, field: string, max = MAX_STRING): string {
 }
 function optStr(v: unknown, field: string): string | undefined {
   return v === undefined || v === null ? undefined : str(v, field);
+}
+
+/** A step is a string or a group `{heading?, steps}`; nesting is capped by MAX_STEP_DEPTH, total leaves by MAX_STEP_COUNT. */
+function parseStepNodes(v: unknown, field: string, depth: number): StepNode[] {
+  if (!Array.isArray(v)) return bad(`${field} must be an array`);
+  if (depth > MAX_STEP_DEPTH) return bad(`steps nest at most ${MAX_STEP_DEPTH} deep`);
+  if (v.length > MAX_STEP_COUNT) return bad(`steps must have at most ${MAX_STEP_COUNT}`);
+  return v.map((n, i): StepNode => {
+    const f = `${field}[${i}]`;
+    if (typeof n === 'string') return str(n, f);
+    if (!isObj(n)) return bad(`${f} must be a string or a group`);
+    const heading = optStr(n.heading, `${f}.heading`);
+    if (!Array.isArray(n.steps) || n.steps.length === 0) bad(`${f}.steps must be a non-empty array`);
+    return { ...(heading !== undefined ? { heading } : {}), steps: parseStepNodes(n.steps, `${f}.steps`, depth + 1) };
+  });
+}
+
+function parseSteps(v: unknown): StepNode[] {
+  const steps = parseStepNodes(v, 'steps', 1);
+  if (countSteps(steps) > MAX_STEP_COUNT) bad(`steps must have at most ${MAX_STEP_COUNT}`);
+  return steps;
 }
 
 function parseIngredient(v: unknown, i: number): Ingredient {
@@ -72,7 +92,6 @@ function parseFields(body: unknown, ownerId: string): Fields {
   if (!Array.isArray(body.ingredients) || body.ingredients.length > MAX_INGREDIENTS) {
     bad(`ingredients must be an array of at most ${MAX_INGREDIENTS}`);
   }
-  if (!Array.isArray(body.steps) || body.steps.length > MAX_STEPS) bad(`steps must be an array of at most ${MAX_STEPS}`);
   const tags = body.tags ?? [];
   if (!Array.isArray(tags) || tags.length > MAX_TAGS) bad(`tags must be an array of at most ${MAX_TAGS}`);
   const sourceUrl = optStr(body.sourceUrl, 'sourceUrl');
@@ -83,7 +102,7 @@ function parseFields(body: unknown, ownerId: string): Fields {
     title,
     servings: body.servings as number,
     ingredients: (body.ingredients as unknown[]).map(parseIngredient),
-    steps: (body.steps as unknown[]).map((s, i) => str(s, `steps[${i}]`)),
+    steps: parseSteps(body.steps),
     tags: (tags as unknown[]).map((t, i) => str(t, `tags[${i}]`)),
     ...(sourceUrl !== undefined ? { sourceUrl } : {}),
     ...(imageKey !== undefined ? { imageKey } : {}),

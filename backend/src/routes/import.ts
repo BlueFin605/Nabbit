@@ -26,7 +26,7 @@ import { extractAppData, MAX_APP_DATA_BYTES } from '../import/extract-app-data.j
 import { ImportError } from '../import/import-error.js';
 import { stripTrackingParams } from '../import/source-url.js';
 import { getLlmParser } from '../import/llm-parse.js';
-import type { RecipeDraft } from '@nabbit/recipe-core';
+import { countSteps, type RecipeDraft } from '@nabbit/recipe-core';
 import { safeFetch as realSafeFetch, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
@@ -71,7 +71,7 @@ export function llmGlobalLimit(): number {
  */
 async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string): Promise<RecipeDraft> {
   const h = heuristic.recipe;
-  if (h.ingredients.length >= 2 && h.steps.length >= 2) return heuristic;
+  if (h.ingredients.length >= 2 && countSteps(h.steps) >= 2) return heuristic;
   try {
     const parser = getLlmParser();
     if (!parser) return heuristic;
@@ -86,7 +86,7 @@ async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, s
     }
     const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
     if (!recipe) return heuristic;
-    if (recipe.ingredients.length < h.ingredients.length || recipe.steps.length < h.steps.length) return heuristic;
+    if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
     return { recipe, confidence: 'ai' };
   } catch {
     return heuristic;
@@ -172,7 +172,7 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     const heuristic = extractFromText(text, { sourceUrl });
     // Client-rendered shell (e.g. Gatsby, CSR Next): essentially no text and nothing parsed. Try the page's embedded app data
     // (the only LLM attempt this request makes); if that yields nothing, ask the user to paste. Pages with real text never use it.
-    if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && heuristic.recipe.steps.length === 0) {
+    if (text.trim().length < MIN_PAGE_TEXT_CHARS && heuristic.recipe.ingredients.length === 0 && countSteps(heuristic.recipe.steps) === 0) {
       const app = await extractAppData(page.html, page.url, deps.fetchJson, sourceUrl).catch(() => undefined);
       if (app?.structured) {
         const draft = { ...app.structured };

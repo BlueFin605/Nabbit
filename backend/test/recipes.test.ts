@@ -97,6 +97,42 @@ describe('validation', () => {
     expect((await call('POST', '/recipes', 'u1')).status).toBe(400);
   });
 
+  describe('nested steps', () => {
+    const nest = (d: number): unknown => (d === 0 ? 'leaf' : { heading: `h${d}`, steps: [nest(d - 1)] });
+    it('keeps a flat list', async () => {
+      const res = await call('POST', '/recipes', 'u1', draft({ steps: ['a', 'b'] }));
+      expect(res.status).toBe(201);
+      expect(res.json.steps).toEqual(['a', 'b']);
+    });
+    it('accepts nested groups, with and without heading', async () => {
+      const steps = ['a', { heading: 'Sauce', steps: ['b', { steps: ['c'] }] }];
+      const res = await call('POST', '/recipes', 'u1', draft({ steps }));
+      expect(res.status).toBe(201);
+      expect(res.json.steps).toEqual(steps);
+    });
+    it('accepts depth 5 (4 nested groups plus leaf)', async () => {
+      expect((await call('POST', '/recipes', 'u1', draft({ steps: [nest(4)] }))).status).toBe(201);
+    });
+    it.each([
+      ['group without steps', [{ heading: 'x' }]],
+      ['group with empty steps', [{ heading: 'x', steps: [] }]],
+      ['depth 6', [nest(5)]],
+      ['101 leaves across groups', [{ steps: Array.from({ length: 60 }, () => 's') }, { steps: Array.from({ length: 41 }, () => 's') }]],
+      ['number element', ['a', 5]],
+      ['null element', [null]],
+      ['array element', [['a']]],
+      ['non-string heading', [{ heading: 3, steps: ['a'] }]],
+      ['long heading', [{ heading: 'x'.repeat(5001), steps: ['a'] }]],
+      ['long nested step', [{ steps: ['x'.repeat(5001)] }]],
+    ])('400 on %s', async (_n, steps) => {
+      expect((await call('POST', '/recipes', 'u1', draft({ steps }))).status).toBe(400);
+    });
+    it('accepts exactly 100 leaves across groups', async () => {
+      const steps = [{ steps: Array.from({ length: 60 }, () => 's') }, { steps: Array.from({ length: 40 }, () => 's') }];
+      expect((await call('POST', '/recipes', 'u1', draft({ steps }))).status).toBe(201);
+    });
+  });
+
   it('accepts limits and own imageKey', async () => {
     const res = await call('POST', '/recipes', 'u1', draft({ title: 'x'.repeat(200), imageKey: 'u1/abc' }));
     expect(res.status).toBe(201);
