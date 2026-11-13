@@ -2,6 +2,9 @@
 
 html {
   height: 100%;
+  /* Sticky top bar: 56px + 1px border + safe area. Shared by app.scss, lists.ts and scroll-padding. */
+  --top-bar-h: calc(57px + env(safe-area-inset-top));
+  scroll-padding-top: calc(var(--top-bar-h) + 8px);
   @include mat.theme(
     (
       color: (

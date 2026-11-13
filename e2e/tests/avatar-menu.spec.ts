@@ -57,10 +57,30 @@ test.describe('avatar menu in the app shell', () => {
     });
   }
 
-  test('page content starts below the top bar', async ({ page }) => {
+  test('focus and scrollIntoView keep targets clear of the sticky top bar (scroll-padding)', async ({ page }) => {
     await page.goto('/recipes');
-    const bar = (await page.locator('.top-bar').boundingBox())!;
-    const content = (await page.locator('main.content').boundingBox())!;
-    expect(content.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+    await expect(avatar(page)).toBeVisible();
+    // Tall page with a focusable target at the top; scroll well past it, then bring it back.
+    await page.evaluate(() => {
+      const main = document.querySelector('main.content')!;
+      const target = document.createElement('button');
+      target.id = 'probe-target';
+      target.textContent = 'probe';
+      const spacer = document.createElement('div');
+      spacer.style.height = '3000px';
+      main.prepend(spacer);
+      main.prepend(target);
+      window.scrollTo(0, 2000);
+    });
+    const barBottom = async () => {
+      const b = (await page.locator('.top-bar').boundingBox())!;
+      return b.y + b.height;
+    };
+    await page.locator('#probe-target').focus();
+    expect((await page.locator('#probe-target').boundingBox())!.y).toBeGreaterThanOrEqual(await barBottom());
+
+    await page.evaluate(() => window.scrollTo(0, 2000));
+    await page.evaluate(() => document.getElementById('probe-target')!.scrollIntoView());
+    expect((await page.locator('#probe-target').boundingBox())!.y).toBeGreaterThanOrEqual(await barBottom());
   });
 });

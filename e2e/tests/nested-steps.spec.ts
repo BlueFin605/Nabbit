@@ -112,7 +112,6 @@ test.describe('nested step groups', () => {
 
     // Drag "One" to below "Three" by its handle, with explicit steps so the CDK sees real pointer movement.
     await rows.nth(2).scrollIntoViewIfNeeded();
-    await page.evaluate(() => window.scrollBy(0, -150)); // keep the first handle clear of the sticky top bar
     const f = (await rows.nth(0).locator('.handle').boundingBox())!;
     const t = (await rows.nth(2).boundingBox())!;
     const x = f.x + f.width / 2;

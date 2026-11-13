@@ -8,8 +8,8 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  box-sizing: content-box;
-  height: 56px;
+  box-sizing: border-box;
+  height: var(--top-bar-h);
   display: flex;
   align-items: center;
   justify-content: space-between;
