@@ -573,6 +573,67 @@ describe('RecipeDetail', () => {
       expect(data.ingredients[0].quantity).toBe(6);
     });
 
+    describe('derived servings bounds', () => {
+      const save = () => el().querySelector<HTMLButtonElement>('button.save-size');
+      const derived = () => el().querySelector('.derived-servings')?.textContent ?? '';
+
+      it('a normal 4 l -> 6 l keeps Save enabled with 6 servings and no explanation', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('6');
+        expect(derived()).toContain('≈ 6 servings');
+        expect(save()?.disabled).toBe(false);
+        expect(save()?.textContent).toContain('6 servings');
+        expect(el().querySelector('.size-bounds')).toBeNull();
+      });
+
+      it('a tiny target shows "< 1", disables Save with an aria-describedby explanation, and still scales', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('0.1');
+        expect(derived()).toContain('< 1');
+        expect(derived()).not.toMatch(/≈ 0/);
+        expect(save()?.disabled).toBe(true);
+        expect(save()?.textContent).not.toContain('(0 servings)');
+        const note = el().querySelector('.size-bounds');
+        expect(note?.textContent).toContain('between 1 and 99');
+        expect(save()?.getAttribute('aria-describedby')).toBe(note?.id);
+        expect(ingredients()[0]).toContain('milk');
+        expect(factorText()).toContain('×0.03');
+      });
+
+      it('a huge target shows "> 99" and disables Save', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('1000');
+        expect(derived()).toContain('> 99');
+        expect(save()?.disabled).toBe(true);
+        expect(el().querySelector('.size-bounds')).not.toBeNull();
+      });
+
+      it('add-to-list still works out of bounds', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('0.1');
+        const open = jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+        await click('.actions button');
+        const data = open.mock.calls[0][1]?.data as { ingredients: Ingredient[] };
+        expect(data.ingredients[0].quantity).toBeCloseTo(0.1);
+      });
+
+      it('links the amount input to its error', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('abc');
+        const err = el().querySelector('.scale-error');
+        expect(err?.id).toBeTruthy();
+        expect(amountBox()?.getAttribute('aria-describedby')).toBe(err?.id);
+      });
+
+      it('Servings mode stepper is unchanged', async () => {
+        await setup(() => of(cheese()));
+        await click('button[aria-label="More servings"]');
+        expect(el().querySelector('.stepper output')?.textContent).toContain('5');
+        expect(el().querySelector('.size-bounds')).toBeNull();
+        expect(save()?.disabled).toBe(false);
+      });
+    });
+
     it('announces the factor and servings politely', async () => {
       await setup(() => of(cheese('milk')));
       expect(el().querySelector('.scale-summary')?.getAttribute('aria-live')).toBe('polite');

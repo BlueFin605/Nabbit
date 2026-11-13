@@ -101,9 +101,11 @@ function readMode(): Mode {
                   inputmode="decimal"
                   [value]="amountValue()"
                   [attr.aria-invalid]="scaleError() ? 'true' : null"
+                  [attr.aria-describedby]="scaleError() ? 'scale-error' : null"
                   (input)="setAmount($event)"
                 />
                 <label for="anchor-unit" class="visually-hidden">Unit</label>
+                <!-- Changing the unit keeps the typed number: 6 l -> ml means 6 ml, not 6000 ml. -->
                 <select id="anchor-unit" class="anchor-unit" [value]="unitValue()" (change)="setUnit($event)">
                   @for (u of anchorUnits(); track u) {
                     <option [value]="u" [selected]="u === unitValue()">{{ u || '(none)' }}</option>
@@ -112,7 +114,7 @@ function readMode(): Mode {
               </div>
               <p class="scale-summary" aria-live="polite">
                 <span class="factor">×{{ factorText() }}</span>
-                <span class="derived-servings">≈ {{ servings() }} servings</span>
+                <span class="derived-servings">{{ servingsText() }}</span>
               </p>
             } @else {
               <div class="stepper" role="group" aria-label="Servings">
@@ -123,7 +125,7 @@ function readMode(): Mode {
               </div>
             }
             @if (scaleError(); as e) {
-              <p class="scale-error" role="alert">{{ e }}</p>
+              <p id="scale-error" class="scale-error" role="alert">{{ e }}</p>
             }
             @if (resized()) {
               <button mat-stroked-button type="button" class="reset-scale" (click)="resetScale()">Reset</button>
@@ -143,9 +145,15 @@ function readMode(): Mode {
 
           @if (resized()) {
             <div class="resize">
-              <button mat-flat-button type="button" class="save-size" [disabled]="savingSize()" (click)="confirmResize()">
-                Save as new size ({{ servings() }} servings)
+              <button mat-flat-button type="button" class="save-size" [disabled]="savingSize() || !servingsInBounds()"
+                [attr.aria-describedby]="servingsInBounds() ? null : 'size-bounds'"
+                (click)="confirmResize()"
+              >
+                Save as new size ({{ servingsLabel() }} servings)
               </button>
+              @if (!servingsInBounds()) {
+                <p id="size-bounds" class="size-bounds">Resulting servings must be between {{ min }} and {{ max }}.</p>
+              }
             </div>
           }
           @if (conflict()) {
@@ -252,6 +260,18 @@ export class RecipeDetail implements OnInit {
   });
   /** Derived from the factor, rounded to the nearest 0.5. */
   protected readonly servings = computed(() => roundHalf((this.recipe()?.servings ?? 1) * this.factor()));
+
+  /** Whether the derived servings are a size the recipe can be saved at (the stepper's range). */
+  protected readonly servingsInBounds = computed(() => this.servings() >= MIN_SERVINGS && this.servings() <= MAX_SERVINGS);
+  /** The servings figure for display: never "0"; out-of-range values read "< min" / "> max". */
+  protected readonly servingsLabel = computed(() => {
+    const n = this.servings();
+    return n < MIN_SERVINGS ? `< ${MIN_SERVINGS}` : n > MAX_SERVINGS ? `> ${MAX_SERVINGS}` : String(n);
+  });
+  protected readonly servingsText = computed(() => {
+    const n = this.servings();
+    return n < MIN_SERVINGS || n > MAX_SERVINGS ? `${this.servingsLabel()} servings` : `≈ ${n} servings`;
+  });
 
   protected readonly anchors = computed(() => (this.recipe()?.ingredients ?? []).filter(isScaleAnchor));
   /** The stored ingredient the amount box scales by, or null in Servings mode. */
