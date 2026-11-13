@@ -22,6 +22,7 @@ import {
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe, RecipeInput } from '../../core/api/api.types';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
+import { HttpErrorResponse } from '@angular/common/http';
 import { CONFLICT_MESSAGE, isVersionConflict } from './recipe-editor';
 import { imageUrl } from '../../core/api/image-url';
 import { RecipeDeleter } from './recipe-deleter';
@@ -36,6 +37,13 @@ export const MAX_SERVINGS = 99;
 
 type Mode = 'metric' | 'original';
 type ScaleMode = 'servings' | { ingredientId: string };
+const TOO_LARGE_MSG = 'This recipe is too large to keep a backup of the original size.';
+
+/** The backup doubles the payload, so the API can answer 400 { error: 'too_large' }. */
+function isTooLarge(err: unknown): boolean {
+  return err instanceof HttpErrorResponse && err.status === 400 && (err.error as { error?: string } | null)?.error === 'too_large';
+}
+
 type Load = { status: 'loading' } | { status: 'notFound' } | { status: 'error' } | { status: 'ok'; recipe: Recipe };
 
 interface WakeLockSentinelLike {
@@ -429,7 +437,7 @@ export class RecipeDetail implements OnInit {
       error: (err: unknown) => {
         this.savingSize.set(false);
         if (isVersionConflict(err)) this.conflict.set(true);
-        else this.sizeError.set("Couldn't save the new size. Try again.");
+        else this.sizeError.set(isTooLarge(err) ? TOO_LARGE_MSG : "Couldn't save the new size. Try again.");
       },
     });
   }
@@ -445,6 +453,7 @@ export class RecipeDetail implements OnInit {
       current: r.ingredients,
       original: original.ingredients,
       mode: this.mode(),
+      clearsScaleBy: !!r.scaleBy && !original.ingredients.some((i) => i.id === r.scaleBy),
     };
     this.dialog
       .open<RestoreSizeDialog, RestoreSizeData, boolean>(RestoreSizeDialog, { data })
@@ -457,7 +466,14 @@ export class RecipeDetail implements OnInit {
   private restore(r: Recipe, original: NonNullable<Recipe['originalSize']>): void {
     const { id, version, createdAt: _c, updatedAt: _u, deletedAt: _d, originalSize: _o, ...rest } = r;
     void [_c, _u, _d, _o];
-    const input: RecipeInput = { ...rest, servings: original.servings, ingredients: original.ingredients };
+    // scaleBy must name an ingredient in the same body; drop it if the original no longer has it.
+    const { scaleBy, ...withoutScaleBy } = rest;
+    const input: RecipeInput = {
+      ...withoutScaleBy,
+      ...(scaleBy && original.ingredients.some((i) => i.id === scaleBy) ? { scaleBy } : {}),
+      servings: original.servings,
+      ingredients: original.ingredients,
+    };
     this.savingSize.set(true);
     this.sizeError.set(null);
     this.api.updateRecipe(id, input, version).subscribe({
@@ -469,7 +485,7 @@ export class RecipeDetail implements OnInit {
       error: (err: unknown) => {
         this.savingSize.set(false);
         if (isVersionConflict(err)) this.conflict.set(true);
-        else this.sizeError.set("Couldn't restore the original size. Try again.");
+        else this.sizeError.set(isTooLarge(err) ? TOO_LARGE_MSG : "Couldn't restore the original size. Try again.");
       },
     });
   }

@@ -722,6 +722,42 @@ describe('RecipeDetail', () => {
       expect(b).not.toHaveProperty('version');
     });
 
+    it('restore keeps scaleBy when it exists in the original ingredients', async () => {
+      await setup(() => of(cheese({ servings: 6, originalSize: backup })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect((updateRecipe.mock.calls[0] as [string, Record<string, unknown>])[1]['scaleBy']).toBe('milk');
+    });
+
+    it('restore omits scaleBy when it is not in the original ingredients, and succeeds', async () => {
+      const added: Ingredient = { ...salt, id: 'added', name: 'added' };
+      const r = cheese({ servings: 6, ingredients: [milk, added], scaleBy: 'added', originalSize: backup });
+      await setup(() => of(r));
+      updateRecipe.mockImplementation((_i: string, input: { servings: number }) => of({ ...cheese(), servings: input.servings, version: 2 }));
+      const open = stubDialog(true);
+      await click('button.restore-original');
+      expect((updateRecipe.mock.calls[0] as [string, object])[1]).not.toHaveProperty('scaleBy');
+      expect((open.mock.calls[0][1]?.data as { clearsScaleBy: boolean }).clearsScaleBy).toBe(true);
+      expect(restoreBtn()).toBeNull();
+    });
+
+    it('a too_large 400 on restore shows a specific message', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'too_large' } })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(el().querySelector('.size-error')?.textContent).toContain('too large to keep a backup');
+    });
+
+    it('a too_large 400 on Save as new size shows a specific message', async () => {
+      await setup(() => of(cheese()));
+      await typeAmount('6');
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'too_large' } })));
+      stubDialog(true);
+      await click('.save-size');
+      expect(el().querySelector('.size-error')?.textContent).toContain('too large to keep a backup');
+    });
+
     it('cancelled restore sends nothing', async () => {
       await setup(() => of(cheese({ originalSize: backup })));
       stubDialog(false);

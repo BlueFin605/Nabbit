@@ -73,7 +73,8 @@ describe('RestoreSizeDialog', () => {
     expect(rows[0].textContent?.replace(/\s+/g, ' ')).toContain('Changed');
     expect(rows[0].textContent?.replace(/\s+/g, ' ')).toContain('6 l milk → 4 l milk');
     expect(rows[1].textContent).not.toContain('Changed');
-    expect(rows[1].textContent?.replace(/\s+/g, ' ')).toContain('1 tsp salt → 1 tsp salt');
+    expect(rows[1].textContent?.replace(/\s+/g, ' ').trim()).toBe('1 tsp salt');
+    expect(rows[1].textContent).not.toContain('→');
   });
 
   it('lists ingredients removed and added since', () => {
@@ -93,7 +94,29 @@ describe('RestoreSizeDialog', () => {
   it('renders quantities in the active measurement mode', () => {
     const cup: Ingredient = { ...ing('f', 'flour', 2, 'cup'), metric: { quantity: 480, unit: 'ml' } };
     setup({ mode: 'metric', current: [cup], original: [cup] });
-    expect(text('.compare li')).toContain('480 ml flour → 480 ml flour');
+    expect(text('.compare li')).toBe('480 ml flour');
+  });
+
+  it('renders a changed line in metric mode with an arrow', () => {
+    const cup: Ingredient = { ...ing('f', 'flour', 2, 'cup'), metric: { quantity: 480, unit: 'ml' } };
+    setup({ mode: 'metric', current: [cup], original: [{ ...cup, metric: { quantity: 240, unit: 'ml' } }] });
+    expect(text('.compare li')).toContain('480 ml flour → 240 ml flour');
+  });
+
+  it('mentions the cleared default scaling ingredient only when asked', () => {
+    setup({ clearsScaleBy: true });
+    expect(el().textContent).toContain('default scaling ingredient will be cleared');
+  });
+
+  it('does not mention the scaling ingredient by default', () => {
+    setup();
+    expect(el().textContent).not.toContain('scaling ingredient');
+  });
+
+  it('labels the dialog content by its title via Material', () => {
+    setup();
+    const title = el().querySelector('h2') as HTMLElement;
+    expect(title.id).toBeTruthy();
   });
 
   it('has cancel and confirm buttons closing with false and true', () => {

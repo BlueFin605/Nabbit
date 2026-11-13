@@ -9,6 +9,8 @@ export interface RestoreSizeData {
   current: Ingredient[];
   original: Ingredient[];
   mode: 'metric' | 'original';
+  /** True when the default scaling ingredient is not in the original and will be cleared. */
+  clearsScaleBy?: boolean;
 }
 
 export interface CompareRow {
@@ -58,17 +60,22 @@ export function compareSizes(current: Ingredient[], original: Ingredient[], mode
     li.changed { border-left: 4px solid currentColor; padding-left: 8px; }
   `,
   template: `
-    <h2 mat-dialog-title id="restore-size-title">Restore original size?</h2>
-    <mat-dialog-content aria-labelledby="restore-size-title">
+    <h2 mat-dialog-title>Restore original size?</h2>
+    <mat-dialog-content>
       <p class="warning">Restoring puts the recipe back to its first saved size, and any changes made since the first resize will be lost.</p>
+      @if (data.clearsScaleBy) {
+        <p class="scaleby-note">The default scaling ingredient will be cleared.</p>
+      }
       <p class="servings">Servings: {{ data.currentServings }} → {{ data.originalServings }}</p>
       <ul class="compare" aria-label="Ingredients, current to original">
         @for (r of cmp.rows; track r.id) {
           <li [class.changed]="r.changed">
             @if (r.changed) {
               <span class="tag">Changed:</span>
+              {{ r.current }} → {{ r.original }}
+            } @else {
+              {{ r.current }}
             }
-            {{ r.current }} → {{ r.original }}
           </li>
         }
       </ul>
