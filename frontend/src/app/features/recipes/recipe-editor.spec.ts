@@ -288,7 +288,7 @@ describe('RecipeEditor', () => {
       expect(btn(a, '.indent').getAttribute('aria-label')).toBe('Indent step 1');
       const b = rowByText('b');
       expect(btn(b, '.outdent').disabled).toBe(false);
-      expect(btn(b, '.outdent').getAttribute('aria-label')).toBe('Outdent step 1');
+      expect(btn(b, '.outdent').getAttribute('aria-label')).toBe('Outdent step 1 in group "G"');
       expect(btn(q('.group-row') as HTMLElement, '.outdent').getAttribute('aria-label')).toContain('G');
     });
 
@@ -348,6 +348,115 @@ describe('RecipeEditor', () => {
       expect(fixture.componentInstance.dirty()).toBe(true);
       await click(btn(rowByText('b'), '.outdent'));
       expect(fixture.componentInstance.dirty()).toBe(false);
+    });
+
+    describe('depth limit for groups', () => {
+      it('disables Add group, with an explanation, where a new group would be too deep', async () => {
+        let deep: StepNode = 'leaf';
+        for (let i = 1; i < MAX_STEP_DEPTH; i++) deep = { steps: [deep] };
+        await setup({ ...base(), steps: [deep] });
+        const adds = qa<HTMLButtonElement>('.add-group');
+        expect(adds.map((b) => b.disabled)).toEqual([true, false, false, false, false]);
+        expect(adds[0].getAttribute('title')).toContain(String(MAX_STEP_DEPTH));
+        expect(adds[0].getAttribute('aria-description')).toContain(String(MAX_STEP_DEPTH));
+        expect(adds[1].getAttribute('title')).toBeNull();
+      });
+
+      it('lets groups be added level by level up to the limit, then stops', async () => {
+        await setup({ ...base(), steps: [] });
+        for (let i = 0; i < MAX_STEP_DEPTH + 2; i++) {
+          const add = qa<HTMLButtonElement>('.add-group')[0];
+          if (add.disabled) break;
+          await click(add);
+          await click(qa<HTMLButtonElement>('.add-step')[0]);
+        }
+        expect(qa('.group-row')).toHaveLength(MAX_STEP_DEPTH - 1);
+        expect(qa<HTMLButtonElement>('.add-group')[0].disabled).toBe(true);
+      });
+    });
+
+    describe('focus', () => {
+      const active = () => document.activeElement as HTMLElement | null;
+
+      it('Add step focuses the new step input', async () => {
+        await setup();
+        await click(topAdd('.add-step'));
+        const steps = qa<HTMLTextAreaElement>('textarea.step');
+        expect(active()).toBe(steps[steps.length - 1]);
+      });
+
+      it('Add group focuses the new heading input', async () => {
+        await setup();
+        await click(topAdd('.add-group'));
+        expect(active()).toBe(q('input.group-heading'));
+      });
+
+      it('Add step inside a group focuses that new step', async () => {
+        await setup({ ...base(), steps: [{ heading: 'G', steps: ['a'] }] });
+        await click(q('.group-row .add-step'));
+        const steps = qa<HTMLTextAreaElement>('textarea.step');
+        expect(steps).toHaveLength(2);
+        expect(active()).toBe(steps[1]);
+      });
+
+      it('Indent falls back to the moved row input when its Indent button is now disabled', async () => {
+        await setup({ ...base(), steps: [{ heading: 'G', steps: ['a'] }, 'b'] });
+        await click(btn(rowByText('b'), '.indent'));
+        expect(active()).toBe(rowByText('b').querySelector('textarea.step'));
+      });
+
+      it('Indent keeps focus on the same button when it is still enabled', async () => {
+        await setup({ ...base(), steps: [{ heading: 'G', steps: [{ heading: 'K', steps: [] }] }, 'a'] });
+        await click(btn(rowByText('a'), '.indent'));
+        expect(active()).toBe(btn(rowByText('a'), '.indent'));
+      });
+
+      it('Outdent keeps focus on the moved row Outdent button when still nested, else its input', async () => {
+        await setup({ ...base(), steps: [{ heading: 'A', steps: [{ heading: 'B', steps: ['x'] }] }] });
+        await click(btn(rowByText('x'), '.outdent'));
+        expect(active()).toBe(btn(rowByText('x'), '.outdent'));
+        await click(btn(rowByText('x'), '.outdent'));
+        expect(active()).toBe(rowByText('x').querySelector('textarea.step'));
+      });
+
+      it('Remove moves focus to the neighbouring row Remove button, or the level Add step when none is left', async () => {
+        await setup({ ...base(), steps: [{ heading: 'G', steps: ['a', 'b'] }] });
+        await click(btn(rowByText('a'), '.remove-step'));
+        expect(active()).toBe(btn(rowByText('b'), '.remove-step'));
+        await click(btn(rowByText('b'), '.remove-step'));
+        expect(active()).toBe(q('.group-row .add-step'));
+      });
+
+      it('Removing a group focuses the neighbouring row control', async () => {
+        await setup({ ...base(), steps: ['a', { heading: 'G', steps: [] }, 'b'] });
+        await click(q('.remove-group'));
+        expect(active()).toBe(btn(rowByText('b'), '.remove-step'));
+      });
+    });
+
+    describe('accessible names', () => {
+      it('names nested rows by their parent group, so repeated step numbers stay distinct', async () => {
+        await setup({ ...base(), steps: [{ heading: 'Dough', steps: ['a', 'b'] }, { steps: ['c'] }, { heading: 'Sauce', steps: ['d'] }] });
+        const label = (t: string, cls: string) => btn(rowByText(t), cls).getAttribute('aria-label');
+        expect(label('a', '.indent')).toBe('Indent step 1 in group "Dough"');
+        expect(label('b', '.remove-step')).toBe('Remove step 2 in group "Dough"');
+        expect(label('c', '.outdent')).toBe('Outdent step 1 in group 2');
+        expect(label('d', '.indent')).toBe('Indent step 1 in group "Sauce"');
+        expect(qa<HTMLElement>('.steps .handle').map((h) => h.getAttribute('aria-label'))).toEqual([
+          'Reorder group "Dough"',
+          'Reorder step 1 in group "Dough"',
+          'Reorder step 2 in group "Dough"',
+          'Reorder group 2',
+          'Reorder step 1 in group 2',
+          'Reorder group "Sauce"',
+          'Reorder step 1 in group "Sauce"',
+        ]);
+      });
+
+      it('keeps top-level labels unqualified', async () => {
+        await setup();
+        expect(qa<HTMLElement>('.steps .handle').map((h) => h.getAttribute('aria-label'))).toEqual(['Reorder step 1', 'Reorder step 2']);
+      });
     });
   });
 });

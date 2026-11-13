@@ -2,20 +2,20 @@ import { CdkDrag, CdkDragHandle, CdkDropList, moveItemInArray, type CdkDragDrop 
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { Component, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule, type MatChipInputEvent } from '@angular/material/chips';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
+import { MAX_STEP_DEPTH, formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
 import { map, switchMap } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImageContentType, RecipeInput } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
-import { addGroup, addStep, canIndent, canOutdent, fromRows, hasChildren, indent, moveWithin, outdent, removeRow, setHeading, setText, shape, stepNumber, toRows, type StepRow } from './step-rows';
+import { addGroup, addStep, canAddGroup, canIndent, canOutdent, fromRows, hasChildren, indent, lastChildId, moveWithin, neighbourAfterRemove, outdent, removeRow, setHeading, setText, shape, stepNumber, toRows, type StepRow } from './step-rows';
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const IMAGE_TYPES: readonly ImageContentType[] = ['image/jpeg', 'image/png', 'image/webp'];
@@ -173,49 +173,49 @@ export function isVersionConflict(err: unknown): boolean {
 
     <h2>Steps</h2>
     <div class="steps">
-      <ng-container *ngTemplateOutlet="level; context: { $implicit: steps(), parent: null }" />
+      <ng-container *ngTemplateOutlet="level; context: { $implicit: steps(), parent: null, trail: '' }" />
     </div>
 
-    <ng-template #level let-rows let-parent="parent">
+    <ng-template #level let-rows let-parent="parent" let-trail="trail">
       <div class="level list" cdkDropList (cdkDropListDropped)="dropRow($event, parent)">
         @for (r of rows; track r.id; let i = $index) {
           @if (r.kind === 'step') {
-            <div class="step-row" cdkDrag>
-              <button type="button" class="handle" cdkDragHandle aria-label="Reorder step">⠿</button>
+            <div class="step-row" cdkDrag [attr.data-row]="r.id">
+              <button type="button" class="handle" cdkDragHandle [attr.aria-label]="'Reorder ' + rowLabel(rows, i) + trail">⠿</button>
               <mat-form-field appearance="outline" subscriptSizing="dynamic" class="step-field">
                 <mat-label>Step {{ stepNo(rows, i) }}</mat-label>
                 <textarea matInput class="step" rows="2" [value]="r.text" (input)="setStep(r.id, $event)"></textarea>
               </mat-form-field>
               <div class="row-controls">
-                <button mat-button type="button" class="indent" [disabled]="!canIndentRow(r.id)" [attr.aria-label]="'Indent ' + rowLabel(rows, i)" (click)="indentRow(r.id)">Indent</button>
-                <button mat-button type="button" class="outdent" [disabled]="!canOutdentRow(r.id)" [attr.aria-label]="'Outdent ' + rowLabel(rows, i)" (click)="outdentRow(r.id)">Outdent</button>
-                <button mat-button type="button" class="remove-step" [attr.aria-label]="'Remove ' + rowLabel(rows, i)" (click)="removeStepRow(r.id)">Remove</button>
+                <button mat-button type="button" class="indent" [disabled]="!canIndentRow(r.id)" [attr.aria-label]="'Indent ' + rowLabel(rows, i) + trail" (click)="indentRow(r.id)">Indent</button>
+                <button mat-button type="button" class="outdent" [disabled]="!canOutdentRow(r.id)" [attr.aria-label]="'Outdent ' + rowLabel(rows, i) + trail" (click)="outdentRow(r.id)">Outdent</button>
+                <button mat-button type="button" class="remove-step" [attr.aria-label]="'Remove ' + rowLabel(rows, i) + trail" (click)="removeStepRow(r.id)">Remove</button>
               </div>
             </div>
           } @else {
-            <div class="group-row" cdkDrag>
+            <div class="group-row" cdkDrag [attr.data-row]="r.id">
               <div class="group-head">
-                <button type="button" class="handle" cdkDragHandle aria-label="Reorder group">⠿</button>
+                <button type="button" class="handle" cdkDragHandle [attr.aria-label]="'Reorder ' + rowLabel(rows, i) + trail">⠿</button>
                 <mat-form-field appearance="outline" subscriptSizing="dynamic" class="step-field">
                   <mat-label>Group heading</mat-label>
                   <input matInput class="group-heading" [value]="r.heading" (input)="setGroupHeading(r.id, $event)" />
                 </mat-form-field>
               </div>
               <div class="row-controls">
-                <button mat-button type="button" class="indent" [disabled]="!canIndentRow(r.id)" [attr.aria-label]="'Indent ' + rowLabel(rows, i)" (click)="indentRow(r.id)">Indent</button>
-                <button mat-button type="button" class="outdent" [disabled]="!canOutdentRow(r.id)" [attr.aria-label]="'Outdent ' + rowLabel(rows, i)" (click)="outdentRow(r.id)">Outdent</button>
-                <button mat-button type="button" class="remove-group" [attr.aria-label]="'Remove ' + rowLabel(rows, i)" (click)="removeGroupRow(r)">Remove group</button>
+                <button mat-button type="button" class="indent" [disabled]="!canIndentRow(r.id)" [attr.aria-label]="'Indent ' + rowLabel(rows, i) + trail" (click)="indentRow(r.id)">Indent</button>
+                <button mat-button type="button" class="outdent" [disabled]="!canOutdentRow(r.id)" [attr.aria-label]="'Outdent ' + rowLabel(rows, i) + trail" (click)="outdentRow(r.id)">Outdent</button>
+                <button mat-button type="button" class="remove-group" [attr.aria-label]="'Remove ' + rowLabel(rows, i) + trail" (click)="removeGroupRow(r)">Remove group</button>
               </div>
               <div class="group-body">
-                <ng-container *ngTemplateOutlet="level; context: { $implicit: r.children, parent: r.id }" />
+                <ng-container *ngTemplateOutlet="level; context: { $implicit: r.children, parent: r.id, trail: ' in ' + rowLabel(rows, i) + trail }" />
               </div>
             </div>
           }
         }
       </div>
-      <div class="level-actions">
+      <div class="level-actions" [attr.data-add]="parent ?? 'root'">
         <button mat-button type="button" class="add-step" (click)="addStepRow(parent)">Add step</button>
-        <button mat-button type="button" class="add-group" (click)="addGroupRow(parent)">Add group</button>
+        <button mat-button type="button" class="add-group" [disabled]="!canAddGroupAt(parent)" [attr.title]="canAddGroupAt(parent) ? null : depthLimitMessage" [attr.aria-description]="canAddGroupAt(parent) ? null : depthLimitMessage" (click)="addGroupRow(parent)">Add group</button>
       </div>
     </ng-template>
 
@@ -418,12 +418,47 @@ export class RecipeEditor {
     return heading ? `group "${heading}"` : `group ${level.slice(0, index + 1).filter((x) => x.kind === 'group').length}`;
   }
 
+  protected readonly depthLimitMessage = `Groups can be nested at most ${MAX_STEP_DEPTH} levels deep`;
+
+  protected canAddGroupAt(parentId: string | null): boolean {
+    return canAddGroup(this.steps(), parentId);
+  }
+
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+
+  /** Row DOM is recreated when a row is re-parented, so focus is set after the next render: first usable selector wins. */
+  private focusAfterRender(...selectors: string[]): void {
+    afterNextRender(
+      () => {
+        for (const sel of selectors) {
+          const el = this.host.nativeElement.querySelector<HTMLElement>(sel);
+          if (el && !(el as HTMLButtonElement).disabled) {
+            el.focus();
+            return;
+          }
+        }
+      },
+      { injector: this.injector },
+    );
+  }
+
+  private inputSel = (id: string) => `[data-row="${id}"] textarea.step, [data-row="${id}"] > .group-head input.group-heading`;
+  private ctlSel = (id: string, cls: string) => `[data-row="${id}"] > .row-controls .${cls}`;
+
   protected addStepRow(parentId: string | null): void {
-    this.steps.update((rows) => addStep(rows, parentId));
+    const next = addStep(this.steps(), parentId);
+    this.steps.set(next);
+    const id = lastChildId(next, parentId);
+    if (id) this.focusAfterRender(this.inputSel(id));
   }
 
   protected addGroupRow(parentId: string | null): void {
-    this.steps.update((rows) => addGroup(rows, parentId));
+    const next = addGroup(this.steps(), parentId);
+    if (next === this.steps()) return;
+    this.steps.set(next);
+    const id = lastChildId(next, parentId);
+    if (id) this.focusAfterRender(this.inputSel(id));
   }
 
   protected canIndentRow(id: string): boolean {
@@ -436,14 +471,20 @@ export class RecipeEditor {
 
   protected indentRow(id: string): void {
     this.steps.update((rows) => indent(rows, id));
+    this.focusAfterRender(this.ctlSel(id, 'indent'), this.inputSel(id));
   }
 
   protected outdentRow(id: string): void {
     this.steps.update((rows) => outdent(rows, id));
+    this.focusAfterRender(this.ctlSel(id, 'outdent'), this.inputSel(id));
   }
 
   protected removeStepRow(id: string): void {
+    const { neighbourId, parentId } = neighbourAfterRemove(this.steps(), id);
     this.steps.update((rows) => removeRow(rows, id));
+    const add = `[data-add="${parentId ?? 'root'}"] .add-step`;
+    if (neighbourId) this.focusAfterRender(this.ctlSel(neighbourId, 'remove-step'), this.ctlSel(neighbourId, 'remove-group'), add);
+    else this.focusAfterRender(add);
   }
 
   /** Removing a group takes its children with it, so a non-empty one asks first. */

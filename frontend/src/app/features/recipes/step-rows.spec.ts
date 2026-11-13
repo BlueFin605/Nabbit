@@ -2,10 +2,13 @@ import { MAX_STEP_DEPTH, type StepNode } from '@nabbit/recipe-core';
 import {
   addGroup,
   addStep,
+  canAddGroup,
   canIndent,
   canOutdent,
   fromRows,
   hasChildren,
+  lastChildId,
+  neighbourAfterRemove,
   indent,
   moveWithin,
   outdent,
@@ -130,5 +133,58 @@ describe('step-rows', () => {
     expect(shape(toRows(['a', '']))).toEqual(['a', '']);
     expect(shape(toRows(nested))).toEqual(shape(toRows(nested)));
     expect(shape(toRows([{ steps: ['x'] }]))).toEqual([{ heading: '', steps: ['x'] }]);
+  });
+
+  describe('depth guard for new groups', () => {
+    const deepestGroup = (rows: StepRow[]): GroupRow => {
+      let g = group(rows, 0);
+      for (;;) {
+        const next = g.children.find((c) => c.kind === 'group');
+        if (!next) return g;
+        g = next;
+      }
+    };
+
+    it('allows a group (holding a step) within MAX_STEP_DEPTH, refuses beyond', () => {
+      const ok = toRows([deepNode(MAX_STEP_DEPTH - 1)]);
+      expect(canAddGroup(ok, null)).toBe(true);
+      expect(canAddGroup(ok, deepestGroup(ok).id)).toBe(true);
+      const full = toRows([deepNode(MAX_STEP_DEPTH)]);
+      expect(canAddGroup(full, deepestGroup(full).id)).toBe(false);
+      expect(canAddGroup(full, null)).toBe(true);
+    });
+
+    it('addGroup returns the same rows when the group would be too deep', () => {
+      const full = toRows([deepNode(MAX_STEP_DEPTH)]);
+      expect(addGroup(full, deepestGroup(full).id)).toBe(full);
+    });
+
+    it('repeatedly adding groups through the guard never exceeds the limit', () => {
+      let rows: StepRow[] = [];
+      let parent: string | null = null;
+      for (let i = 0; i < 10 && canAddGroup(rows, parent); i++) {
+        rows = addGroup(rows, parent);
+        parent = lastChildId(rows, parent);
+        rows = addStep(rows, parent);
+      }
+      expect(rowDepth(rows)).toBe(MAX_STEP_DEPTH);
+    });
+  });
+
+  it('lastChildId finds the newest row at a level', () => {
+    let rows = toRows(['a']);
+    rows = addStep(rows, null);
+    expect(lastChildId(rows, null)).toBe(rows[1].id);
+    expect(lastChildId([], null)).toBeNull();
+  });
+
+  it('neighbourAfterRemove picks the next sibling, else the previous, else the level', () => {
+    const rows = toRows([{ heading: 'G', steps: ['a', 'b'] }, 'z']);
+    const g = group(rows, 0);
+    expect(neighbourAfterRemove(rows, g.children[0].id)).toEqual({ neighbourId: g.children[1].id, parentId: g.id });
+    expect(neighbourAfterRemove(rows, g.children[1].id)).toEqual({ neighbourId: g.children[0].id, parentId: g.id });
+    expect(neighbourAfterRemove(rows, rows[1].id)).toEqual({ neighbourId: g.id, parentId: null });
+    const solo = toRows([{ heading: 'G', steps: ['a'] }]);
+    expect(neighbourAfterRemove(solo, group(solo, 0).children[0].id)).toEqual({ neighbourId: null, parentId: solo[0].id });
   });
 });

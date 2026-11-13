@@ -53,8 +53,7 @@ function mapLevel(rows: StepRow[], parentId: string | null, fn: (level: StepRow[
   return rows.map((r) => {
     if (r.kind !== 'group') return r;
     if (r.id === parentId) return { ...r, children: fn(r.children) };
-    const children = mapLevel(r.children, parentId, fn);
-    return children === r.children ? r : { ...r, children };
+    return { ...r, children: mapLevel(r.children, parentId, fn) };
   });
 }
 
@@ -65,7 +64,15 @@ export function addStep(rows: StepRow[], parentId: string | null): StepRow[] {
   return mapLevel(rows, parentId, (level) => [...level, blankStep()]);
 }
 
+/** A new group is only useful with a step in it, so the limit is checked for a group holding one. */
+export function canAddGroup(rows: StepRow[], parentId: string | null): boolean {
+  const probe = mapLevel(rows, parentId, (level) => [...level, { ...blankGroup(), children: [blankStep()] }]);
+  return rowDepth(probe) <= MAX_STEP_DEPTH;
+}
+
+/** Returns `rows` itself when the group (with a step in it) would exceed MAX_STEP_DEPTH. */
 export function addGroup(rows: StepRow[], parentId: string | null): StepRow[] {
+  if (!canAddGroup(rows, parentId)) return rows;
   return mapLevel(rows, parentId, (level) => [...level, blankGroup()]);
 }
 
@@ -73,8 +80,7 @@ function mapRow(rows: StepRow[], id: string, fn: (r: StepRow) => StepRow): StepR
   return rows.map((r) => {
     if (r.id === id) return fn(r);
     if (r.kind !== 'group') return r;
-    const children = mapRow(r.children, id, fn);
-    return children === r.children ? r : { ...r, children };
+    return { ...r, children: mapRow(r.children, id, fn) };
   });
 }
 
@@ -89,11 +95,7 @@ export function setHeading(rows: StepRow[], id: string, heading: string): StepRo
 export function removeRow(rows: StepRow[], id: string): StepRow[] {
   const kept = rows.filter((r) => r.id !== id);
   if (kept.length !== rows.length) return kept;
-  return rows.map((r) => {
-    if (r.kind !== 'group') return r;
-    const children = removeRow(r.children, id);
-    return children === r.children ? r : { ...r, children };
-  });
+  return rows.map((r) => (r.kind === 'group' ? { ...r, children: removeRow(r.children, id) } : r));
 }
 
 interface Location {
@@ -113,6 +115,32 @@ function locate(rows: StepRow[], id: string, parent: StepRow | null = null): Loc
     }
   }
   return null;
+}
+
+function findRow(rows: StepRow[], id: string): StepRow | null {
+  for (const r of rows) {
+    if (r.id === id) return r;
+    if (r.kind === 'group') {
+      const hit = findRow(r.children, id);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+/** Id of the last row at a level (null = top level), e.g. the row just added. */
+export function lastChildId(rows: StepRow[], parentId: string | null): string | null {
+  const parent = parentId === null ? null : findRow(rows, parentId);
+  const level = parentId === null ? rows : parent?.kind === 'group' ? parent.children : [];
+  return level.at(-1)?.id ?? null;
+}
+
+/** Where focus should go when `id` is removed: its next (else previous) sibling, and the level it was in. */
+export function neighbourAfterRemove(rows: StepRow[], id: string): { neighbourId: string | null; parentId: string | null } {
+  const at = locate(rows, id);
+  if (!at) return { neighbourId: null, parentId: null };
+  const sibling = at.level[at.index + 1] ?? at.level[at.index - 1];
+  return { neighbourId: sibling?.id ?? null, parentId: at.parent?.id ?? null };
 }
 
 /** Moves a row to the end of the group directly above it. Returns `rows` itself when that is not possible. */
