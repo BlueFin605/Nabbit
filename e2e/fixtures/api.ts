@@ -21,8 +21,15 @@ export interface ApiRecipe {
   imageKey?: string;
   sourceUrl?: string;
   steps: StepNode[];
-  ingredients: { name: string; quantity: number | null; unit: string }[];
+  ingredients: { id: string; name: string; quantity: number | null; unit: string; scalable?: boolean }[];
+  scaleBy?: string;
+  originalSize?: { servings: number; ingredients: { id: string; name: string; quantity: number | null; unit: string }[] };
 }
+
+/** An ingredient for custom seeds: scalable exactly when it has a quantity. */
+export const seedIngredient = (id: string, name: string, quantity: number | null, unit: string) => ({
+  id, name, quantity, unit, scalable: quantity !== null,
+});
 
 export class Api {
   constructor(private readonly ctx: APIRequestContext) {}
@@ -60,6 +67,11 @@ export class Api {
         ing('i-salt', 'salt to taste', null, '', { original: 'salt to taste' }),
       ],
     };
+    return this.json<ApiRecipe>(await this.ctx.post('/recipes', { data: recipe }));
+  }
+
+  /** POST an arbitrary recipe body (title, servings, tags, steps, ingredients, optional scaleBy). */
+  async seedCustom(recipe: object): Promise<ApiRecipe> {
     return this.json<ApiRecipe>(await this.ctx.post('/recipes', { data: recipe }));
   }
 
