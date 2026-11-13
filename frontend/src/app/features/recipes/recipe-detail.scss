@@ -72,8 +72,9 @@
   margin-bottom: 12px;
 }
 
+/* display:block (not list-item) so a group does not consume a number in the parent ol. */
 .steps li.group {
-  list-style: none;
+  display: block;
   padding-left: 0;
 }
 

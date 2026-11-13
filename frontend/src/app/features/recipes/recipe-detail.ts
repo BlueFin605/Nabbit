@@ -13,6 +13,7 @@ import {
   mapSteps,
   scaleRecipeIngredients,
   type Ingredient,
+  type StepGroup,
   type StepNode,
 } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
@@ -154,12 +155,13 @@ function readMode(): Mode {
         @if (isString(n)) {
           <li>{{ n }}</li>
         } @else {
+          @let g = asGroup(n);
           <li class="group">
-            @if (n.heading) {
-              <h3>{{ n.heading }}</h3>
+            @if (g.heading) {
+              <h3>{{ g.heading }}</h3>
             }
             <ol>
-              <ng-container *ngTemplateOutlet="stepList; context: { $implicit: n.steps }" />
+              <ng-container *ngTemplateOutlet="stepList; context: { $implicit: g.steps }" />
             </ol>
           </li>
         }
@@ -229,6 +231,11 @@ export class RecipeDetail implements OnInit {
 
   protected isString(n: StepNode): n is string {
     return typeof n === 'string';
+  }
+
+  /** Narrows a non-string node inside the recursive (untyped `let-nodes`) template context. */
+  protected asGroup(n: StepNode): StepGroup {
+    return n as StepGroup;
   }
 
   protected readonly wakeSupported = typeof navigator !== 'undefined' && !!(navigator as WakeLockNav).wakeLock;

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router, provideRouter } from '@angular/router';
@@ -127,6 +129,23 @@ describe('RecipeDetail', () => {
       expect(el().querySelectorAll('.steps ol > li')).toHaveLength(2);
     });
 
+    it('group li is not a list-item, so it does not consume a number in the parent ol', async () => {
+      await setup(() => of(recipe(['Prep', { heading: 'Sauce', steps: ['Chop'] }, 'Last'])));
+      const group = el().querySelector('.steps li.group') as HTMLElement;
+      const computed = getComputedStyle(group).display;
+      if (computed === 'block') {
+        // jsdom applied the component stylesheet
+        expect(computed).not.toBe('list-item');
+      } else {
+        // jest does not compile the component .scss, so guard the rule in source
+        const scss = readFileSync(join(__dirname, 'recipe-detail.scss'), 'utf8');
+        const rule = /\.steps li\.group\s*\{([^}]*)\}/.exec(scss)?.[1] ?? '';
+        expect(rule).toMatch(/display:\s*block/);
+      }
+      // the numbered siblings are the only list-item children of the top-level ol
+      expect(el().querySelectorAll('ol.steps > li:not(.group)')).toHaveLength(2);
+    });
+
     it('converts temperatures inside nested steps in metric mode only', async () => {
       await setup(() => of(recipe([{ heading: 'Bake', steps: [{ steps: ['Heat oven to 350°F'] }] }])));
       expect(el().querySelector('.steps')?.textContent).toContain('180°C');
@@ -247,6 +266,16 @@ describe('RecipeDetail', () => {
       expect(body).not.toHaveProperty('id');
       // the view now treats 8 as the stored size
       expect(el().querySelector('.save-size')).toBeNull();
+    });
+
+    it('save as new size sends the nested step tree unchanged', async () => {
+      const steps: Recipe['steps'] = ['Prep', { heading: 'Sauce', steps: ['Chop', { steps: ['Simmer 350°F'] }] }, 'Last'];
+      await setup(() => of(recipe(steps)));
+      await click('button[aria-label="More servings"]');
+      stubDialog(true);
+      await click('.save-size');
+      const [, body] = updateRecipe.mock.calls[0] as [string, { steps: unknown }];
+      expect(body.steps).toEqual(steps);
     });
 
     it('does not save when the dialog is cancelled', async () => {
