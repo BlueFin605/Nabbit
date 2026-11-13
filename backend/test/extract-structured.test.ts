@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { flattenSteps, MAX_STEP_DEPTH, stepDepth } from '@nabbit/recipe-core';
 import { extractStructured } from '../src/import/extract-structured.js';
 
 const fx = (n: string) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');
@@ -30,13 +31,12 @@ describe('extractStructured', () => {
     expect(d.recipe.tags).toEqual(['soup', 'vegetarian']);
   });
 
-  it('flattens HowToSection in order and accepts numeric yield', () => {
+  it('keeps HowToSection as groups in order and accepts numeric yield', () => {
     const d = extractStructured(fx('jsonld-howtosection.html'), URL_)!;
     expect(d.recipe.servings).toBe(8);
     expect(d.recipe.steps).toEqual([
-      'Cream butter & sugar.',
-      'Bake at 180°C for 30 minutes.',
-      'Whip the frosting.',
+      { heading: 'Cake', steps: ['Cream butter & sugar.', 'Bake at 180°C for 30 minutes.'] },
+      { heading: 'Frosting', steps: ['Whip the frosting.'] },
       'Assemble.',
     ]);
   });
@@ -105,5 +105,85 @@ describe('extractStructured', () => {
     const t0 = Date.now();
     expect(() => extractStructured(`<script type="application/ld+json">${json}</script>`, URL_)).not.toThrow();
     expect(Date.now() - t0).toBeLessThan(2000);
+  });
+});
+
+describe('extractStructured nested steps', () => {
+  const ld = (instructions: unknown) =>
+    `<html><head><script type="application/ld+json">${JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Recipe',
+      name: 'Lasagne',
+      recipeIngredient: ['1 onion'],
+      recipeInstructions: instructions,
+    })}</script></head></html>`;
+  const step = (text: string) => ({ '@type': 'HowToStep', text });
+  const section = (name: string | undefined, items: unknown[]) => ({
+    '@type': 'HowToSection',
+    ...(name === undefined ? {} : { name }),
+    itemListElement: items,
+  });
+
+  it('flat HowToStep list stays a flat string array', () => {
+    const d = extractStructured(ld([step('A.'), step('B.')]), URL_)!;
+    expect(d.recipe.steps).toEqual(['A.', 'B.']);
+  });
+
+  it('one HowToSection becomes a group with its name as heading', () => {
+    const d = extractStructured(ld([section('Filling', [step('Brown the mince.'), step('Add stock.')]), section('Sauce', [step('Melt butter.')])]), URL_)!;
+    expect(d.recipe.steps).toEqual([
+      { heading: 'Filling', steps: ['Brown the mince.', 'Add stock.'] },
+      { heading: 'Sauce', steps: ['Melt butter.'] },
+    ]);
+  });
+
+  it('keeps mixed top-level steps and sections in order', () => {
+    const d = extractStructured(ld([step('Preheat.'), section('Filling', [step('Brown.')])]), URL_)!;
+    expect(d.recipe.steps).toEqual(['Preheat.', { heading: 'Filling', steps: ['Brown.'] }]);
+  });
+
+  it('nests sections two deep', () => {
+    const d = extractStructured(ld([section('Outer', [step('One.'), section('Inner', [step('Two.')])])]), URL_)!;
+    expect(d.recipe.steps).toEqual([{ heading: 'Outer', steps: ['One.', { heading: 'Inner', steps: ['Two.'] }] }]);
+  });
+
+  it('a section without a name is a headingless group', () => {
+    const d = extractStructured(ld([section(undefined, [step('One.')])]), URL_)!;
+    expect(d.recipe.steps).toEqual([{ steps: ['One.'] }]);
+  });
+
+  it('an itemListElement object that is not typed HowToSection is still a group', () => {
+    const d = extractStructured(ld([{ name: 'Part', itemListElement: [step('One.')] }]), URL_)!;
+    expect(d.recipe.steps).toEqual([{ heading: 'Part', steps: ['One.'] }]);
+  });
+
+  it('drops empty sections', () => {
+    const d = extractStructured(ld([section('Empty', []), step('One.')]), URL_)!;
+    expect(d.recipe.steps).toEqual(['One.']);
+  });
+
+  it('converts Fahrenheit inside groups', () => {
+    const d = extractStructured(ld([section('Bake', [step('Bake at 350°F.'), section('Rest', [step('Rest, then 400 °F.')])])]), URL_)!;
+    expect(d.recipe.steps).toEqual([{ heading: 'Bake', steps: ['Bake at 180°C.', { heading: 'Rest', steps: ['Rest, then 200°C.'] }] }]);
+  });
+
+  it('flattens groups nested beyond the depth cap so the draft still validates', () => {
+    let node: unknown = step('Deep.');
+    for (let i = 0; i < 5; i++) node = section(`L${i}`, [node]);
+    const d = extractStructured(ld([node]), URL_)!;
+    expect(stepDepth(d.recipe.steps)).toBeLessThanOrEqual(MAX_STEP_DEPTH);
+    expect(flattenSteps(d.recipe.steps)).toEqual(['Deep.']);
+  });
+
+  it('microdata HowToSection becomes a group', () => {
+    const html = `<div itemscope itemtype="https://schema.org/Recipe"><h1 itemprop="name">Lasagne</h1>
+      <span itemprop="recipeIngredient">1 onion</span>
+      <div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection">
+        <h3 itemprop="name">Filling</h3>
+        <div itemprop="itemListElement" itemscope itemtype="https://schema.org/HowToStep"><span itemprop="text">Brown the mince.</span></div>
+        <div itemprop="itemListElement" itemscope itemtype="https://schema.org/HowToStep"><span itemprop="text">Add stock.</span></div>
+      </div></div>`;
+    const d = extractStructured(html, URL_)!;
+    expect(d.recipe.steps).toEqual([{ heading: 'Filling', steps: ['Brown the mince.', 'Add stock.'] }]);
   });
 });

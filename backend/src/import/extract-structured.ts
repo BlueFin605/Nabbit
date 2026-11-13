@@ -1,6 +1,6 @@
 import { parse, type HTMLElement } from 'node-html-parser';
-import { convertTemperatures, parseIngredient, toMetric } from '@nabbit/recipe-core';
-import type { RecipeDraft } from '@nabbit/recipe-core';
+import { mapSteps, MAX_STEP_DEPTH, convertTemperatures, parseIngredient, toMetric } from '@nabbit/recipe-core';
+import type { RecipeDraft, StepNode } from '@nabbit/recipe-core';
 
 export type StructuredDraft = RecipeDraft & { imageUrl?: string };
 
@@ -86,18 +86,39 @@ function jsonLdRecipe(root: HTMLElement): Obj | undefined {
   return undefined;
 }
 
-function stepsFrom(v: Json, out: string[], depth = 0): void {
-  if (out.length >= MAX_ITEMS || depth > MAX_DEPTH) return;
+/** Leaf-step budget shared across one recipe's whole step tree. */
+interface StepBudget {
+  left: number;
+}
+
+/**
+ * Method steps from schema.org `recipeInstructions`. A `HowToSection` (any object with `itemListElement`) becomes a
+ * group headed by its name, at any depth; a recipe without sections yields the flat list it always did. Groups nested
+ * deeper than the stored-recipe depth cap are spliced into their parent so the draft still validates.
+ */
+function stepsFrom(v: Json, budget: StepBudget = { left: MAX_ITEMS }, depth = 0, level = 0): StepNode[] {
+  const out: StepNode[] = [];
+  if (budget.left <= 0 || depth > MAX_DEPTH) return out;
   if (typeof v === 'string') {
-    out.push(...toLines(v));
+    for (const line of toLines(v)) {
+      if (budget.left <= 0) break;
+      out.push(line);
+      budget.left--;
+    }
   } else if (Array.isArray(v)) {
-    for (const x of v.slice(0, MAX_ITEMS)) stepsFrom(x, out, depth + 1);
+    for (const x of v.slice(0, MAX_ITEMS)) out.push(...stepsFrom(x, budget, depth + 1, level));
   } else if (isObj(v)) {
-    if (v['itemListElement'] !== undefined) stepsFrom(v['itemListElement'], out, depth + 1);
-    else if (typeof v['text'] === 'string') out.push(...toLines(v['text']));
-    else if (typeof v['name'] === 'string') out.push(...toLines(v['name']));
+    if (v['itemListElement'] !== undefined) {
+      const group = level < MAX_STEP_DEPTH - 1;
+      const children = stepsFrom(v['itemListElement'], budget, depth + 1, group ? level + 1 : level);
+      if (children.length === 0) return out;
+      const name = group ? cleanText(asString(v['name']) ?? '') : '';
+      if (!group) out.push(...children);
+      else out.push(name ? { heading: name, steps: children } : { steps: children });
+    } else if (typeof v['text'] === 'string') out.push(...stepsFrom(v['text'], budget, depth + 1, level));
+    else if (typeof v['name'] === 'string') out.push(...stepsFrom(v['name'], budget, depth + 1, level));
   }
-  if (out.length > MAX_ITEMS) out.length = MAX_ITEMS;
+  return out;
 }
 
 function parseServings(v: Json): number {
@@ -148,7 +169,7 @@ function imageFrom(v: Json, base: string): string | undefined {
 interface Raw {
   title: string;
   ingredients: string[];
-  steps: string[];
+  steps: StepNode[];
   servings: number;
   tags: string[];
   image?: string;
@@ -160,8 +181,7 @@ function fromJsonLd(node: Obj, base: string): Raw {
     .slice(0, MAX_ITEMS)
     .map((x) => cleanText(asString(x) ?? ''))
     .filter(Boolean);
-  const steps: string[] = [];
-  stepsFrom(node['recipeInstructions'], steps);
+  const steps = stepsFrom(node['recipeInstructions']);
   return {
     title: cleanText(asString(node['name']) ?? ''),
     ingredients,
@@ -192,6 +212,44 @@ function propValue(el: HTMLElement): string {
   return el.text;
 }
 
+const isHowToSection = (el: HTMLElement): boolean => /schema\.org\/HowToSection\b/i.test(el.getAttribute('itemtype') ?? '');
+
+/** Steps inside one microdata recipeInstructions element; a HowToSection scope becomes a group (nested to any depth). */
+function microSteps(el: HTMLElement, budget: StepBudget, level: number): StepNode[] {
+  if (isHowToSection(el) && el.hasAttribute('itemscope')) {
+    const group = level < MAX_STEP_DEPTH - 1;
+    const owned = el
+      .querySelectorAll('[itemprop]')
+      .slice(0, MAX_NODES)
+      .filter((e) => nearestScope(e) === el);
+    const hasProp = (e: HTMLElement, n: string) => (e.getAttribute('itemprop') ?? '').split(/\s+/).includes(n);
+    const children: StepNode[] = [];
+    for (const item of owned.filter((e) => hasProp(e, 'itemListElement'))) {
+      children.push(...microSteps(item, budget, group ? level + 1 : level));
+      if (budget.left <= 0) break;
+    }
+    if (children.length === 0) return [];
+    if (!group) return children;
+    const nameEl = owned.find((e) => hasProp(e, 'name'));
+    const name = nameEl ? cleanText(propValue(nameEl)) : '';
+    return [name ? { heading: name, steps: children } : { steps: children }];
+  }
+  const out: StepNode[] = [];
+  const push = (lines: string[]) => {
+    for (const l of lines) {
+      if (budget.left <= 0) return;
+      out.push(l);
+      budget.left--;
+    }
+  };
+  const lis = el.querySelectorAll('li');
+  const texts = el.querySelectorAll('[itemprop="text"]');
+  if (lis.length) lis.forEach((li) => push(toLines(li.text)));
+  else if (texts.length) texts.forEach((t) => push(toLines(t.text)));
+  else push(toLines(el.innerHTML));
+  return out;
+}
+
 function microdataRecipe(root: HTMLElement, base: string): Raw | undefined {
   const scope = root
     .querySelectorAll('[itemscope]')
@@ -211,16 +269,12 @@ function microdataRecipe(root: HTMLElement, base: string): Raw | undefined {
     .map((e) => cleanText(propValue(e)))
     .filter(Boolean);
 
-  const steps: string[] = [];
+  const budget: StepBudget = { left: MAX_ITEMS };
+  const steps: StepNode[] = [];
   for (const el of named('recipeInstructions')) {
-    const lis = el.querySelectorAll('li');
-    const texts = el.querySelectorAll('[itemprop="text"]');
-    if (lis.length) lis.forEach((li) => steps.push(...toLines(li.text)));
-    else if (texts.length) texts.forEach((t) => steps.push(...toLines(t.text)));
-    else steps.push(...toLines(el.innerHTML));
-    if (steps.length >= MAX_ITEMS) break;
+    steps.push(...microSteps(el, budget, 0));
+    if (budget.left <= 0) break;
   }
-  steps.length = Math.min(steps.length, MAX_ITEMS);
 
   const nameEl = first('name');
   const imgEl = first('image');
@@ -256,7 +310,7 @@ export function extractStructured(html: string, pageUrl: string): StructuredDraf
       sourceUrl: pageUrl,
       servings: raw.servings,
       ingredients: raw.ingredients.map((l) => toMetric(parseIngredient(l))),
-      steps: raw.steps.map(convertTemperatures),
+      steps: mapSteps(raw.steps, convertTemperatures),
       tags: raw.tags,
     },
   };
