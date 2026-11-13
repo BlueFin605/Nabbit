@@ -44,12 +44,12 @@ export function factorFromTarget(i: Ingredient, target: AnchorTarget): number | 
   return (target.quantity * bt) / ((i.quantity as number) * bi);
 }
 
-/** Current anchor amount of `i` in `i.unit`, for presetting the amount box. */
+/** Current anchor amount of `i` in `i.unit`, for presetting the amount box. Callers must check `isScaleAnchor(i)` first (quantity is null otherwise). */
 export function anchorAmount(i: Ingredient): AnchorTarget {
   return { quantity: i.quantity as number, unit: i.unit };
 }
 
-const FRACTIONS:[number, string][] = [
+const FRACTIONS: [number, string][] = [
   [0, ''],
   [1 / 8, '⅛'],
   [1 / 4, '¼'],
