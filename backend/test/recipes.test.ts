@@ -250,3 +250,73 @@ describe('list and search', () => {
     expect(res.json.map((s: { title: string }) => s.title)).toEqual(['A']);
   });
 });
+
+describe('scaleBy and originalSize', () => {
+  const orig = {
+    servings: 8,
+    ingredients: [{ id: 'i1', quantity: 4, unit: 'cup', name: 'flour', scalable: true }],
+  };
+
+  it('accepts scaleBy that names an ingredient in the same body and returns it from GET', async () => {
+    const res = await call('POST', '/recipes', 'u1', draft({ scaleBy: 'i1' }));
+    expect(res.status).toBe(201);
+    expect(res.json.scaleBy).toBe('i1');
+    expect((await call('GET', `/recipes/${res.json.id}`, 'u1')).json.scaleBy).toBe('i1');
+  });
+
+  it('400 when scaleBy names no ingredient (POST, PUT) or is not a string', async () => {
+    expect((await call('POST', '/recipes', 'u1', draft({ scaleBy: 'nope' }))).status).toBe(400);
+    expect((await call('POST', '/recipes', 'u1', draft({ scaleBy: 5 }))).status).toBe(400);
+    const r = await create();
+    expect((await call('PUT', `/recipes/${r.id}`, 'u1', { ...r, scaleBy: 'nope' })).status).toBe(400);
+  });
+
+  it('originalSize round-trips with metric recomputed on its ingredients', async () => {
+    const res = await call('POST', '/recipes', 'u1', draft({ originalSize: orig }));
+    expect(res.status).toBe(201);
+    expect(res.json.originalSize.servings).toBe(8);
+    expect(res.json.originalSize.ingredients[0].id).toBe('i1');
+    expect(res.json.originalSize.ingredients[0].metric).toBeDefined();
+    const got = (await call('GET', `/recipes/${res.json.id}`, 'u1')).json;
+    expect(got.originalSize).toEqual(res.json.originalSize);
+  });
+
+  it('PUT replaces fully: omitting originalSize and scaleBy removes them', async () => {
+    const r = (await call('POST', '/recipes', 'u1', draft({ scaleBy: 'i1', originalSize: orig }))).json;
+    const { originalSize: _o, scaleBy: _s, ...rest } = r;
+    void _o;
+    void _s;
+    const res = await call('PUT', `/recipes/${r.id}`, 'u1', rest);
+    expect(res.status).toBe(200);
+    expect(res.json.originalSize).toBeUndefined();
+    expect(res.json.scaleBy).toBeUndefined();
+    const got = (await call('GET', `/recipes/${r.id}`, 'u1')).json;
+    expect(got.originalSize).toBeUndefined();
+    expect(got.scaleBy).toBeUndefined();
+  });
+
+  it.each([
+    ['bad servings', { servings: 0, ingredients: orig.ingredients }],
+    ['not an object', 'big'],
+    ['ingredients not array', { servings: 8, ingredients: 'x' }],
+    ['bad ingredient', { servings: 8, ingredients: [{ quantity: 'lots', unit: 'cup', name: 'flour' }] }],
+    ['too many ingredients', { servings: 8, ingredients: Array.from({ length: 201 }, () => ({ quantity: 1, unit: 'g', name: 'a' })) }],
+  ])('400 on invalid originalSize (%s)', async (_n, originalSize) => {
+    expect((await call('POST', '/recipes', 'u1', draft({ originalSize }))).status).toBe(400);
+  });
+
+  it('recipes without either field are unchanged', async () => {
+    const r = await create();
+    expect('scaleBy' in r).toBe(false);
+    expect('originalSize' in r).toBe(false);
+  });
+
+  it('counts originalSize toward the 350 KB cap', async () => {
+    const big = (i: number) => ({ id: `b${i}`, quantity: 1, unit: 'g', name: 'x'.repeat(4900), scalable: true });
+    const ingredients = Array.from({ length: 50 }, (_, i) => big(i));
+    expect((await call('POST', '/recipes', 'u1', draft({ ingredients }))).status).toBe(201);
+    const res = await call('POST', '/recipes', 'u1', draft({ ingredients, originalSize: { servings: 4, ingredients } }));
+    expect(res.status).toBe(400);
+    expect(res.json).toEqual({ error: 'too_large' });
+  });
+});
