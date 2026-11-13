@@ -1,0 +1,41 @@
+{
+    "id": "80029d34-eb60-4f23-9243-c2197232b5c5",
+    "name": "23 create recipe nested too deep",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Too Deep\",\"servings\":4,\"ingredients\":[{\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[{\"steps\":[{\"steps\":[{\"steps\":[{\"steps\":[{\"steps\":[\"x\"]}]}]}]}]}],\"tags\":[\"breakfast\"]}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+        }
+    }
+}

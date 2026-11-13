@@ -1,0 +1,49 @@
+{
+    "id": "48382c62-6059-445f-a622-f3c12d7d8a6c",
+    "name": "21 create nested recipe",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Nested Pancakes\",\"servings\":4,\"ingredients\":[{\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Prep the pan.\",{\"heading\":\"Batter\",\"steps\":[\"Mix dry.\",{\"heading\":\"Fold\",\"steps\":[\"Fold in the milk.\"]}]},\"Serve.\"],\"tags\":[\"breakfast\"]}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 201,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"steps\",\n    \"version\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"const\": \"Nested Pancakes\"\n    },\n    \"steps\": {\n      \"const\": [\n        \"Prep the pan.\",\n        {\n          \"heading\": \"Batter\",\n          \"steps\": [\n            \"Mix dry.\",\n            {\n              \"heading\": \"Fold\",\n              \"steps\": [\n                \"Fold in the milk.\"\n              ]\n            }\n          ]\n        },\n        \"Serve.\"\n      ]\n    },\n    \"version\": {\n      \"type\": \"integer\",\n      \"minimum\": 1\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "nestedRecipeId",
+            "from": "body",
+            "path": "$.id",
+            "id": "9e82575c-e490-408c-8ec1-fab096a99e4f"
+        }
+    ]
+}
