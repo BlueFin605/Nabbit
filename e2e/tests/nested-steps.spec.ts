@@ -51,14 +51,17 @@ test.describe('nested step groups', () => {
     const sauceOl = steps.locator('> li.group').first().locator('> ol');
     await expect(sauceOl.locator('> li:not(.group)')).toHaveText(['Melt the butter.', 'Whisk in the flour.']);
     await expect(sauceOl.locator('> li.group ol > li')).toHaveText(['Add the paprika.']);
-    // Numbering restarts: each list-item's rendered counter, as the browser computes it for the marker.
-    const markers = await page.locator('ol.steps li:not(.group)').evaluateAll((lis) =>
+    // Numbering restarts per level. A group <li> must not be a list-item (it would consume a number in its
+    // parent ol), so use the browser's computed display: ordinal = position among list-item siblings only.
+    const rendered = await page.locator('ol.steps li').evaluateAll((lis) =>
       lis.map((li) => {
-        const ol = li.parentElement!;
-        return Array.from(ol.children).filter((c) => !c.classList.contains('group')).indexOf(li) + 1;
+        const display = getComputedStyle(li).display;
+        const siblings = Array.from(li.parentElement!.children).filter((c) => getComputedStyle(c).display === 'list-item');
+        return { group: li.classList.contains('group'), display, ordinal: display === 'list-item' ? siblings.indexOf(li) + 1 : 0 };
       }),
     );
-    expect(markers).toEqual([1, 1, 2, 1]);
+    expect(rendered.filter((r) => r.group).map((r) => r.display)).not.toContain('list-item');
+    expect(rendered.filter((r) => !r.group).map((r) => r.ordinal)).toEqual([1, 1, 2, 1]);
 
     // Re-open the editor: structure preserved.
     await page.getByRole('link', { name: 'Edit' }).click();
@@ -146,5 +149,22 @@ test.describe('nested step groups', () => {
     await page.locator('button.save').click();
     await expect(page).toHaveURL(new RegExp(`/recipes/${r.id}$`));
     expect((await api.recipe(r.id)).steps).toEqual(['Keep me.']);
+  });
+
+  test('a three-level nested recipe fits a 360px viewport in the editor without horizontal overflow', async ({ page, api }) => {
+    const r = await api.seedRecipe('Deep Recipe', [
+      'Top step.',
+      { heading: 'Level one', steps: ['One step.', { heading: 'Level two', steps: ['Two step.', { heading: 'Level three', steps: ['Three step.'] }] }] },
+    ]);
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto(`/recipes/${r.id}/edit`);
+    await expect(page.locator('textarea.step')).toHaveCount(4);
+    const dims = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    expect(dims.scroll).toBeLessThanOrEqual(dims.client);
+    const widths = await page.locator('textarea.step').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().width));
+    for (const w of widths) expect(w).toBeGreaterThanOrEqual(120);
+    const deepest = page.locator('textarea.step').last();
+    await deepest.fill('Typed at the deepest level.');
+    await expect(deepest).toHaveValue('Typed at the deepest level.');
   });
 });
