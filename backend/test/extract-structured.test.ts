@@ -167,6 +167,19 @@ describe('extractStructured nested steps', () => {
     expect(d.recipe.steps).toEqual([{ heading: 'Bake', steps: ['Bake at 180°C.', { heading: 'Rest', steps: ['Rest, then 200°C.'] }] }]);
   });
 
+  it('keeps a structure of exactly MAX_STEP_DEPTH levels intact, splicing only deeper ones', () => {
+    let node: unknown = step('Deep.');
+    for (let i = 0; i < MAX_STEP_DEPTH - 1; i++) node = section(`L${i}`, [node]);
+    const d = extractStructured(ld([node]), URL_)!;
+    expect(stepDepth(d.recipe.steps)).toBe(MAX_STEP_DEPTH);
+    expect(JSON.stringify(d.recipe.steps)).toContain('L0');
+    expect(JSON.stringify(d.recipe.steps)).toContain(`L${MAX_STEP_DEPTH - 2}`);
+    let deeper: unknown = step('Deep.');
+    for (let i = 0; i < MAX_STEP_DEPTH; i++) deeper = section(`L${i}`, [deeper]);
+    const d6 = extractStructured(ld([deeper]), URL_)!;
+    expect(stepDepth(d6.recipe.steps)).toBeLessThanOrEqual(MAX_STEP_DEPTH);
+  });
+
   it('flattens groups nested beyond the depth cap so the draft still validates', () => {
     let node: unknown = step('Deep.');
     for (let i = 0; i < 5; i++) node = section(`L${i}`, [node]);
@@ -185,5 +198,25 @@ describe('extractStructured nested steps', () => {
       </div></div>`;
     const d = extractStructured(html, URL_)!;
     expect(d.recipe.steps).toEqual([{ heading: 'Filling', steps: ['Brown the mince.', 'Add stock.'] }]);
+  });
+
+  const microRecipe = (body: string) =>
+    `<div itemscope itemtype="https://schema.org/Recipe"><h1 itemprop="name">Lasagne</h1><span itemprop="recipeIngredient">1 onion</span>${body}</div>`;
+  const microStep = (t: string) => `<div itemprop="itemListElement" itemscope itemtype="https://schema.org/HowToStep"><span itemprop="text">${t}</span></div>`;
+
+  it('microdata nested HowToSection becomes a nested group', () => {
+    const html = microRecipe(`<div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection">
+      <h3 itemprop="name">Outer</h3>
+      <div itemprop="itemListElement" itemscope itemtype="https://schema.org/HowToSection">
+        <h4 itemprop="name">Inner</h4>${microStep('Brown the mince.')}
+      </div></div>`);
+    const d = extractStructured(html, URL_)!;
+    expect(d.recipe.steps).toEqual([{ heading: 'Outer', steps: [{ heading: 'Inner', steps: ['Brown the mince.'] }] }]);
+  });
+
+  it('microdata HowToSection without a name becomes a headingless group', () => {
+    const html = microRecipe(`<div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection">${microStep('Brown the mince.')}</div>`);
+    const d = extractStructured(html, URL_)!;
+    expect(d.recipe.steps).toEqual([{ steps: ['Brown the mince.'] }]);
   });
 });

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { detectAppData, extractAppData, findSchemaRecipe, gatsbyDataUrl, gatsbyMethodSteps, reduceAppData, MAX_APP_DATA_CHARS } from '../src/import/extract-app-data.js';
+import { detectAppData, extractAppData, findSchemaRecipe, gatsbyDataUrl, reduceAppData, MAX_APP_DATA_CHARS } from '../src/import/extract-app-data.js';
 
 const fx = (n: string) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');
 const SHELL = fx('gatsby-shell.html');
@@ -153,22 +153,5 @@ describe('extractAppData structured sourceUrl', () => {
     const recipe = { '@type': 'Recipe', name: 'Pancakes', recipeIngredient: ['1 cup flour', '2 eggs'], recipeInstructions: ['Mix.', 'Cook.'] };
     const r = await extractAppData(next({ props: { recipe } }), 'https://x.example/r?gclid=1', vi.fn(), 'https://x.example/r');
     expect(r?.structured?.recipe.sourceUrl).toBe('https://x.example/r');
-  });
-});
-
-describe('gatsbyMethodSteps', () => {
-  it('turns each methodGroup into a headed group', () => {
-    const steps = gatsbyMethodSteps(JSON.parse(PAGE_DATA))!;
-    expect(steps).toHaveLength(2);
-    expect(steps[0]).toMatchObject({ heading: 'To make mince filling' });
-    expect(steps[1]).toMatchObject({ heading: 'To make cheese sauce' });
-    expect((steps[0] as { steps: string[] }).steps[0]).toBe('Preheat the oven to 180°C.');
-  });
-  it('a group without a title is headingless; undefined when there is no method', () => {
-    expect(gatsbyMethodSteps({ method: [{ steps: [{ step: 'Boil.' }] }] })).toEqual([{ steps: ['Boil.'] }]);
-    expect(gatsbyMethodSteps({ title: 'x' })).toBeUndefined();
-  });
-  it('converts Fahrenheit inside groups', () => {
-    expect(gatsbyMethodSteps({ method: [{ methodGroup: 'Bake', steps: [{ step: 'Heat to 350°F.' }] }] })).toEqual([{ heading: 'Bake', steps: ['Heat to 180°C.'] }]);
   });
 });

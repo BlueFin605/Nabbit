@@ -2,8 +2,6 @@
 // data at /page-data/<path>/page-data.json (same origin); a Next.js page embeds it in <script id="__NEXT_DATA__">.
 // The JSON is untrusted: it is only walked for strings, never executed, and the result is bounded text for the LLM
 // (or, when the JSON holds a schema.org Recipe, a structured draft). The fetch is injected so the caller supplies the SSRF-guarded one.
-import { convertTemperatures } from '@nabbit/recipe-core';
-import type { StepNode } from '@nabbit/recipe-core';
 import { extractStructured, type StructuredDraft } from './extract-structured.js';
 
 /** Largest page-data.json accepted (enforced again by the fetcher). */
@@ -186,38 +184,4 @@ export async function extractAppData(html: string, pageUrl: string, fetchJson: F
   }
   const text = reduceAppData(json);
   return text ? { text } : undefined;
-}
-
-/**
- * Gatsby/Sanity `method` arrays (`[{ methodGroup, steps: [{ step }] }]`) as headed step groups, found anywhere in the
- * JSON; undefined when none. Pure; not wired into `extractAppData` because such pages carry no schema.org Recipe and
- * go through the flat text (LLM) path.
- */
-export function gatsbyMethodSteps(json: unknown): StepNode[] | undefined {
-  const stack: [unknown, number][] = [[json, 0]];
-  while (stack.length) {
-    const [v, d] = stack.pop()!;
-    if (v === null || typeof v !== 'object' || d > MAX_DEPTH) continue;
-    if (!Array.isArray(v)) {
-      const method = (v as Record<string, unknown>)['method'];
-      if (Array.isArray(method)) {
-        const groups: StepNode[] = [];
-        for (const g of method) {
-          if (g === null || typeof g !== 'object') continue;
-          const rec = g as Record<string, unknown>;
-          const steps = (Array.isArray(rec['steps']) ? rec['steps'] : [])
-            .map((x: unknown) => (x && typeof x === 'object' ? (x as Record<string, unknown>)['step'] : undefined))
-            .filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-            .map((x) => convertTemperatures(x.trim()));
-          if (steps.length === 0) continue;
-          const heading = typeof rec['methodGroup'] === 'string' ? rec['methodGroup'].trim() : '';
-          groups.push(heading ? { heading, steps } : { steps });
-        }
-        if (groups.length > 0) return groups;
-      }
-    }
-    const kids = Array.isArray(v) ? v : Object.values(v as Record<string, unknown>);
-    for (let i = kids.length - 1; i >= 0; i--) stack.push([kids[i], d + 1]);
-  }
-  return undefined;
 }
