@@ -8,6 +8,7 @@ const ing = (quantity: number | null, unit: Unit, name: string, extra: Partial<I
 describe('isScaleAnchor', () => {
   it('accepts scalable ingredients with a quantity', () => expect(isScaleAnchor(ing(1, 'l', 'milk'))).toBe(true));
   it('rejects null quantity', () => expect(isScaleAnchor(ing(null, '', 'salt'))).toBe(false));
+  it('rejects a zero quantity', () => expect(isScaleAnchor(ing(0, 'g', 'flour'))).toBe(false));
   it('rejects non-scalable', () => expect(isScaleAnchor(ing(1, 'l', 'milk', { scalable: false }))).toBe(false));
 });
 

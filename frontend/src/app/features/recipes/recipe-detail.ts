@@ -158,7 +158,7 @@ function readMode(): Mode {
                 [attr.aria-describedby]="servingsInBounds() ? null : 'size-bounds'"
                 (click)="confirmResize()"
               >
-                Save as new size ({{ servingsLabel() }} servings)
+                Save as new size ({{ servingsLabel() }})
               </button>
               @if (!servingsInBounds()) {
                 <p id="size-bounds" class="size-bounds">Resulting servings must be between {{ min }} and {{ max }}.</p>
@@ -279,15 +279,14 @@ export class RecipeDetail implements OnInit {
 
   /** Whether the derived servings are a size the recipe can be saved at (the stepper's range). */
   protected readonly servingsInBounds = computed(() => this.servings() >= MIN_SERVINGS && this.servings() <= MAX_SERVINGS);
-  /** The servings figure for display: never "0"; out-of-range values read "< min" / "> max". */
+  /** The servings phrase for display: never "0"; out-of-range values read "under min serving" / "over max servings". */
   protected readonly servingsLabel = computed(() => {
     const n = this.servings();
-    return n < MIN_SERVINGS ? `< ${MIN_SERVINGS}` : n > MAX_SERVINGS ? `> ${MAX_SERVINGS}` : String(n);
+    if (n < MIN_SERVINGS) return `under ${MIN_SERVINGS} serving`;
+    if (n > MAX_SERVINGS) return `over ${MAX_SERVINGS} servings`;
+    return `${n} ${n === 1 ? 'serving' : 'servings'}`;
   });
-  protected readonly servingsText = computed(() => {
-    const n = this.servings();
-    return n < MIN_SERVINGS || n > MAX_SERVINGS ? `${this.servingsLabel()} servings` : `≈ ${n} servings`;
-  });
+  protected readonly servingsText = computed(() => (this.servingsInBounds() ? `≈ ${this.servingsLabel()}` : this.servingsLabel()));
 
   protected readonly anchors = computed(() => (this.recipe()?.ingredients ?? []).filter(isScaleAnchor));
   /** The stored ingredient the amount box scales by, or null in Servings mode. */

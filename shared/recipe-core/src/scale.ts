@@ -18,9 +18,9 @@ export function scaleRecipeIngredients(ings: Ingredient[], from: number, to: num
 
 export type AnchorTarget = { quantity: number; unit: Unit };
 
-/** True when the ingredient can anchor scaling: quantity !== null and scalable. */
+/** True when the ingredient can anchor scaling: scalable with a quantity above zero (a 0 g anchor has no factor). */
 export function isScaleAnchor(i: Ingredient): boolean {
-  return i.scalable && i.quantity !== null;
+  return i.scalable && i.quantity !== null && i.quantity > 0;
 }
 
 /** Family and base amount per unit. Count units ('piece', '') are each their own family. */
@@ -37,7 +37,7 @@ function baseOf(unit: Unit): [string, number] {
  */
 export function factorFromTarget(i: Ingredient, target: AnchorTarget): number | null {
   if (!(target.quantity > 0)) throw new RangeError('target quantity must be greater than zero');
-  if (!isScaleAnchor(i) || !((i.quantity as number) > 0)) return null;
+  if (!isScaleAnchor(i)) return null;
   const [fi, bi] = baseOf(i.unit);
   const [ft, bt] = baseOf(target.unit);
   if (fi !== ft) return null;

@@ -219,4 +219,44 @@ describe('extractStructured nested steps', () => {
     const d = extractStructured(html, URL_)!;
     expect(d.recipe.steps).toEqual([{ steps: ['Brown the mince.'] }]);
   });
+
+  it('microdata HowToSection with plain li children (no itemListElement) keeps its steps flat', () => {
+    const html = microRecipe(
+      `<ol itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection"><li>Mix it</li><li>Bake it</li></ol>`,
+    );
+    expect(extractStructured(html, URL_)!.recipe.steps).toEqual(['Mix it', 'Bake it']);
+  });
+
+  it('microdata named HowToSection with plain li children becomes a headed group', () => {
+    const html = microRecipe(
+      `<div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection"><h3 itemprop="name">Dough</h3><ol><li>Mix it</li><li>Bake it</li></ol></div>`,
+    );
+    expect(extractStructured(html, URL_)!.recipe.steps).toEqual([{ heading: 'Dough', steps: ['Mix it', 'Bake it'] }]);
+  });
+
+  it('old-style flat microdata steps are unchanged', () => {
+    const html = microRecipe(`<ol itemprop="recipeInstructions"><li>Mix it</li><li>Bake it</li></ol>`);
+    expect(extractStructured(html, URL_)!.recipe.steps).toEqual(['Mix it', 'Bake it']);
+    const html2 = microRecipe(`<div itemprop="recipeInstructions"><span itemprop="text">One</span><span itemprop="text">Two</span></div>`);
+    expect(extractStructured(html2, URL_)!.recipe.steps).toEqual(['One', 'Two']);
+  });
+
+  it('3000 nested microdata sections finish quickly and stay within the depth cap', () => {
+    const open = '<div itemprop="itemListElement" itemscope itemtype="https://schema.org/HowToSection"><span itemprop="name">N</span>';
+    const n = 3000;
+    const html = microRecipe(
+      `<div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection">${open.repeat(n)}${microStep('Deep.')}${'</div>'.repeat(n + 1)}`,
+    );
+    const t0 = Date.now();
+    const d = extractStructured(html, URL_);
+    expect(Date.now() - t0).toBeLessThan(1500);
+    expect(stepDepth(d!.recipe.steps)).toBeLessThanOrEqual(MAX_STEP_DEPTH);
+    expect(flattenSteps(d!.recipe.steps)).toEqual(['Deep.']);
+  });
+
+  it('caps the leaf steps taken from microdata sections', () => {
+    const steps = Array.from({ length: 600 }, (_, i) => microStep(`Step ${i}.`)).join('');
+    const html = microRecipe(`<div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection">${steps}</div>`);
+    expect(flattenSteps(extractStructured(html, URL_)!.recipe.steps).length).toBeLessThanOrEqual(200);
+  });
 });

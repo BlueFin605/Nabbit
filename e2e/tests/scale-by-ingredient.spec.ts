@@ -99,13 +99,13 @@ test.describe('scale by ingredient: the mozzarella case', () => {
     await expect(line(page, 'milk')).toContainText('4 l');
   });
 
-  test('a tiny target is out of range: "< 1" and Save as new size is disabled with the explanation', async ({ page, api }) => {
+  test('a tiny target is out of range: "under 1 serving" and Save as new size is disabled with the explanation', async ({ page, api }) => {
     const seeded = await api.seedCustom({ ...MOZZARELLA, scaleBy: 'i-milk' });
     await page.goto(`/recipes/${seeded.id}`);
     await expect(amount(page)).toHaveValue('4');
     await amount(page).fill('0.1');
-    await expect(page.locator('.derived-servings')).toHaveText('< 1 servings');
-    await expect(page.getByRole('button', { name: /Save as new size \(< 1 servings\)/ })).toBeDisabled();
+    await expect(page.locator('.derived-servings')).toHaveText('under 1 serving');
+    await expect(page.getByRole('button', { name: /Save as new size \(under 1 serving\)/ })).toBeDisabled();
     await expect(page.locator('#size-bounds')).toHaveText('Resulting servings must be between 1 and 99.');
     expect((await api.recipe(seeded.id)).servings).toBe(4);
   });

@@ -214,26 +214,8 @@ function propValue(el: HTMLElement): string {
 
 const isHowToSection = (el: HTMLElement): boolean => /schema\.org\/HowToSection\b/i.test(el.getAttribute('itemtype') ?? '');
 
-/** Steps inside one microdata recipeInstructions element; a HowToSection scope becomes a group (nested to any depth). */
-function microSteps(el: HTMLElement, budget: StepBudget, level: number): StepNode[] {
-  if (isHowToSection(el) && el.hasAttribute('itemscope')) {
-    const group = level < MAX_STEP_DEPTH - 1;
-    const owned = el
-      .querySelectorAll('[itemprop]')
-      .slice(0, MAX_NODES)
-      .filter((e) => nearestScope(e) === el);
-    const hasProp = (e: HTMLElement, n: string) => (e.getAttribute('itemprop') ?? '').split(/\s+/).includes(n);
-    const children: StepNode[] = [];
-    for (const item of owned.filter((e) => hasProp(e, 'itemListElement'))) {
-      children.push(...microSteps(item, budget, group ? level + 1 : level));
-      if (budget.left <= 0) break;
-    }
-    if (children.length === 0) return [];
-    if (!group) return children;
-    const nameEl = owned.find((e) => hasProp(e, 'name'));
-    const name = nameEl ? cleanText(propValue(nameEl)) : '';
-    return [name ? { heading: name, steps: children } : { steps: children }];
-  }
+/** Plain step lines under one element: its `li`s, else its `itemprop="text"`s, else its own text. */
+function flatMicroSteps(el: HTMLElement, budget: StepBudget): StepNode[] {
   const out: StepNode[] = [];
   const push = (lines: string[]) => {
     for (const l of lines) {
@@ -248,6 +230,38 @@ function microSteps(el: HTMLElement, budget: StepBudget, level: number): StepNod
   else if (texts.length) texts.forEach((t) => push(toLines(t.text)));
   else push(toLines(el.innerHTML));
   return out;
+}
+
+/**
+ * Steps inside one microdata recipeInstructions element. A HowToSection scope owning `itemListElement` children becomes
+ * a group, nested only as deep as the stored-recipe cap: below that the section's items are flattened in place, so the
+ * recursion (and its per-level subtree queries) is bounded by MAX_STEP_DEPTH however deeply the page nests.
+ * A section with no `itemListElement` children reads like any other element (plain `li`s etc.), grouped only if named.
+ */
+function microSteps(el: HTMLElement, budget: StepBudget, level: number): StepNode[] {
+  if (!(isHowToSection(el) && el.hasAttribute('itemscope'))) return flatMicroSteps(el, budget);
+  const group = level < MAX_STEP_DEPTH - 1;
+  const owned = el
+    .querySelectorAll('[itemprop]')
+    .slice(0, MAX_NODES)
+    .filter((e) => nearestScope(e) === el);
+  const hasProp = (e: HTMLElement, n: string) => (e.getAttribute('itemprop') ?? '').split(/\s+/).includes(n);
+  const items = owned.filter((e) => hasProp(e, 'itemListElement'));
+  const nameEl = owned.find((e) => hasProp(e, 'name'));
+  const name = nameEl ? cleanText(propValue(nameEl)) : '';
+  const children: StepNode[] = [];
+  if (items.length === 0) {
+    children.push(...flatMicroSteps(el, budget));
+    if (!group || !name) return children;
+  } else {
+    for (const item of items) {
+      children.push(...(group ? microSteps(item, budget, level + 1) : flatMicroSteps(item, budget)));
+      if (budget.left <= 0) break;
+    }
+    if (!group) return children;
+  }
+  if (children.length === 0) return [];
+  return [name ? { heading: name, steps: children } : { steps: children }];
 }
 
 function microdataRecipe(root: HTMLElement, base: string): Raw | undefined {

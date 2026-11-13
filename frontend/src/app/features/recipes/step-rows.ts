@@ -33,9 +33,9 @@ export function shape(rows: StepRow[]): unknown[] {
   return rows.map((r) => (r.kind === 'step' ? r.text : { heading: r.heading, steps: shape(r.children) }));
 }
 
-/** Depth in the units of recipe-core's `stepDepth`: 1 for a flat list, +1 per group level. */
+/** Depth in the units of recipe-core's `stepDepth`: 1 for a flat list, +1 per group level. An empty group counts as holding a step. */
 export function rowDepth(rows: StepRow[]): number {
-  return rows.reduce((max, r) => Math.max(max, r.kind === 'group' ? 1 + rowDepth(r.children) : 1), 0);
+  return rows.reduce((max, r) => Math.max(max, r.kind === 'group' ? 1 + Math.max(1, rowDepth(r.children)) : 1), 0);
 }
 
 export function hasChildren(row: StepRow): boolean {
@@ -60,7 +60,15 @@ function mapLevel(rows: StepRow[], parentId: string | null, fn: (level: StepRow[
 const blankStep = (): StepRow => ({ id: newId(), kind: 'step', text: '' });
 const blankGroup = (): StepRow => ({ id: newId(), kind: 'group', heading: '', children: [] });
 
+/** False when a step added under `parentId` would exceed MAX_STEP_DEPTH. */
+export function canAddStep(rows: StepRow[], parentId: string | null): boolean {
+  const probe = mapLevel(rows, parentId, (level) => [...level, blankStep()]);
+  return rowDepth(probe) <= MAX_STEP_DEPTH;
+}
+
+/** Returns `rows` itself when the step would exceed MAX_STEP_DEPTH. */
 export function addStep(rows: StepRow[], parentId: string | null): StepRow[] {
+  if (!canAddStep(rows, parentId)) return rows;
   return mapLevel(rows, parentId, (level) => [...level, blankStep()]);
 }
 

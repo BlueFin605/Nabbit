@@ -183,9 +183,17 @@ describe('RecipeEditor', () => {
       expect(radios()).toHaveLength(1);
       expect(radios()[0].closest('.ingredient')?.querySelector('input.name')).toBe(qa<HTMLInputElement>('input.name')[0]);
       expect(radios()[0].getAttribute('aria-label') ?? radios()[0].closest('label')?.textContent).toContain('flour');
-      expect(q('[role="radiogroup"]')?.getAttribute('aria-label')).toBeTruthy();
+      expect(q('[role="radiogroup"]')).toBeNull();
+      expect(q<HTMLInputElement>('input.scale-by-none')?.getAttribute('aria-label')).toBe('No default scale-by ingredient');
+      expect(new Set([...qa<HTMLInputElement>('input.scale-by'), q<HTMLInputElement>('input.scale-by-none')!].map((r) => r.name))).toEqual(new Set(['scaleBy']));
       expect(q<HTMLInputElement>('input.scale-by-none')).not.toBeNull();
       expect(q<HTMLInputElement>('input.scale-by-none')?.checked).toBe(true);
+    });
+
+    it('does not offer a zero-quantity ingredient as a default scale-by', async () => {
+      await setup({ ...base(), ingredients: [{ ...flour(), quantity: 0 }, salt()] });
+      expect(radios()).toHaveLength(0);
+      expect(q('input.scale-by-none')).toBeNull();
     });
 
     it('saves the chosen anchor as scaleBy and omits it for None', async () => {
@@ -468,6 +476,20 @@ describe('RecipeEditor', () => {
         expect(adds[0].getAttribute('title')).toContain(String(MAX_STEP_DEPTH));
         expect(adds[0].getAttribute('aria-description')).toContain(String(MAX_STEP_DEPTH));
         expect(adds[1].getAttribute('title')).toBeNull();
+      });
+
+      it('disables Add step, with an explanation, when a step would exceed the depth limit', async () => {
+        let deep: StepNode = { steps: [] };
+        for (let i = 1; i < MAX_STEP_DEPTH; i++) deep = { steps: [deep] };
+        await setup({ ...base(), steps: [deep] });
+        const adds = qa<HTMLButtonElement>('.add-step');
+        expect(adds.every((b) => b.disabled)).toBe(true);
+        const blocked = adds[adds.length - 1];
+        expect(blocked.getAttribute('title')).toContain(String(MAX_STEP_DEPTH));
+        expect(blocked.getAttribute('aria-description')).toContain(String(MAX_STEP_DEPTH));
+        const before = fixture.componentInstance.steps();
+        fixture.componentInstance['addStepRow'](null);
+        expect(fixture.componentInstance.steps()).toBe(before);
       });
 
       it('lets groups be added level by level up to the limit, then stops', async () => {

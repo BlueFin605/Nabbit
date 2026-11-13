@@ -589,10 +589,12 @@ describe('RecipeDetail', () => {
       it('a tiny target shows "< 1", disables Save with an aria-describedby explanation, and still scales', async () => {
         await setup(() => of(cheese('milk')));
         await type('0.1');
-        expect(derived()).toContain('< 1');
+        expect(derived()).toContain('under 1 serving');
+        expect(derived()).not.toContain('servings');
         expect(derived()).not.toMatch(/≈ 0/);
         expect(save()?.disabled).toBe(true);
         expect(save()?.textContent).not.toContain('(0 servings)');
+        expect(save()?.textContent).toContain('(under 1 serving)');
         const note = el().querySelector('.size-bounds');
         expect(note?.textContent).toContain('between 1 and 99');
         expect(save()?.getAttribute('aria-describedby')).toBe(note?.id);
@@ -603,7 +605,8 @@ describe('RecipeDetail', () => {
       it('a huge target shows "> 99" and disables Save', async () => {
         await setup(() => of(cheese('milk')));
         await type('1000');
-        expect(derived()).toContain('> 99');
+        expect(derived()).toContain('over 99 servings');
+        expect(save()?.textContent).toContain('(over 99 servings)');
         expect(save()?.disabled).toBe(true);
         expect(el().querySelector('.size-bounds')).not.toBeNull();
       });

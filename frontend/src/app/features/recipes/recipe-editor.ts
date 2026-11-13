@@ -15,7 +15,7 @@ import { ApiClient } from '../../core/api/api-client';
 import type { ImageContentType, RecipeInput } from '../../core/api/api.types';
 import { imageUrl } from '../../core/api/image-url';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
-import { addGroup, addStep, canAddGroup, canIndent, canOutdent, fromRows, hasChildren, indent, lastChildId, moveWithin, neighbourAfterRemove, outdent, removeRow, setHeading, setText, shape, stepNumber, toRows, type StepRow } from './step-rows';
+import { addGroup, addStep, canAddGroup, canAddStep, canIndent, canOutdent, fromRows, hasChildren, indent, lastChildId, moveWithin, neighbourAfterRemove, outdent, removeRow, setHeading, setText, shape, stepNumber, toRows, type StepRow } from './step-rows';
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 export const IMAGE_TYPES: readonly ImageContentType[] = ['image/jpeg', 'image/png', 'image/webp'];
@@ -128,9 +128,8 @@ export function isVersionConflict(err: unknown): boolean {
     </mat-form-field>
 
     <h2>Ingredients</h2>
-    <div role="radiogroup" aria-label="Default scale-by ingredient" class="scale-by-group">
     @if (hasAnchor()) {
-      <label class="scale-by-label scale-by-none-label"><input type="radio" name="scaleBy" class="scale-by-none" [checked]="effectiveScaleBy() === null" (change)="scaleBy.set(null)" /> No default scale-by ingredient</label>
+      <label class="scale-by-label scale-by-none-label"><input type="radio" name="scaleBy" class="scale-by-none" aria-label="No default scale-by ingredient" [checked]="effectiveScaleBy() === null" (change)="scaleBy.set(null)" /> No default scale-by ingredient</label>
     }
     <div class="list ingredients" cdkDropList (cdkDropListDropped)="dropIngredient($event)">
       @for (ing of ingredients(); track ing.id; let i = $index) {
@@ -175,7 +174,6 @@ export function isVersionConflict(err: unknown): boolean {
           }
         </div>
       }
-    </div>
     </div>
     <button mat-button type="button" class="add-ingredient" (click)="addIngredient()">Add ingredient</button>
 
@@ -222,7 +220,7 @@ export function isVersionConflict(err: unknown): boolean {
         }
       </div>
       <div class="level-actions" [attr.data-add]="parent ?? 'root'">
-        <button mat-button type="button" class="add-step" (click)="addStepRow(parent)">Add step</button>
+        <button mat-button type="button" class="add-step" [disabled]="!canAddStepAt(parent)" [attr.title]="canAddStepAt(parent) ? null : depthLimitMessage" [attr.aria-description]="canAddStepAt(parent) ? null : depthLimitMessage" (click)="addStepRow(parent)">Add step</button>
         <button mat-button type="button" class="add-group" [disabled]="!canAddGroupAt(parent)" [attr.title]="canAddGroupAt(parent) ? null : depthLimitMessage" [attr.aria-description]="canAddGroupAt(parent) ? null : depthLimitMessage" (click)="addGroupRow(parent)">Add group</button>
       </div>
     </ng-template>
@@ -444,7 +442,11 @@ export class RecipeEditor {
     return heading ? `group "${heading}"` : `group ${level.slice(0, index + 1).filter((x) => x.kind === 'group').length}`;
   }
 
-  protected readonly depthLimitMessage = `Groups can be nested at most ${MAX_STEP_DEPTH} levels deep`;
+  protected readonly depthLimitMessage = `Steps and groups can be nested at most ${MAX_STEP_DEPTH} levels deep`;
+
+  protected canAddStepAt(parentId: string | null): boolean {
+    return canAddStep(this.steps(), parentId);
+  }
 
   protected canAddGroupAt(parentId: string | null): boolean {
     return canAddGroup(this.steps(), parentId);
@@ -474,6 +476,7 @@ export class RecipeEditor {
 
   protected addStepRow(parentId: string | null): void {
     const next = addStep(this.steps(), parentId);
+    if (next === this.steps()) return;
     this.steps.set(next);
     const id = lastChildId(next, parentId);
     if (id) this.focusAfterRender(this.inputSel(id));

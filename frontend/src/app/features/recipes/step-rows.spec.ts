@@ -3,6 +3,7 @@ import {
   addGroup,
   addStep,
   canAddGroup,
+  canAddStep,
   canIndent,
   canOutdent,
   fromRows,
@@ -168,6 +169,46 @@ describe('step-rows', () => {
         rows = addStep(rows, parent);
       }
       expect(rowDepth(rows)).toBe(MAX_STEP_DEPTH);
+    });
+  });
+
+  describe('empty groups count as able to hold a step', () => {
+    /** MAX_STEP_DEPTH - 2 wrapping groups around [empty group, empty group]. */
+    const wrapped = (): StepRow[] => {
+      let node: StepNode = { steps: [{ steps: [] }, { steps: [] }] };
+      for (let i = 0; i < MAX_STEP_DEPTH - 3; i++) node = { steps: [node] };
+      return toRows([node]);
+    };
+    const innermost = (rows: StepRow[]): GroupRow => {
+      let g = group(rows, 0);
+      while (g.children[0]?.kind === 'group' && g.children.length === 1) g = g.children[0];
+      return g;
+    };
+
+    it('rowDepth of an empty group is 2', () => {
+      expect(rowDepth(toRows([{ steps: [] }]))).toBe(2);
+    });
+
+    it('refuses to indent an empty group into the deepest allowed empty group', () => {
+      const rows = wrapped();
+      const holder = innermost(rows);
+      expect(rowDepth(rows)).toBe(MAX_STEP_DEPTH);
+      expect(canIndent(rows, holder.children[1].id)).toBe(false);
+      expect(indent(rows, holder.children[1].id)).toBe(rows);
+    });
+
+    it('addStep refuses where the new step would exceed MAX_STEP_DEPTH', () => {
+      let node: StepNode = { steps: [] };
+      for (let i = 1; i < MAX_STEP_DEPTH; i++) node = { steps: [node] };
+      const rows = toRows([node]);
+      let g = group(rows, 0);
+      while (g.children[0]?.kind === 'group') g = g.children[0];
+      expect(canAddStep(rows, g.id)).toBe(false);
+      expect(addStep(rows, g.id)).toBe(rows);
+      const fits = toRows([deepNode(MAX_STEP_DEPTH)]);
+      let h = group(fits, 0);
+      while (h.children[0]?.kind === 'group') h = h.children[0];
+      expect(canAddStep(fits, h.id)).toBe(true);
     });
   });
 
