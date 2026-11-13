@@ -174,6 +174,114 @@ describe('RecipeEditor', () => {
     expect(saved[0].imageKey).toBeUndefined();
   });
 
+  describe('default scale-by', () => {
+    const radios = () => qa<HTMLInputElement>('input.scale-by');
+    const withOriginal = (): RecipeInput => ({ ...base(), scaleBy: 'i1', originalSize: { servings: 2, ingredients: [{ ...flour(), quantity: 0.5 }] } });
+
+    it('shows a labelled radio only on anchor rows, plus a None option', async () => {
+      await setup();
+      expect(radios()).toHaveLength(1);
+      expect(radios()[0].closest('.ingredient')?.querySelector('input.name')).toBe(qa<HTMLInputElement>('input.name')[0]);
+      expect(radios()[0].getAttribute('aria-label') ?? radios()[0].closest('label')?.textContent).toContain('flour');
+      expect(q('[role="radiogroup"]')?.getAttribute('aria-label')).toBeTruthy();
+      expect(q<HTMLInputElement>('input.scale-by-none')).not.toBeNull();
+      expect(q<HTMLInputElement>('input.scale-by-none')?.checked).toBe(true);
+    });
+
+    it('saves the chosen anchor as scaleBy and omits it for None', async () => {
+      await setup();
+      radios()[0].click();
+      await settle();
+      q('.save')?.click();
+      expect(saved[0].scaleBy).toBe('i1');
+      q<HTMLInputElement>('input.scale-by-none')?.click();
+      await settle();
+      q('.save')?.click();
+      expect('scaleBy' in saved[1]).toBe(false);
+    });
+
+    it('selecting only the radio makes the form dirty', async () => {
+      await setup();
+      expect(fixture.componentInstance.dirty()).toBe(false);
+      radios()[0].click();
+      await settle();
+      expect(fixture.componentInstance.dirty()).toBe(true);
+    });
+
+    it('loads an existing scaleBy as checked', async () => {
+      await setup(withOriginal());
+      expect(radios()[0].checked).toBe(true);
+    });
+
+    it('clears scaleBy when the anchor row is removed', async () => {
+      await setup(withOriginal());
+      qa('.remove-ingredient')[0].click();
+      await settle();
+      q('.save')?.click();
+      expect('scaleBy' in saved[0]).toBe(false);
+    });
+
+    it('clears scaleBy when the anchor quantity is cleared', async () => {
+      await setup(withOriginal());
+      await typeInto(qa<HTMLInputElement>('input.qty')[0], '');
+      q('.save')?.click();
+      expect('scaleBy' in saved[0]).toBe(false);
+      expect(radios()).toHaveLength(0);
+    });
+
+    it('clears scaleBy when scalable is turned off', async () => {
+      await setup(withOriginal());
+      q<HTMLInputElement>('input.scalable')?.click();
+      await settle();
+      q('.save')?.click();
+      expect('scaleBy' in saved[0]).toBe(false);
+    });
+
+    it('clears scaleBy when the anchor name is blanked (row is dropped on save)', async () => {
+      await setup(withOriginal());
+      await typeInto(qa<HTMLInputElement>('input.name')[0], '');
+      q('.save')?.click();
+      expect(saved[0].ingredients.map((i) => i.id)).toEqual(['i2']);
+      expect('scaleBy' in saved[0]).toBe(false);
+    });
+
+    it('lets a newly added row be the anchor, with a client-generated id', async () => {
+      await setup();
+      q('.add-ingredient')?.click();
+      await settle();
+      await typeInto(qa<HTMLInputElement>('input.name')[2], 'sugar');
+      await typeInto(qa<HTMLInputElement>('input.qty')[2], '3');
+      qa<HTMLInputElement>('input.scalable')[2].click();
+      await settle();
+      expect(radios()).toHaveLength(2);
+      radios()[1].click();
+      await settle();
+      q('.save')?.click();
+      const sugar = saved[0].ingredients.find((i) => i.name === 'sugar');
+      expect(sugar?.id).toBeTruthy();
+      expect(saved[0].scaleBy).toBe(sugar?.id);
+    });
+
+    it('passes originalSize through untouched, even after editing ingredients', async () => {
+      const r = withOriginal();
+      const before = JSON.stringify(r.originalSize);
+      await setup(r);
+      await typeInto(qa<HTMLInputElement>('input.qty')[0], '5');
+      qa('.remove-ingredient')[1].click();
+      await settle();
+      q('.save')?.click();
+      expect(JSON.stringify(saved[0].originalSize)).toBe(before);
+      expect(saved[0].scaleBy).toBe('i1');
+    });
+
+    it('a draft without scaleBy saves without one', async () => {
+      await setup();
+      q('.save')?.click();
+      expect('scaleBy' in saved[0]).toBe(false);
+      expect('originalSize' in saved[0]).toBe(false);
+    });
+  });
+
   describe('photo candidates', () => {
     const cands = ['https://a.example/1.jpg', 'https://a.example/2.jpg'];
     async function withCandidates() {

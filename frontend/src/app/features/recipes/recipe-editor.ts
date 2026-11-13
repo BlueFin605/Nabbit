@@ -9,7 +9,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MAX_STEP_DEPTH, formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
+import { MAX_STEP_DEPTH, formatQuantity, isScaleAnchor, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
 import { map, switchMap } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImageContentType, RecipeInput } from '../../core/api/api.types';
@@ -128,6 +128,10 @@ export function isVersionConflict(err: unknown): boolean {
     </mat-form-field>
 
     <h2>Ingredients</h2>
+    <div role="radiogroup" aria-label="Default scale-by ingredient" class="scale-by-group">
+    @if (hasAnchor()) {
+      <label class="scale-by-label scale-by-none-label"><input type="radio" name="scaleBy" class="scale-by-none" [checked]="effectiveScaleBy() === null" (change)="scaleBy.set(null)" /> No default scale-by ingredient</label>
+    }
     <div class="list ingredients" cdkDropList (cdkDropListDropped)="dropIngredient($event)">
       @for (ing of ingredients(); track ing.id; let i = $index) {
         <div class="ingredient" cdkDrag>
@@ -158,6 +162,9 @@ export function isVersionConflict(err: unknown): boolean {
             </mat-form-field>
           </div>
           <label class="scales"><input type="checkbox" class="scalable" [checked]="ing.scalable" (change)="setScalable(i, $event)" /> Scales with servings</label>
+          @if (isAnchor(ing)) {
+            <label class="scale-by-label"><input type="radio" name="scaleBy" class="scale-by" [attr.aria-label]="'Default scale-by: ' + (ing.name || 'ingredient')" [checked]="effectiveScaleBy() === ing.id" (change)="scaleBy.set(ing.id)" /> Default scale-by</label>
+          }
           @if (ing.metric || ing.original) {
             <details class="preview">
               <summary>{{ metric(ing) }}</summary>
@@ -168,6 +175,7 @@ export function isVersionConflict(err: unknown): boolean {
           }
         </div>
       }
+    </div>
     </div>
     <button mat-button type="button" class="add-ingredient" (click)="addIngredient()">Add ingredient</button>
 
@@ -267,6 +275,15 @@ export class RecipeEditor {
   protected readonly imageKey = signal<string | undefined>(undefined);
   readonly ingredients = signal<Ingredient[]>([]);
   readonly steps = signal<StepRow[]>([]);
+  /** Id of the default scale-by ingredient; only ever an id of a current anchor row. */
+  protected readonly scaleBy = signal<string | null>(null);
+  protected readonly isAnchor = isScaleAnchor;
+  protected readonly hasAnchor = computed(() => this.ingredients().some(isScaleAnchor));
+  /** scaleBy only counts while it names a current anchor row. */
+  protected readonly effectiveScaleBy = computed(() => {
+    const id = this.scaleBy();
+    return id !== null && this.ingredients().some((i) => i.id === id && isScaleAnchor(i)) ? id : null;
+  });
   protected readonly uploading = signal(false);
   protected readonly photoError = signal<string | null>(null);
 
@@ -278,6 +295,7 @@ export class RecipeEditor {
       tags: this.tags(),
       imageKey: this.imageKey() ?? null,
       ingredients: this.ingredients(),
+      scaleBy: this.effectiveScaleBy(),
       steps: shape(this.steps()),
     }),
   );
@@ -311,6 +329,7 @@ export class RecipeEditor {
     this.tags.set([...r.tags]);
     this.imageKey.set(r.imageKey);
     this.ingredients.set(r.ingredients.map((i) => ({ ...i })));
+    this.scaleBy.set(r.scaleBy ?? null);
     this.steps.set(toRows(r.steps));
     this.photoError.set(null);
     this.baseline.set(this.snapshot());
@@ -354,6 +373,12 @@ export class RecipeEditor {
         return toMetric(next);
       }),
     );
+    this.pruneScaleBy();
+  }
+
+  /** Actively clears scaleBy once its row is gone or no longer an anchor (so it cannot revive later). */
+  private pruneScaleBy(): void {
+    if (this.scaleBy() !== null && this.effectiveScaleBy() === null) this.scaleBy.set(null);
   }
 
   protected setQuantity(index: number, e: Event): void {
@@ -386,6 +411,7 @@ export class RecipeEditor {
 
   protected removeIngredient(index: number): void {
     this.ingredients.update((all) => all.filter((_, i) => i !== index));
+    this.pruneScaleBy();
   }
 
   dropIngredient(e: CdkDragDrop<unknown>): void {
@@ -568,6 +594,9 @@ export class RecipeEditor {
       ingredients: this.ingredients().filter((i) => i.name.trim()),
       steps: fromRows(this.steps()),
     };
+    const by = this.scaleBy();
+    if (by !== null && out.ingredients.some((i) => i.id === by && isScaleAnchor(i))) out.scaleBy = by;
+    else delete out.scaleBy;
     const key = this.imageKey();
     if (key) out.imageKey = key;
     else delete out.imageKey;
