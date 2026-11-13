@@ -84,6 +84,8 @@ test.describe('journey 9b: list layout row clicks', () => {
     for (const p of points) {
       await page.goto('/recipes');
       await expect(page.locator('.grid')).toHaveClass(/view-list/);
+      // The loading skeleton grid carries view-list too: click only once the real row has rendered.
+      await expect(page.locator('.card-wrap').first()).toBeVisible();
       await page.mouse.click(p.x, p.y);
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(page).toHaveURL(new RegExp(`/recipes/${r.id}$`));
