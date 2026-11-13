@@ -103,7 +103,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     recipe: {
       ...base.recipe,
       ingredients: appendNew(base.recipe.ingredients, extra.recipe.ingredients, (i) => i.original ?? i.name),
-      steps: appendNew(base.recipe.steps, extra.recipe.steps, (st) => st),
+      steps: appendNew(base.recipe.steps, extra.recipe.steps, (st) => (typeof st === 'string' ? st : JSON.stringify(st))),
     },
   };
 }

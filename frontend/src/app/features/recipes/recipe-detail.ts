@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, DestroyRef, computed, inject, input, signal, type OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { map, switchMap } from 'rxjs';
@@ -6,7 +7,14 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { convertTemperatures, formatQuantity, scaleRecipeIngredients, type Ingredient } from '@nabbit/recipe-core';
+import {
+  convertTemperatures,
+  formatQuantity,
+  mapSteps,
+  scaleRecipeIngredients,
+  type Ingredient,
+  type StepNode,
+} from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe, RecipeInput } from '../../core/api/api.types';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
@@ -39,7 +47,7 @@ function readMode(): Mode {
 /** Single recipe view: scaled ingredients, steps, unit toggle and keep-awake. Scaling is client-side only. */
 @Component({
   selector: 'app-recipe-detail',
-  imports: [RouterLink, MatButtonModule, MatButtonToggleModule, MatSlideToggleModule],
+  imports: [NgTemplateOutlet, RouterLink, MatButtonModule, MatButtonToggleModule, MatSlideToggleModule],
   styleUrl: './recipe-detail.scss',
   template: `
     @switch (load().status) {
@@ -126,9 +134,7 @@ function readMode(): Mode {
 
           <h2>Steps</h2>
           <ol class="steps">
-            @for (s of steps(); track $index) {
-              <li>{{ s }}</li>
-            }
+            <ng-container *ngTemplateOutlet="stepList; context: { $implicit: steps() }" />
           </ol>
 
           @if (r.sourceUrl) {
@@ -143,6 +149,22 @@ function readMode(): Mode {
         }
       }
     }
+    <ng-template #stepList let-nodes>
+      @for (n of nodes; track $index) {
+        @if (isString(n)) {
+          <li>{{ n }}</li>
+        } @else {
+          <li class="group">
+            @if (n.heading) {
+              <h3>{{ n.heading }}</h3>
+            }
+            <ol>
+              <ng-container *ngTemplateOutlet="stepList; context: { $implicit: n.steps }" />
+            </ol>
+          </li>
+        }
+      }
+    </ng-template>
   `,
 })
 export class RecipeDetail implements OnInit {
@@ -199,11 +221,15 @@ export class RecipeDetail implements OnInit {
       fixed: !i.scalable,
     })),
   );
-  protected readonly steps = computed(() => {
+  protected readonly steps = computed((): StepNode[] => {
     const r = this.recipe();
     if (!r) return [];
-    return this.mode() === 'metric' ? r.steps.map(convertTemperatures) : r.steps;
+    return this.mode() === 'metric' ? mapSteps(r.steps, convertTemperatures) : r.steps;
   });
+
+  protected isString(n: StepNode): n is string {
+    return typeof n === 'string';
+  }
 
   protected readonly wakeSupported = typeof navigator !== 'undefined' && !!(navigator as WakeLockNav).wakeLock;
   protected readonly awake = signal(false);

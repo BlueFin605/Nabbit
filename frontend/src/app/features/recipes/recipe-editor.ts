@@ -7,7 +7,7 @@ import { MatChipsModule, type MatChipInputEvent } from '@angular/material/chips'
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
+import { flattenSteps, formatQuantity, newId, toMetric, type Ingredient, type Unit } from '@nabbit/recipe-core';
 import { map, switchMap } from 'rxjs';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImageContentType, RecipeInput } from '../../core/api/api.types';
@@ -277,7 +277,8 @@ export class RecipeEditor {
     this.tags.set([...r.tags]);
     this.imageKey.set(r.imageKey);
     this.ingredients.set(r.ingredients.map((i) => ({ ...i })));
-    this.steps.set(r.steps.map((text) => ({ id: newId(), text })));
+    // Groups are flattened until the tree editor lands (NAB-137).
+    this.steps.set(flattenSteps(r.steps).map((text) => ({ id: newId(), text })));
     this.photoError.set(null);
     this.baseline.set(this.snapshot());
   }

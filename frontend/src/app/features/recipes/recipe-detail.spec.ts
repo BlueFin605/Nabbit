@@ -21,14 +21,14 @@ const flour: Ingredient = {
   metric: { quantity: 480, unit: 'ml' },
 };
 const salt: Ingredient = { id: 'i2', original: 'salt to taste', quantity: null, unit: '', name: 'salt', scalable: false };
-const recipe = (): Recipe => ({
+const recipe = (steps: Recipe['steps'] = ['Heat oven to 350°F', 'Mix']): Recipe => ({
   id: 'r1',
   title: 'Pancakes',
   sourceUrl: 'https://example.com/p',
   imageKey: 'o/img1',
   servings: 4,
   ingredients: [flour, salt],
-  steps: ['Heat oven to 350°F', 'Mix'],
+  steps,
   tags: [],
   version: 1,
   createdAt: '2026-01-01T00:00:00Z',
@@ -93,6 +93,46 @@ describe('RecipeDetail', () => {
     expect(el().querySelectorAll('.steps li')).toHaveLength(2);
     expect(el().querySelector('.source a')?.getAttribute('href')).toBe('https://example.com/p');
     expect(el().querySelector('a[href="/recipes/r1/edit"]')).not.toBeNull();
+  });
+
+  describe('step groups', () => {
+    it('flat steps render one top-level list with no headings or nested lists', async () => {
+      await setup();
+      expect(el().querySelectorAll('ol.steps')).toHaveLength(1);
+      expect(el().querySelectorAll('.steps h3, .steps ol')).toHaveLength(0);
+    });
+
+    it('a group with a heading shows an h3 above its own ol', async () => {
+      await setup(() => of(recipe(['Prep', { heading: 'Sauce', steps: ['Chop', 'Simmer'] }])));
+      const h = el().querySelector('.steps h3');
+      expect(h?.textContent?.trim()).toBe('Sauce');
+      const inner = h?.parentElement?.querySelector('ol');
+      expect(inner?.querySelectorAll(':scope > li')).toHaveLength(2);
+      expect((h as Element).compareDocumentPosition(inner as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('nests two deep with headings visible and native nested lists for numbering', async () => {
+      await setup(() => of(recipe([{ heading: 'Outer', steps: ['A', { heading: 'Inner', steps: ['B', 'C'] }] }, 'Last'])));
+      const top = el().querySelector('ol.steps') as Element;
+      expect(top.querySelectorAll(':scope > li')).toHaveLength(2);
+      const headings = Array.from(el().querySelectorAll('.steps h3')).map((h) => h.textContent?.trim());
+      expect(headings).toEqual(['Outer', 'Inner']);
+      expect(el().querySelectorAll('.steps ol ol')).toHaveLength(1);
+    });
+
+    it('a headingless group is an indented ol without an h3', async () => {
+      await setup(() => of(recipe(['A', { steps: ['B', 'C'] }])));
+      expect(el().querySelectorAll('.steps h3')).toHaveLength(0);
+      expect(el().querySelectorAll('.steps ol')).toHaveLength(1);
+      expect(el().querySelectorAll('.steps ol > li')).toHaveLength(2);
+    });
+
+    it('converts temperatures inside nested steps in metric mode only', async () => {
+      await setup(() => of(recipe([{ heading: 'Bake', steps: [{ steps: ['Heat oven to 350°F'] }] }])));
+      expect(el().querySelector('.steps')?.textContent).toContain('180°C');
+      await click('mat-button-toggle[value="original"] button');
+      expect(el().querySelector('.steps')?.textContent).toContain('350°F');
+    });
   });
 
   it('renders metric by default with the note separately and marks to-taste', async () => {
