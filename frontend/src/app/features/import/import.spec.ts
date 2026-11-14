@@ -299,8 +299,65 @@ describe('Import', () => {
     });
   });
 
+  describe('not_a_recipe', () => {
+    const notRecipe = () => httpErr(422, { error: 'not_a_recipe', reason: 'It is a cooking-show trailer' });
+
+    it('shows the reason with Import anyway and Paste text instead buttons', async () => {
+      await setup({}, notRecipe);
+      type('https://example.com/r');
+      await tapImport();
+      expect(q('.not-recipe')?.textContent).toContain("That doesn't look like a recipe");
+      expect(q('.not-recipe')?.textContent).toContain('It is a cooking-show trailer');
+      expect(q('.import-anyway')?.textContent).toContain('Import anyway');
+      expect(q('.paste-instead')?.textContent).toContain('Paste text instead');
+    });
+
+    it('Import anyway re-sends the same request with forceRecipe: true', async () => {
+      let n = 0;
+      await setup({}, () => (n++ === 0 ? notRecipe() : of(result())));
+      type('https://example.com/r');
+      await tapImport();
+      q('.import-anyway')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: 'https://example.com/r', forceRecipe: true });
+      expect(q('.not-recipe')).toBeNull();
+    });
+
+    it('Import anyway also works for a text request', async () => {
+      let n = 0;
+      await setup({}, () => (n++ === 0 ? notRecipe() : of(result())));
+      type('some text');
+      await tapImport();
+      q('.import-anyway')?.click();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'some text', forceRecipe: true });
+    });
+
+    it('Paste text instead keeps the url in the box, focuses it and hides the panel', async () => {
+      jest.useFakeTimers();
+      try {
+        await setup({}, notRecipe);
+        document.body.appendChild(el());
+        type('https://example.com/r');
+        q('.import-btn')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        q('.paste-instead')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        expect(q('.not-recipe')).toBeNull();
+        expect(q<HTMLTextAreaElement>('textarea')?.value).toBe('https://example.com/r');
+        expect(document.activeElement).toBe(q('textarea'));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('AI import', () => {
-    const IG = 'https://www.instagram.com/reel/abc/';
+    const IG ='https://www.instagram.com/reel/abc/';
     const needsText = () => httpErr(422, { error: 'needs_text' });
     const onlyOnce = (first: () => unknown, then: () => unknown) => {
       let n = 0;
@@ -659,6 +716,7 @@ describe('IMPORT_ERROR_MESSAGES', () => {
     'not_image',
     'too_many_redirects',
     'needs_text',
+    'not_a_recipe',
   ];
 
   it.each(codes)('has a message for %s', (code) => {

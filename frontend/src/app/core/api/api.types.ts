@@ -31,7 +31,9 @@ export interface ImageUpload {
 }
 
 /** POST /recipes/import takes exactly one of url or text. */
-export type ImportRequest = { url: string; text?: never } | { text: string; url?: never };
+export type ImportRequest =
+  | { url: string; text?: never; forceRecipe?: boolean }
+  | { text: string; url?: never; forceRecipe?: boolean };
 
 export interface ImportResult {
   draft: RecipeDraft;
@@ -50,7 +52,8 @@ export type ImportErrorCode =
   | 'not_html'
   | 'not_image'
   | 'too_many_redirects'
-  | 'needs_text';
+  | 'needs_text'
+  | 'not_a_recipe';
 
 export interface ListSummary {
   id: string;

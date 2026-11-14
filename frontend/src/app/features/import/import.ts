@@ -25,6 +25,7 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorCode, string> = {
   not_html: "That link isn't a web page.",
   not_image: "That image can't be used.",
   too_many_redirects: 'That link redirects too many times.',
+  not_a_recipe: "That doesn't look like a recipe.",
   needs_text: "Instagram wouldn't let us read this post. Paste the caption (and the recipe comment if it's in the comments).",
 };
 /** needs_text for a non-Instagram page (client-rendered recipe the server could not read). */
@@ -151,6 +152,8 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     .hint { margin: 4px 0 8px; }
     .comment-appender summary { cursor: pointer; margin-bottom: 8px; }
     .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
+    .not-recipe { padding: 12px 16px; border-radius: 12px; margin: 8px 0; background: var(--mat-sys-tertiary-container, #fde7b0); }
+    .not-recipe .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .loading { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
   `,
   template: `
@@ -168,6 +171,16 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
 
       @if (error(); as e) {
         <p class="error" role="alert">{{ e }}</p>
+      }
+
+      @if (notRecipe(); as nr) {
+        <div class="not-recipe" role="alert">
+          <p>That doesn't look like a recipe@if (nr.reason) {: {{ nr.reason }}}</p>
+          <div class="actions">
+            <button mat-flat-button type="button" class="import-anyway" [disabled]="loading()" (click)="importAnyway()">Import anyway</button>
+            <button mat-stroked-button type="button" class="paste-instead" (click)="pasteInstead()">Paste text instead</button>
+          </div>
+        </div>
       }
 
       @if (loading()) {
@@ -261,6 +274,9 @@ export class Import implements OnInit {
   protected readonly igSource = signal(false);
   protected readonly comment = signal('');
 
+  /** Set after a not_a_recipe 422: the request to re-run with forceRecipe, and the model's reason. */
+  protected readonly notRecipe = signal<{ request: ImportRequest; reason?: string } | null>(null);
+
   private sourceUrl: string | undefined;
   /** URL remembered across a needs_text round trip, applied as sourceUrl once the pasted text imports. */
   private pendingUrl: string | undefined;
@@ -311,6 +327,7 @@ export class Import implements OnInit {
   private run(request: ImportRequest, mode: 'fresh' | 'replace' | 'merge'): void {
     this.error.set(null);
     this.info.set(null);
+    this.notRecipe.set(null);
     this.loading.set(true);
     this.api.importRecipe(request).subscribe({
       next: (res) => {
@@ -326,12 +343,32 @@ export class Import implements OnInit {
           this.needsTextGeneric.set(generic);
           this.value.set('');
           this.info.set(generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
+        } else if (mode === 'fresh' && this.isNotRecipe(err)) {
+          this.notRecipe.set({ request, reason: (err.error as { reason?: string }).reason });
         } else {
           this.error.set(this.messageFor(err));
         }
         if (mode === 'fresh') setTimeout(() => this.box()?.nativeElement.focus());
       },
     });
+  }
+
+  protected importAnyway(): void {
+    const nr = this.notRecipe();
+    if (!nr || this.loading()) return;
+    this.run({ ...nr.request, forceRecipe: true }, 'fresh');
+  }
+
+  /** Dismisses the not_a_recipe panel; a URL stays in the box and is remembered as the source of the pasted text. */
+  protected pasteInstead(): void {
+    const nr = this.notRecipe();
+    this.notRecipe.set(null);
+    if (nr?.request.url) {
+      this.pendingUrl = stripTrackingParams(nr.request.url);
+      this.needsText.set(true);
+      this.needsTextGeneric.set(!isInstagramUrl(this.pendingUrl));
+    }
+    setTimeout(() => this.box()?.nativeElement.focus());
   }
 
   protected onComment(e: Event): void {
@@ -350,6 +387,10 @@ export class Import implements OnInit {
 
 ${c}` }, 'replace');
     else this.run({ text: c }, 'merge');
+  }
+
+  private isNotRecipe(err: unknown): err is HttpErrorResponse {
+    return err instanceof HttpErrorResponse && err.status === 422 && (err.error as { error?: string } | null)?.error === 'not_a_recipe';
   }
 
   private isNeedsText(err: unknown): boolean {
