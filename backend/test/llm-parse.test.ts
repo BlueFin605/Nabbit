@@ -90,9 +90,9 @@ describe('createBedrockParser', () => {
   });
 
   it('flattens grouped steps to leaf strings with flatSteps', async () => {
-    const grouped = { ...GOOD, steps: [{ group: 'Sauce', steps: ['Chop.', 'Simmer.'] }, 'Serve.'] };
+    const grouped = { ...GOOD, steps: [{ heading: 'Sauce', steps: ['Chop.', 'Simmer.'] }, 'Serve.'] };
     const r = await createBedrockParser({ modelId: 'm', client: stub(JSON.stringify(grouped)) }).parse('t', { flatSteps: true });
-    expect(r && !isNotRecipe(r) && r.steps).toEqual(['Sauce', 'Chop.', 'Simmer.', 'Serve.']);
+    expect(r && !isNotRecipe(r) && r.steps).toEqual(['Chop.', 'Simmer.', 'Serve.']);
     // default keeps today's behaviour: grouped objects are invalid
     expect(await createBedrockParser({ modelId: 'm', client: stub(JSON.stringify(grouped)) }).parse('t', {})).toBeUndefined();
   });
@@ -192,8 +192,8 @@ describe('validateModelOutput notRecipe and flattenLeafStrings', () => {
   it('still validates recipes with isRecipe absent or true', () => {
     expect(validateModelOutput({ ...GOOD, isRecipe: true })).toEqual(GOOD);
   });
-  it('flattenLeafStrings collects nested strings and ignores non-strings', () => {
-    expect(flattenLeafStrings(['a', { x: ['b', { y: 'c' }], n: 3 }])).toEqual(['a', 'b', 'c']);
+  it('flattenLeafStrings collects only step strings from groups, dropping headings and other fields', () => {
+    expect(flattenLeafStrings(['a', { heading: 'H', note: 'n', steps: ['b', { steps: ['c'], title: 't' }], n: 3 }])).toEqual(['a', 'b', 'c']);
   });
 });
 

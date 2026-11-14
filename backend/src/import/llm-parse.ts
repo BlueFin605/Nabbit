@@ -46,7 +46,7 @@ const SYSTEM_PROMPT = [
 const FLAT_STEPS_LINE = 'steps must be a flat list of strings, no grouping.';
 const MAX_REASON_CHARS = 200;
 
-const isStr =(v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 
 function strArray(v: unknown, minLen: number, maxLen: number, maxStr: number): string[] | undefined {
   if (!Array.isArray(v) || v.length < minLen || v.length > maxLen) return undefined;
@@ -61,11 +61,11 @@ function nonBlankArray(v: unknown, minLen: number, maxLen: number, maxStr: numbe
   return kept.length >= minLen ? kept : undefined;
 }
 
-/** Collects every string leaf of nested arrays/objects, in order; non-strings are ignored. */
+/** Flattens step nodes to strings: descends only into group `steps`; headings and other fields are dropped. */
 export function flattenLeafStrings(v: unknown): string[] {
   if (typeof v === 'string') return [v];
   if (Array.isArray(v)) return v.flatMap(flattenLeafStrings);
-  if (typeof v === 'object' && v !== null) return Object.values(v).flatMap(flattenLeafStrings);
+  if (typeof v === 'object' && v !== null) return flattenLeafStrings((v as { steps?: unknown }).steps);
   return [];
 }
 
