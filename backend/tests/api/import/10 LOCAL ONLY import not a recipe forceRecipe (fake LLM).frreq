@@ -1,0 +1,41 @@
+{
+    "id": "45b4d358-5c8d-43cd-a4a1-ce976987ec91",
+    "name": "10 LOCAL ONLY import not a recipe forceRecipe (fake LLM)",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"text\":\"Our week in Lisbon [[fake-not-recipe]] trams and tiles\",\"forceRecipe\":true}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\"type\":\"object\",\"required\":[\"draft\"],\"not\":{\"required\":[\"error\"]},\"properties\":{\"draft\":{\"type\":\"object\",\"required\":[\"recipe\"],\"properties\":{\"confidence\":{\"type\":\"string\",\"not\":{\"const\":\"ai\"}},\"recipe\":{\"type\":\"object\",\"required\":[\"title\",\"ingredients\",\"steps\"]}}}}}"
+        }
+    }
+}

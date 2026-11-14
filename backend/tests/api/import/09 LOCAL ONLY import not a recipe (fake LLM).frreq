@@ -1,0 +1,41 @@
+{
+    "id": "7c3e0bb4-eab1-4ec4-b8ea-fe9f90cc262b",
+    "name": "09 LOCAL ONLY import not a recipe (fake LLM)",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/import",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"text\":\"Our week in Lisbon [[fake-not-recipe]] trams and tiles\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 422,
+        "jsonSchema": {
+            "schema": "{\"type\":\"object\",\"required\":[\"error\",\"reason\"],\"properties\":{\"error\":{\"const\":\"not_a_recipe\"},\"reason\":{\"const\":\"Fake: this is a travel vlog\"}}}"
+        }
+    }
+}

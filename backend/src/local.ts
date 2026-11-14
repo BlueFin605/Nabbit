@@ -30,6 +30,9 @@ export function installE2eFixtureFetch(env: NodeJS.ProcessEnv = process.env): bo
 
 /** Marker a pasted text must contain for the e2e fake LLM to answer. */
 export const FAKE_LLM_MARKER = '[[fake-llm]]';
+/** Marker that makes the e2e fake LLM answer NotRecipe (checked before FAKE_LLM_MARKER). */
+export const FAKE_NOT_RECIPE_MARKER = '[[fake-not-recipe]]';
+export const FAKE_NOT_RECIPE_REASON = 'Fake: this is a travel vlog';
 
 /**
  * Local-dev-only e2e hook: when NODE_ENV=development and NABBIT_E2E_FAKE_LLM=1, the import route's LLM
@@ -40,7 +43,9 @@ export function installE2eFakeLlm(env: NodeJS.ProcessEnv = process.env): boolean
   if (env.NODE_ENV !== 'development' || env.NABBIT_E2E_FAKE_LLM !== '1') return false;
   setLlmParser({
     parse: async (text) =>
-      text.includes(FAKE_LLM_MARKER)
+      text.includes(FAKE_NOT_RECIPE_MARKER)
+        ? { notRecipe: true as const, reason: FAKE_NOT_RECIPE_REASON }
+        : text.includes(FAKE_LLM_MARKER)
         ? {
             title: 'Fake AI Soup',
             servings: 4,
