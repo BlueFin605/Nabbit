@@ -138,7 +138,7 @@ describe('RecipeDetail', () => {
         expect(computed).not.toBe('list-item');
       } else {
         // jest does not compile the component .scss, so guard the rule in source
-        const scss = readFileSync(join(__dirname, 'recipe-detail.scss'), 'utf8');
+        const scss = readFileSync(join(__dirname, 'recipe-view.scss'), 'utf8');
         const rule = /\.steps li\.group\s*\{([^}]*)\}/.exec(scss)?.[1] ?? '';
         expect(rule).toMatch(/display:\s*block/);
       }
