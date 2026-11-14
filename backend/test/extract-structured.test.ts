@@ -160,9 +160,21 @@ describe('extractStructured nested steps', () => {
   it('caps a very long JSON-LD section name to a safe heading length', () => {
     const d = extractStructured(ld([section('  ' + 'x'.repeat(6000) + '  ', [step('One.')])]), URL_)!;
     const g = d.recipe.steps[0] as { heading: string };
-    expect(g.heading.length).toBeLessThanOrEqual(200);
+    expect(g.heading.length).toBe(200);
     expect(g.heading).toBe(g.heading.trim());
     expect(g.heading.startsWith('xxx')).toBe(true);
+  });
+
+  it('trims a heading whose cut lands right after a space', () => {
+    const d = extractStructured(ld([section('x'.repeat(199) + ' and more text', [step('One.')])]), URL_)!;
+    const g = d.recipe.steps[0] as { heading: string };
+    expect(g.heading).toBe('x'.repeat(199));
+  });
+
+  it('never cuts a surrogate pair in half at the heading cap', () => {
+    const d = extractStructured(ld([section('x'.repeat(199) + '\u{1F600} tail', [step('One.')])]), URL_)!;
+    const g = d.recipe.steps[0] as { heading: string };
+    expect(g.heading).toBe('x'.repeat(199));
   });
 
   it('caps a very long microdata section name to a safe heading length', () => {

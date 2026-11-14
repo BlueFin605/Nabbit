@@ -20,11 +20,12 @@ type Obj = Record<string, unknown>;
 
 const isObj = (v: Json): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Strip tags and decode entities (HTML is parsed, never executed). */
 /** The API limits headings to 5000 chars; keep imported group headings well inside that. */
 const MAX_HEADING = 200;
-const capHeading = (s: string): string => s.slice(0, MAX_HEADING).trim();
+/** Cap a heading at MAX_HEADING UTF-16 units without leaving half a surrogate pair at the cut. */
+const capHeading = (s: string): string => s.slice(0, MAX_HEADING).replace(/[\uD800-\uDBFF]$/, '').trim();
 
+/** Strip tags and decode entities (HTML is parsed, never executed). */
 function cleanText(raw: string): string {
   let s = raw.length > MAX_TEXT * 4 ? raw.slice(0, MAX_TEXT * 4) : raw;
   s = parse(`<div>${s}</div>`).text;
