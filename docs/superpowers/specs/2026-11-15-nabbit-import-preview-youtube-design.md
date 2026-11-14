@@ -1,6 +1,6 @@
 # Nabbit: import preview, not-a-recipe guardrail, YouTube import
 
-Date: 2026-11-15. Status: design approved, awaiting spec review.
+Date: 2026-11-15. Status: approved; implemented.
 
 Three pieces, delivered as one initiative on one branch (`feature/import-preview-youtube`):
 
@@ -15,7 +15,7 @@ After an import returns a draft, `/import` opens in **Preview**, not the editor.
 - Preview reuses the saved-recipe view component in read-only mode: same layout, photo, ingredients, grouped or flat steps. No scaling in preview.
 - **Edit** switches to the existing editor on the same draft; **Back to preview** returns, and edits show in the preview.
 - **Action bar**: Save, Edit, Discard. Rendered twice (a sticky bar at the top and one at the bottom of the page), both driven by the same state. Save works from either mode and either bar. In edit mode the Edit button reads "Back to preview".
-- **Discard** confirms only if the draft was edited; otherwise returns to the import page.
+- **Discard** confirms only if the draft was edited; otherwise goes straight to the recipe list (`/recipes`).
 - Banners above the preview: the existing AI confidence badge; the YouTube linked-recipe banner (C); the Instagram "Recipe in a comment?" appender (unchanged).
 - The photo candidate chooser stays visible in preview.
 - Scope: the import preview and its edit mode only. Saved-recipe edit screens do not change.
@@ -26,7 +26,7 @@ The shared LLM prompt (all LLM paths: pasted text, Instagram captions, JS-shell 
 
 - Model output schema adds `isRecipe: boolean` and a short `reason`. `validateModelOutput` accepts `{isRecipe:false, reason}` as valid. Malformed output still keeps the heuristic draft, so the LLM never fails an import.
 - `isRecipe: false` makes the import route answer **422 `not_a_recipe`** with the reason. No heuristic draft is returned.
-- **Override:** the error offers "Import anyway", which resends with `forceRecipe: true`. That skips the check and returns the heuristic draft (or an LLM draft where one is possible). It counts against the same rate and LLM caps. Also offers "Paste text instead".
+- **Override:** the error offers "Import anyway", which resends with `forceRecipe: true`. The one LLM call is then a forced best-effort one (no not-a-recipe exit): its draft is used when it is usable, otherwise the heuristic draft is returned (the YouTube transcript and JS-shell paths, which have no heuristic draft, answer `needs_text`). It counts against the same rate and LLM caps. Also offers "Paste text instead".
 - Cost: one LLM call, same as any attempt; the existing 30/owner/day and app-wide daily caps apply unchanged. No second call.
 
 ## C. YouTube import
@@ -44,8 +44,9 @@ The shared LLM prompt (all LLM paths: pasted text, Instagram captions, JS-shell 
 - The transcript path always uses the LLM (spoken prose is not heuristically parseable).
 - **Flat steps**: the YouTube prompt and validation require flat steps; any group the model returns is flattened to strings. Only structured (JSON-LD/microdata) imports keep groups.
 - B's not-a-recipe check applies to the transcript path.
-- Response adds `source: 'linked-page' | 'transcript'` and, for a linked recipe, `videoUrl`. `sourceUrl` is the recipe page; the video link goes into the notes.
+- Response adds `source: 'linked-page' | 'transcript'` and `videoUrl` (the canonical video URL, both sources). `sourceUrl` is the recipe page for a linked recipe and the video for a transcript; the draft has no notes field, so the video link travels only as `videoUrl`.
 - Request takes optional `ignoreLinkedRecipe`. The preview banner "Imported from the recipe page linked in the video" has a "Use the video transcript instead" button that resends the same URL with it set.
+- Time budget (29 s API Gateway/Lambda limit), measured from the request start: linked-page lookups stop at 5 s; the caption fetch is cut off at 8 s and the LLM is not started after 8 s (`needs_text` instead); the LLM call itself has the parser's 15 s timeout.
 - Kill switch `YOUTUBE_AUTOFETCH=0`, read per request; the CDK stack does not set it.
 - Share target (Android) works unchanged: YouTube share links go to `/import`.
 

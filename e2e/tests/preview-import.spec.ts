@@ -9,7 +9,9 @@ async function importUrl(page: Page, url: string) {
   await page.goto('/import');
   await page.getByLabel('Paste a link or recipe text').fill(url);
   await page.getByRole('button', { name: 'Import', exact: true }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  // Wait on the preview itself: the page's own "Import a recipe" h1 is visible before the import returns.
+  await expect(page.locator('app-import-action-bar.top')).toBeVisible();
+  await expect(page.locator('app-recipe-view h1')).toBeVisible();
 }
 
 /** A pasted recipe long enough that the page scrolls well past the viewport. */
