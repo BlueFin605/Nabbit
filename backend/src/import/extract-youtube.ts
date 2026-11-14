@@ -25,7 +25,7 @@ export function isYoutubeUrl(rawUrl: string, env: NodeJS.ProcessEnv = process.en
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
 /** Video id from /watch?v=, youtu.be/<id> or /shorts/<id> on a YouTube host; undefined when absent or malformed. */
-export function youtubeVideoId(rawUrl: string): string | undefined {
+export function youtubeVideoId(rawUrl: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
   try {
     const u = new URL(rawUrl);
     if (u.protocol !== 'https:') return undefined;
@@ -33,7 +33,7 @@ export function youtubeVideoId(rawUrl: string): string | undefined {
     let id: string | undefined;
     if (host === 'youtu.be') {
       id = u.pathname.split('/')[1];
-    } else if (YOUTUBE_HOSTS.includes(host)) {
+    } else if (YOUTUBE_HOSTS.includes(host) || e2eYoutubeHosts(env).includes(host)) {
       if (u.pathname === '/watch') id = u.searchParams.get('v') ?? undefined;
       else {
         const m = /^\/shorts\/([^/]+)\/?$/.exec(u.pathname);
@@ -47,9 +47,13 @@ export function youtubeVideoId(rawUrl: string): string | undefined {
 }
 
 /** https://www.youtube.com/watch?v=<id> (si, t, list and the rest dropped); undefined when there is no valid id. */
-export function canonicalYoutubeUrl(rawUrl: string): string | undefined {
-  const id = youtubeVideoId(rawUrl);
-  return id ? `https://www.youtube.com/watch?v=${id}` : undefined;
+export function canonicalYoutubeUrl(rawUrl: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const id = youtubeVideoId(rawUrl, env);
+  if (!id) return undefined;
+  const host = hostOf(new URL(rawUrl));
+  // an e2e fixture host keeps its own host so the fixture resolves; real hosts normalise to www.youtube.com
+  const canonicalHost = YOUTUBE_HOSTS.includes(host) ? 'www.youtube.com' : host;
+  return `https://${canonicalHost}/watch?v=${id}`;
 }
 
 export interface CaptionTrack {
@@ -74,10 +78,15 @@ const str = (v: Json): string => (typeof v === 'string' ? v : '');
 
 /** Balanced-brace scan (JSON-string aware) from the first "{" after `ytInitialPlayerResponse =`. */
 function scanPlayerResponse(html: string): Json {
-  const m = /ytInitialPlayerResponse\s*=\s*/.exec(html);
-  if (!m) return undefined;
-  const start = m.index + m[0].length;
-  if (html[start] !== '{') return undefined;
+  for (const m of html.matchAll(/ytInitialPlayerResponse\s*=\s*/g)) {
+    const start = m.index + m[0].length;
+    if (html[start] !== '{') continue;
+    return scanObject(html, start);
+  }
+  return undefined;
+}
+
+function scanObject(html: string, start: number): Json {
   let depth = 0;
   let inString = false;
   for (let i = start; i < html.length; i++) {
@@ -98,7 +107,7 @@ function scanPlayerResponse(html: string): Json {
   return undefined;
 }
 
-export function extractPlayerData(html: string): YoutubePlayerData | undefined {
+export function extractPlayerData(html: string, env: NodeJS.ProcessEnv = process.env): YoutubePlayerData | undefined {
   const player = scanPlayerResponse(html.slice(0, MAX_HTML));
   if (!isObj(player)) return undefined;
   const details = isObj(player.videoDetails) ? player.videoDetails : {};
@@ -107,7 +116,7 @@ export function extractPlayerData(html: string): YoutubePlayerData | undefined {
   const raw = Array.isArray(renderer.captionTracks) ? (renderer.captionTracks as Json[]) : [];
   const captionTracks: CaptionTrack[] = [];
   for (const t of raw.slice(0, MAX_TRACKS)) {
-    if (!isObj(t) || !str(t.baseUrl)) continue;
+    if (!isObj(t) || !str(t.baseUrl) || !isYoutubeUrl(str(t.baseUrl), env)) continue;
     const track: CaptionTrack = { baseUrl: str(t.baseUrl), languageCode: str(t.languageCode) };
     if (typeof t.kind === 'string') track.kind = t.kind;
     captionTracks.push(track);
@@ -123,10 +132,15 @@ export function pickCaptionTrack(tracks: CaptionTrack[]): CaptionTrack | undefin
   return tracks.find((t) => isEnglish(t) && t.kind !== 'asr') ?? tracks.find(isEnglish) ?? tracks[0];
 }
 
+/** Code point to string; invalid, out-of-range, NUL and surrogate values become U+FFFD instead of throwing. */
+function safeCodePoint(n: number): string {
+  return Number.isInteger(n) && n > 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : '�';
+}
+
 function decodeEntities(s: string): string {
   return s
-    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_, d: string) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h: string) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d: string) => safeCodePoint(parseInt(d, 10)))
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&lt;/g, '<')

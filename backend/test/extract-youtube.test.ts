@@ -102,3 +102,35 @@ describe('captionsToText', () => {
     expect(captionsToText('<html></html>')).toBe('');
   });
 });
+
+describe('hardening', () => {
+  const dev = { NODE_ENV: 'development', NABBIT_E2E_YOUTUBE_HOSTS: 'fixture.test' };
+  it('captionsToText never throws on out-of-range numeric entities', () => {
+    const xml = '<text>a &#x110000; b &#99999999; c &#xD800; d &#0; e</text>';
+    expect(() => captionsToText(xml)).not.toThrow();
+    expect(captionsToText(xml)).toBe('a � b � c � d � e');
+  });
+  it('extractPlayerData drops caption tracks not on an https YouTube host', () => {
+    const track = (u: string) => `{"baseUrl":"${u}","languageCode":"en"}`;
+    const urls = ['https://evil.com/api/timedtext', 'http://www.youtube.com/api/timedtext', 'https://youtube.com@evil.com/x', 'https://www.youtube.com/api/timedtext?v=1', 'https://fixture.test/t'];
+    const html = `var ytInitialPlayerResponse = {"captions":{"playerCaptionsTracklistRenderer":{"captionTracks":[${urls.map(track).join(',')}]}}};`;
+    expect(extractPlayerData(html, {})!.captionTracks.map((t) => t.baseUrl)).toEqual(['https://www.youtube.com/api/timedtext?v=1']);
+    expect(extractPlayerData(html, dev)!.captionTracks.map((t) => t.baseUrl)).toEqual(['https://www.youtube.com/api/timedtext?v=1', 'https://fixture.test/t']);
+  });
+  it('id and canonical url honour e2e hosts and keep the host', () => {
+    expect(youtubeVideoId(`https://fixture.test/watch?v=${ID}`, dev)).toBe(ID);
+    expect(youtubeVideoId(`https://fixture.test/watch?v=${ID}`, {})).toBeUndefined();
+    expect(canonicalYoutubeUrl(`https://fixture.test/watch?v=${ID}&t=1`, dev)).toBe(`https://fixture.test/watch?v=${ID}`);
+    expect(canonicalYoutubeUrl(`https://youtu.be/${ID}`, dev)).toBe(`https://www.youtube.com/watch?v=${ID}`);
+  });
+  it('tries later ytInitialPlayerResponse matches', () => {
+    const html = 'if (ytInitialPlayerResponse = null) {} var ytInitialPlayerResponse = {"videoDetails":{"title":"T"}};';
+    expect(extractPlayerData(html)?.title).toBe('T');
+  });
+  it('rejects userinfo and lookalike hosts, accepts trailing slash or si after the id', () => {
+    expect(youtubeVideoId(`https://youtube.com@evil.com/watch?v=${ID}`)).toBeUndefined();
+    expect(youtubeVideoId(`https://youtube.com.evil.com/watch?v=${ID}`)).toBeUndefined();
+    expect(youtubeVideoId(`https://youtu.be/${ID}/`)).toBe(ID);
+    expect(youtubeVideoId(`https://youtu.be/${ID}?si=abc`)).toBe(ID);
+  });
+});
