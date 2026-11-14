@@ -8,7 +8,7 @@ import express from 'express';
 import { handler as apiHandler } from './handlers/api.js';
 import { handler as healthHandler } from './handlers/health.js';
 import { fixtureFetchDeps } from './e2e-fixture-fetch.js';
-import { safeFetch, safeFetchImage } from './import/safe-fetch.js';
+import { safeFetch, safeFetchCaptions, safeFetchImage } from './import/safe-fetch.js';
 // Importing the module registers POST /recipes/import on the shared router; production serves it from
 // handlers/import.ts, and handlers/api.ts deliberately does not include it.
 import { IMPORT_LIMIT_PER_HOUR, setImportDeps } from './routes/import.js';
@@ -27,7 +27,12 @@ export function installE2eFixtureFetch(env: NodeJS.ProcessEnv = process.env): bo
   // The suite imports more than the 30/hour cap; NABBIT_E2E_IMPORT_LIMIT raises it for the e2e stack only.
   const raised = Number(env.NABBIT_E2E_IMPORT_LIMIT);
   const importLimit = Number.isInteger(raised) && raised > IMPORT_LIMIT_PER_HOUR ? raised : IMPORT_LIMIT_PER_HOUR;
-  setImportDeps({ safeFetch: (u) => safeFetch(u, deps), fetchImage: (u) => safeFetchImage(u, deps), importLimit });
+  setImportDeps({
+    safeFetch: (u) => safeFetch(u, deps),
+    fetchCaptions: (u) => safeFetchCaptions(u, deps),
+    fetchImage: (u) => safeFetchImage(u, deps),
+    importLimit,
+  });
   return true;
 }
 

@@ -2,7 +2,8 @@
  * Recipe import (owner from the JWT; NOTHING is saved, the client previews the draft then POSTs /recipes):
  *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars), optional boolean `forceRecipe`
  *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (forceRecipe: true keeps the heuristic draft instead)
- *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[] }  (url imports only; imageUrl === candidates[0])
+ *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[], source?: 'linked-page' | 'transcript', videoUrl? }
+ *         (images: url imports only, imageUrl === candidates[0]; source/videoUrl: YouTube only, videoUrl on linked-page)
  *     400 { error } invalid body        422 { error: <ImportError code> }
  *     429 { error: 'rate_limited' } + retry-after (seconds)
  *   POST /recipes/images/import  body `{ url }` (https) -> 200 { imageKey }: downloads the image through the SSRF guard
@@ -15,6 +16,10 @@
  * is reduced to text for the LLM (same caps/validation), or used directly when it holds a schema.org Recipe; nothing usable -> needs_text.
  * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
  * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
+ * YouTube URLs (optional boolean `ignoreLinkedRecipe`; YOUTUBE_AUTOFETCH='0' disables, read per request): watch page ->
+ *   linked recipe page from the description (schema.org only, no LLM; 200 with source 'linked-page' + videoUrl) unless
+ *   ignoreLinkedRecipe -> caption transcript + LLM, always, flat steps (200 with source 'transcript', confidence 'ai').
+ *   NotRecipe -> 422 not_a_recipe (forceRecipe -> needs_text); any other miss -> 422 needs_text. See YOUTUBE_* budget below.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
  * (pk=OWNER#{id}, sk=RATE#import#{epoch hour}, ttl 2h), incremented BEFORE any fetch so failures still count.
  */
@@ -25,9 +30,11 @@ import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '
 import { extractStructuredPage, withoutImageUrl } from '../import/structured-page.js';
 import { extractAppData, MAX_APP_DATA_BYTES } from '../import/extract-app-data.js';
 import { ImportError } from '../import/import-error.js';
-import { getLlmParser, isNotRecipe } from '../import/llm-parse.js';
+import { flattenLeafStrings, getLlmParser, isNotRecipe, type NotRecipe, type ParsedRecipe } from '../import/llm-parse.js';
+import { canonicalYoutubeUrl, captionsToText, extractPlayerData, isYoutubeUrl, pickCaptionTrack } from '../import/extract-youtube.js';
+import { candidateRecipeLinks, tryLinkedRecipe } from '../import/youtube-links.js';
 import { countSteps, type RecipeDraft } from '@nabbit/recipe-core';
-import { safeFetch as realSafeFetch, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
+import { safeFetch as realSafeFetch, safeFetchCaptions, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
 import { HttpError, route, type RequestCtx } from '../router.js';
 
@@ -39,8 +46,39 @@ export const MAX_IMPORT_TEXT = 50_000;
 export const MIN_PAGE_TEXT_CHARS = 200;
 const HOUR_MS = 3_600_000;
 
+/*
+ * YouTube time budget. API Gateway cuts the request at 29 s and the import Lambda timeout is also 29 s. Worst case:
+ *   watch page (safe-fetch cap 5 s)                                   -> t <= 5 s
+ *   linked recipe pages, abandoned at YOUTUBE_LINKS_DEADLINE_MS       -> t <= 8 s
+ *   caption track (5 s cap), the LLM is not started after 13 s        -> t <= 13 s
+ *   LLM (Bedrock parser timeout 15 s)                                 -> t <= 28 s, ~1 s left for DynamoDB counters
+ * Measured from the start of the request handler (cold start not included).
+ */
+/** Linked-recipe lookups stop once this much of the request has elapsed; an in-flight page fetch is abandoned. */
+export const YOUTUBE_LINKS_DEADLINE_MS = 8_000;
+/** The transcript LLM call (up to 15 s) is not started after this point; the request returns needs_text instead. */
+export const YOUTUBE_LLM_START_DEADLINE_MS = 13_000;
+/** Fewer characters than this across description + transcript is not worth an LLM call. */
+export const MIN_YOUTUBE_TEXT_CHARS = 200;
+export const MAX_YOUTUBE_DESCRIPTION_CHARS = 6_000;
+/** Whole LLM input cap for the YouTube path (the parser slices its input at the same length). */
+export const MAX_YOUTUBE_LLM_INPUT_CHARS = 20_000;
+
+/** 200 body of POST /recipes/import (mirrored by the frontend's ImportResult). */
+export interface ImportResponseBody {
+  draft: RecipeDraft;
+  imageUrl?: string;
+  candidates?: string[];
+  /** YouTube only: which attempt produced the draft. */
+  source?: 'linked-page' | 'transcript';
+  /** YouTube linked-page only: the canonical video URL (draft.recipe.sourceUrl is the recipe page). */
+  videoUrl?: string;
+}
+
 export interface ImportDeps {
   safeFetch: (url: string) => Promise<{ url: string; html: string }>;
+  /** A YouTube caption track (XML/json3); SSRF-guarded, redirects pinned to the track's origin. */
+  fetchCaptions: (url: string) => Promise<{ url: string; text: string }>;
   fetchImage: (url: string) => Promise<FetchedImage>;
   /** Same-origin embedded-app-data fetch (Gatsby page-data.json); SSRF-guarded and size-capped like safeFetch. */
   fetchJson: (url: string) => Promise<{ url: string; text: string }>;
@@ -50,6 +88,7 @@ export interface ImportDeps {
 }
 const defaults: ImportDeps = {
   safeFetch: (u) => realSafeFetch(u),
+  fetchCaptions: (u) => safeFetchCaptions(u),
   fetchImage: (u) => safeFetchImage(u),
   fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES, { allowedOrigin: new URL(u).origin }),
   now: () => Date.now(),
@@ -69,40 +108,134 @@ export function llmGlobalLimit(): number {
 }
 
 /**
- * Low-confidence heuristic drafts get one LLM attempt, within the per-owner daily cap and then the app-wide daily cap.
- * Any failure keeps the heuristic draft. A NotRecipe verdict throws ImportError('not_a_recipe', .., reason) (-> 422) unless
- * forceRecipe is set, in which case the heuristic draft is kept.
+ * One LLM attempt within the per-owner daily cap and then the app-wide daily cap (both bumped before the call).
+ * No parser, a cap reached, or any error -> undefined.
+ */
+async function callLlm(ownerId: string, text: string, ctx: { sourceUrl?: string; flatSteps?: boolean }): Promise<ParsedRecipe | NotRecipe | undefined> {
+  try {
+    const parser = getLlmParser();
+    if (!parser) return undefined;
+    const nowMs = deps.now();
+    const day = new Date(nowMs).toISOString().slice(0, 10);
+    const count = await getDb().incrementCounter(ownerPk(ownerId), llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
+    if (count > LLM_LIMIT_PER_DAY) return undefined;
+    const globalCount = await getDb().incrementCounter(GLOBAL_PK, llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
+    if (globalCount > llmGlobalLimit()) {
+      console.warn(`import: app-wide daily LLM cap reached (${globalCount})`);
+      return undefined;
+    }
+    return await parser.parse(text, ctx);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Low-confidence heuristic drafts get one LLM attempt (callLlm). Any failure keeps the heuristic draft. A NotRecipe
+ * verdict throws ImportError('not_a_recipe', .., reason) (-> 422) unless forceRecipe is set, in which case the heuristic draft is kept.
  */
 async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string, forceRecipe = false): Promise<RecipeDraft> {
   const h = heuristic.recipe;
   if (h.ingredients.length >= 2 && countSteps(h.steps) >= 2) return heuristic;
-  let notRecipe: string | undefined;
-  try {
-    const parser = getLlmParser();
-    if (!parser) return heuristic;
-    const nowMs = deps.now();
-    const day = new Date(nowMs).toISOString().slice(0, 10);
-    const count = await getDb().incrementCounter(ownerPk(ownerId), llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
-    if (count > LLM_LIMIT_PER_DAY) return heuristic;
-    const globalCount = await getDb().incrementCounter(GLOBAL_PK, llmDaySk(day), Math.floor(nowMs / 1000) + 2 * 86400);
-    if (globalCount > llmGlobalLimit()) {
-      console.warn(`import: app-wide daily LLM cap reached (${globalCount})`);
-      return heuristic;
-    }
-    const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
-    if (!recipe) return heuristic;
-    if (isNotRecipe(recipe)) {
-      if (forceRecipe) return heuristic;
-      notRecipe = recipe.reason;
-    } else {
-      if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
-      return { recipe, confidence: 'ai' };
-    }
-  } catch {
-    return heuristic;
+  const recipe = await callLlm(ownerId, text, sourceUrl ? { sourceUrl } : {});
+  if (!recipe) return heuristic;
+  if (isNotRecipe(recipe)) {
+    if (forceRecipe) return heuristic;
+    throw new ImportError('not_a_recipe', recipe.reason, recipe.reason);
   }
-  // Thrown outside the try so the catch-all above cannot swallow it.
-  throw new ImportError('not_a_recipe', notRecipe, notRecipe);
+  if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
+  return { recipe, confidence: 'ai' };
+}
+
+const NEEDS_TEXT = () => ({ status: 422, body: { error: 'needs_text' } });
+
+/** `p()` raced against an absolute deadline (deps.now() clock); rejects at once, without starting `p`, when it has passed. */
+function beforeDeadline<T>(p: () => Promise<T>, deadlineMs: number): Promise<T> {
+  const remaining = deadlineMs - deps.now();
+  if (remaining <= 0) return Promise.reject(new ImportError('timeout', 'Import time budget used up'));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ImportError('timeout', 'Import time budget used up')), remaining);
+  });
+  const work = p();
+  work.catch(() => undefined); // an abandoned fetch may still fail later
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
+/** The first `max` chars of `s`, cut back to the last sentence end (else the last space) when one is in the second half. */
+function truncateAtSentence(s: string, max: number): string {
+  if (s.length <= max) return s;
+  if (max <= 0) return '';
+  const cut = s.slice(0, max + 1); // +1 so a sentence ending exactly at max is seen as followed by a space
+  const sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+  if (sentence >= max / 2) return s.slice(0, sentence + 1);
+  const space = cut.lastIndexOf(' ');
+  return s.slice(0, space >= max / 2 ? space : max).trimEnd();
+}
+
+/** Title, blank line, description (capped), blank line, transcript cut so the whole input fits MAX_YOUTUBE_LLM_INPUT_CHARS. */
+function youtubeLlmInput(title: string, description: string, transcript: string): string {
+  const head = `${title.trim()}\n\n${description.trim().slice(0, MAX_YOUTUBE_DESCRIPTION_CHARS)}\n\n`;
+  return head + truncateAtSentence(transcript, MAX_YOUTUBE_LLM_INPUT_CHARS - head.length);
+}
+
+/**
+ * YouTube: watch page -> linked recipe page (unless ignoreLinkedRecipe) -> caption transcript + LLM -> needs_text.
+ * `startMs` is when the request began; the deadlines above are relative to it.
+ */
+async function importYoutube(ownerId: string, rawUrl: string, startMs: number, opts: { forceRecipe: boolean; ignoreLinkedRecipe: boolean }) {
+  if (process.env.YOUTUBE_AUTOFETCH === '0') return NEEDS_TEXT();
+  const videoUrl = canonicalYoutubeUrl(rawUrl);
+  if (!videoUrl) return NEEDS_TEXT();
+
+  let player: ReturnType<typeof extractPlayerData>;
+  try {
+    const page = await deps.safeFetch(videoUrl);
+    // A redirect off the YouTube hosts (consent.youtube.com, accounts.google.com) is a wall.
+    if (!isYoutubeUrl(page.url)) return NEEDS_TEXT();
+    player = extractPlayerData(page.html);
+  } catch {
+    return NEEDS_TEXT();
+  }
+  if (!player) return NEEDS_TEXT();
+
+  if (!opts.ignoreLinkedRecipe) {
+    const linksDeadline = startMs + YOUTUBE_LINKS_DEADLINE_MS;
+    const linked = await tryLinkedRecipe(candidateRecipeLinks(player.description), {
+      safeFetch: (u) => beforeDeadline(() => deps.safeFetch(u), linksDeadline),
+    });
+    if (linked) {
+      const { recipe, imageUrl, candidates } = linked;
+      // RecipeDraft has no notes field, so the video link travels as videoUrl only.
+      const body: ImportResponseBody = { draft: recipe, source: 'linked-page', videoUrl, ...(imageUrl ? { imageUrl } : {}), ...(candidates ? { candidates } : {}) };
+      return { status: 200, body };
+    }
+  }
+
+  const track = pickCaptionTrack(player.captionTracks);
+  if (!track || !isYoutubeUrl(track.baseUrl)) return NEEDS_TEXT();
+  const llmDeadline = startMs + YOUTUBE_LLM_START_DEADLINE_MS;
+  let transcript: string;
+  try {
+    const captions = await beforeDeadline(() => deps.fetchCaptions(track.baseUrl), llmDeadline);
+    if (!isYoutubeUrl(captions.url)) return NEEDS_TEXT();
+    transcript = captionsToText(captions.text);
+  } catch {
+    return NEEDS_TEXT();
+  }
+  if ((player.description.trim() + transcript).length < MIN_YOUTUBE_TEXT_CHARS) return NEEDS_TEXT();
+  if (!getLlmParser() || deps.now() >= llmDeadline) return NEEDS_TEXT();
+
+  // Spoken prose has no heuristic parse, so the transcript path always asks the LLM (same caps as every other call).
+  const recipe = await callLlm(ownerId, youtubeLlmInput(player.title, player.description, transcript), { sourceUrl: videoUrl, flatSteps: true });
+  if (!recipe) return NEEDS_TEXT();
+  if (isNotRecipe(recipe)) {
+    if (opts.forceRecipe) return NEEDS_TEXT();
+    throw new ImportError('not_a_recipe', recipe.reason, recipe.reason);
+  }
+  const draft: RecipeDraft = { recipe: { ...recipe, steps: flattenLeafStrings(recipe.steps), sourceUrl: videoUrl }, confidence: 'ai' };
+  const body: ImportResponseBody = { draft, source: 'transcript' };
+  return { status: 200, body };
 }
 
 const importErrorResult = (err: ImportError) => ({ status: 422, body: err.reason !== undefined ? { error: err.code, reason: err.reason } : { error: err.code } });
@@ -141,6 +274,7 @@ async function importRecipe(ctx: RequestCtx) {
 }
 
 async function importRecipeInner({ ownerId, body }: RequestCtx) {
+  const startMs = deps.now();
   if (!isObj(body)) throw new HttpError(400, 'body must be a JSON object');
   const hasUrl = body.url !== undefined;
   const hasText = body.text !== undefined;
@@ -152,6 +286,8 @@ async function importRecipeInner({ ownerId, body }: RequestCtx) {
 
   if (body.forceRecipe !== undefined && typeof body.forceRecipe !== 'boolean') throw new HttpError(400, 'forceRecipe must be a boolean');
   const forceRecipe = body.forceRecipe === true;
+  if (body.ignoreLinkedRecipe !== undefined && typeof body.ignoreLinkedRecipe !== 'boolean') throw new HttpError(400, 'ignoreLinkedRecipe must be a boolean');
+  const ignoreLinkedRecipe = body.ignoreLinkedRecipe === true;
 
   const limited = await countImport(ownerId);
   if (limited) return limited;
@@ -161,6 +297,7 @@ async function importRecipeInner({ ownerId, body }: RequestCtx) {
     return { status: 200, body: { draft: await maybeLlm(ownerId, text, extractFromText(text), undefined, forceRecipe) } };
   }
   const rawUrl = (body.url as string).trim();
+  if (isYoutubeUrl(rawUrl)) return importYoutube(ownerId, rawUrl, startMs, { forceRecipe, ignoreLinkedRecipe });
   if (isInstagramUrl(rawUrl)) {
     const url = canonicalInstagramUrl(rawUrl);
     const needsText = { status: 422, body: { error: 'needs_text' } };

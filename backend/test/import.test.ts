@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { handler, resetRoutes } from '../src/router.js';
 import { setLlmParser } from '../src/import/llm-parse.js';
-import { registerImportRoutes, setImportDeps, IMPORT_LIMIT_PER_HOUR } from '../src/routes/import.js';
+import { registerImportRoutes, setImportDeps, IMPORT_LIMIT_PER_HOUR, YOUTUBE_LINKS_DEADLINE_MS, YOUTUBE_LLM_START_DEADLINE_MS } from '../src/routes/import.js';
 import { setDb } from '../src/db.js';
 import { createMemoryDb } from '../src/db-memory.js';
 import { ImportError } from '../src/import/import-error.js';
@@ -912,5 +912,290 @@ describe('LLM fallback and Instagram needs_text', () => {
       const res = await call({ url: raw });
       expect(res.json.draft.recipe.sourceUrl).toBe('https://example.com/r');
     });
+  });
+});
+
+describe('YouTube import', () => {
+  const VID = 'https://www.youtube.com/watch?v=abcdEFGhij1';
+  const TRACK = 'https://www.youtube.com/api/timedtext?v=abcdEFGhij1&lang=en';
+  const RECIPE_LINK = 'https://recipes.example.com/lasagne';
+  const SENTENCE = 'First brown the beef in a large pan with the onion. ';
+  const TRANSCRIPT = `<transcript>${`<text start="0" dur="1">${SENTENCE}</text>`.repeat(10)}</transcript>`;
+  const watchHtml = (o: { title?: string; description?: string; tracks?: unknown[] } = {}) =>
+    '<html><body><script>var ytInitialPlayerResponse = ' +
+    JSON.stringify({
+      videoDetails: { title: o.title ?? 'Best Lasagne', shortDescription: o.description ?? 'Full recipe below.' },
+      captions: { playerCaptionsTracklistRenderer: { captionTracks: o.tracks ?? [{ baseUrl: TRACK, languageCode: 'en' }] } },
+    }) +
+    ';</script></body></html>';
+  const aiRecipe = { title: 'AI Lasagne', servings: 4, ingredients: [{ name: 'beef', quantity: 500, unit: 'g' }], steps: ['Brown.', 'Bake.'], tags: [] };
+  const llmCounts = () => ({
+    owner: db.items.get('OWNER#u1\u0000RATE#llm#2026-11-02')?.count,
+    global: db.items.get('GLOBAL\u0000RATE#llm#2026-11-02')?.count,
+  });
+
+  let pages: Record<string, () => Promise<{ url: string; html: string }>>;
+  let captions: () => Promise<{ url: string; text: string }>;
+  let captionFetches: string[];
+  let parsed: { text: string; ctx: { sourceUrl?: string; flatSteps?: boolean } }[];
+  let result: () => Promise<unknown>;
+
+  beforeEach(() => {
+    pages = {
+      [VID]: async () => ({ url: VID, html: watchHtml({ description: `Full recipe: ${RECIPE_LINK}` }) }),
+      [RECIPE_LINK]: async () => ({ url: `${RECIPE_LINK}?utm_source=youtube`, html: LD_HTML }),
+    };
+    captionFetches = [];
+    captions = async () => ({ url: TRACK, text: TRANSCRIPT });
+    setImportDeps({
+      safeFetch: async (url) => {
+        fetched.push(url);
+        const p = pages[url];
+        if (!p) throw new ImportError('bad_status', 'not found');
+        return p();
+      },
+      fetchCaptions: async (url) => {
+        captionFetches.push(url);
+        return captions();
+      },
+      now: () => nowMs,
+    });
+    parsed = [];
+    result = async () => aiRecipe;
+    setLlmParser({
+      parse: async (text, ctx) => {
+        parsed.push({ text, ctx });
+        return (await result()) as never;
+      },
+    });
+  });
+  afterEach(() => {
+    setLlmParser(undefined);
+    delete process.env.YOUTUBE_AUTOFETCH;
+  });
+
+  it('linked recipe page wins: structured draft, source linked-page, videoUrl, no LLM, no captions', async () => {
+    const res = await call({ url: VID });
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('linked-page');
+    expect(res.json.videoUrl).toBe(VID);
+    expect(res.json.draft.confidence).toBe('structured');
+    expect(res.json.draft.recipe.title).toBe('Pancakes');
+    expect(res.json.draft.recipe.sourceUrl).toBe(RECIPE_LINK);
+    expect(res.json.draft.recipe.imageUrl).toBeUndefined();
+    expect(res.json.imageUrl).toBe('https://example.com/p.jpg');
+    expect(res.json.candidates).toEqual(['https://example.com/p.jpg']);
+    expect(fetched).toEqual([VID, RECIPE_LINK]);
+    expect(captionFetches).toEqual([]);
+    expect(parsed).toHaveLength(0);
+    expect(llmCounts()).toEqual({ owner: undefined, global: undefined });
+  });
+
+  it('youtu.be / shorts / tracking params fetch the canonical watch URL', async () => {
+    for (const u of ['https://youtu.be/abcdEFGhij1?si=xyz', 'https://m.youtube.com/shorts/abcdEFGhij1', 'https://www.youtube.com/watch?v=abcdEFGhij1&t=30s&si=q']) {
+      fetched = [];
+      const res = await call({ url: u });
+      expect(res.status).toBe(200);
+      expect(fetched[0]).toBe(VID);
+      expect(res.json.videoUrl).toBe(VID);
+    }
+  });
+
+  it('ignoreLinkedRecipe: transcript + LLM with flatSteps; source transcript, confidence ai, counters bumped once', async () => {
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('transcript');
+    expect(res.json.draft.confidence).toBe('ai');
+    expect(res.json.draft.recipe.title).toBe('AI Lasagne');
+    expect(res.json.draft.recipe.sourceUrl).toBe(VID);
+    expect(fetched).toEqual([VID]);
+    expect(captionFetches).toEqual([TRACK]);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]!.ctx).toEqual({ sourceUrl: VID, flatSteps: true });
+    expect(parsed[0]!.text.startsWith(`Best Lasagne\n\nFull recipe: ${RECIPE_LINK}\n\n${SENTENCE.trim()}`)).toBe(true);
+    expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+  });
+
+  it('linked links without structured data fall back to the transcript', async () => {
+    pages[RECIPE_LINK] = async () => ({ url: RECIPE_LINK, html: PLAIN_HTML });
+    const res = await call({ url: VID });
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('transcript');
+    expect(fetched).toEqual([VID, RECIPE_LINK]);
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('transcript path always calls the LLM even when the text would parse heuristically', async () => {
+    pages[VID] = async () => ({
+      url: VID,
+      html: watchHtml({ description: 'Ingredients\n2 slices bread\n1 tbsp butter\n\nMethod\n1. Toast the bread.\n2. Butter it.' }),
+    });
+    const res = await call({ url: VID });
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('transcript');
+    expect(parsed).toHaveLength(1);
+  });
+
+  it('steps from the transcript path are flat strings', async () => {
+    result = async () => ({ ...aiRecipe, steps: ['Prep.', { heading: 'Sauce', steps: ['Simmer.', { steps: ['Season.'] }] }] });
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.recipe.steps).toEqual(['Prep.', 'Simmer.', 'Season.']);
+  });
+
+  it('LLM input: description capped at 6,000 chars, whole input at most 20,000, transcript cut at a sentence end', async () => {
+    const description = 'd'.repeat(10_000);
+    pages[VID] = async () => ({ url: VID, html: watchHtml({ description }) });
+    captions = async () => ({ url: TRACK, text: `<transcript>${`<text>${SENTENCE}</text>`.repeat(1000)}</transcript>` });
+    await call({ url: VID });
+    const text = parsed[0]!.text;
+    expect(text.length).toBeLessThanOrEqual(20_000);
+    expect(text.length).toBeGreaterThan(19_000);
+    expect(text).toContain(`Best Lasagne\n\n${'d'.repeat(6000)}\n\n`);
+    expect(text).not.toContain('d'.repeat(6001));
+    expect(text.endsWith('onion.')).toBe(true);
+  });
+
+  it('YOUTUBE_AUTOFETCH=0 -> 422 needs_text without fetching, still counted', async () => {
+    process.env.YOUTUBE_AUTOFETCH = '0';
+    const res = await call({ url: VID });
+    expect(res.status).toBe(422);
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(fetched).toEqual([]);
+    expect(db.items.get(`OWNER#u1\u0000RATE#import#${Math.floor(nowMs / 3_600_000)}`)?.count).toBe(1);
+  });
+
+  it('a YouTube URL without a valid video id -> needs_text, nothing fetched', async () => {
+    const res = await call({ url: 'https://www.youtube.com/channel/abc' });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(fetched).toEqual([]);
+  });
+
+  it('consent wall (redirect off YouTube hosts) -> needs_text', async () => {
+    pages[VID] = async () => ({ url: 'https://consent.youtube.com/m?continue=x', html: watchHtml() });
+    const res = await call({ url: VID });
+    expect(res.status).toBe(422);
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('no player data (bot wall) -> needs_text', async () => {
+    pages[VID] = async () => ({ url: VID, html: '<html><body>Sign in to confirm you are not a bot</body></html>' });
+    const res = await call({ url: VID });
+    expect(res.json).toEqual({ error: 'needs_text' });
+  });
+
+  it('watch page fetch error -> needs_text', async () => {
+    pages[VID] = async () => {
+      throw new ImportError('timeout', 'slow');
+    };
+    const res = await call({ url: VID });
+    expect(res.json).toEqual({ error: 'needs_text' });
+  });
+
+  it('no caption tracks -> needs_text, no LLM call or counter bump', async () => {
+    pages[VID] = async () => ({ url: VID, html: watchHtml({ tracks: [] }) });
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.status).toBe(422);
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(0);
+    expect(llmCounts()).toEqual({ owner: undefined, global: undefined });
+  });
+
+  it('caption fetch error or redirect off YouTube -> needs_text', async () => {
+    captions = async () => {
+      throw new ImportError('bad_status', 'nope');
+    };
+    expect((await call({ url: VID, ignoreLinkedRecipe: true })).json).toEqual({ error: 'needs_text' });
+    captions = async () => ({ url: 'https://evil.example/t', text: TRANSCRIPT });
+    expect((await call({ url: VID, ignoreLinkedRecipe: true })).json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('under ~200 chars of description + transcript -> needs_text', async () => {
+    pages[VID] = async () => ({ url: VID, html: watchHtml({ description: 'Yum.' }) });
+    captions = async () => ({ url: TRACK, text: '<transcript><text>Hi.</text></transcript>' });
+    const res = await call({ url: VID });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('no LLM configured -> needs_text', async () => {
+    setLlmParser(undefined);
+    const prev = process.env.LLM_MODEL_ID;
+    delete process.env.LLM_MODEL_ID;
+    try {
+      const res = await call({ url: VID, ignoreLinkedRecipe: true });
+      expect(res.json).toEqual({ error: 'needs_text' });
+    } finally {
+      if (prev !== undefined) process.env.LLM_MODEL_ID = prev;
+    }
+  });
+
+  it('LLM failure (undefined) -> needs_text', async () => {
+    result = async () => undefined;
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+  });
+
+  it('per-owner daily LLM cap reached -> needs_text without calling the parser', async () => {
+    for (let i = 0; i < 30; i++) await db.incrementCounter('OWNER#u1', 'RATE#llm#2026-11-02', 0);
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(0);
+  });
+
+  it('NotRecipe -> 422 not_a_recipe; forceRecipe -> needs_text; one LLM bump per call', async () => {
+    result = async () => ({ notRecipe: true, reason: 'A travel vlog.' });
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.status).toBe(422);
+    expect(res.json).toEqual({ error: 'not_a_recipe', reason: 'A travel vlog.' });
+    expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+    const forced = await call({ url: VID, ignoreLinkedRecipe: true, forceRecipe: true });
+    expect(forced.status).toBe(422);
+    expect(forced.json).toEqual({ error: 'needs_text' });
+    expect(llmCounts()).toEqual({ owner: 2, global: 2 });
+  });
+
+  it.each(['yes', 1, null, {}])('non-boolean ignoreLinkedRecipe %j -> 400', async (v) => {
+    const res = await call({ url: VID, ignoreLinkedRecipe: v });
+    expect(res.status).toBe(400);
+    expect(fetched).toEqual([]);
+  });
+
+  it('time budget: linked links are skipped once the deadline has passed', async () => {
+    pages[VID] = async () => {
+      nowMs += YOUTUBE_LINKS_DEADLINE_MS + 1;
+      return { url: VID, html: watchHtml({ description: `Full recipe: ${RECIPE_LINK}` }) };
+    };
+    const res = await call({ url: VID });
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('transcript');
+    expect(fetched).toEqual([VID]);
+  });
+
+  it('time budget: a slow linked page is abandoned at the deadline', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      pages[RECIPE_LINK] = () => new Promise(() => {});
+      const pending = call({ url: VID });
+      await vi.advanceTimersByTimeAsync(YOUTUBE_LINKS_DEADLINE_MS + 1);
+      const res = await pending;
+      expect(res.json.source).toBe('transcript');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('time budget: no LLM call once the LLM start deadline has passed -> needs_text, no counter bump', async () => {
+    captions = async () => {
+      nowMs += YOUTUBE_LLM_START_DEADLINE_MS + 1;
+      return { url: TRACK, text: TRANSCRIPT };
+    };
+    const res = await call({ url: VID, ignoreLinkedRecipe: true });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(0);
+    expect(llmCounts()).toEqual({ owner: undefined, global: undefined });
   });
 });

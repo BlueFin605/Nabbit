@@ -32,7 +32,8 @@ export interface ImageUpload {
 
 /** POST /recipes/import takes exactly one of url or text. */
 export type ImportRequest =
-  | { url: string; text?: never; forceRecipe?: boolean }
+  /** ignoreLinkedRecipe: for a YouTube URL, skip the recipe page linked in the description and use the transcript. */
+  | { url: string; text?: never; forceRecipe?: boolean; ignoreLinkedRecipe?: boolean }
   | { text: string; url?: never; forceRecipe?: boolean };
 
 export interface ImportResult {
@@ -40,6 +41,10 @@ export interface ImportResult {
   imageUrl?: string;
   /** Ranked photo candidates (best first). */
   candidates?: string[];
+  /** YouTube imports only: the draft came from a recipe page linked in the description, or from the video transcript. */
+  source?: 'linked-page' | 'transcript';
+  /** YouTube linked-page imports: the canonical video URL (draft.recipe.sourceUrl is the recipe page). */
+  videoUrl?: string;
 }
 
 /** Error codes the importer returns with a 422. */

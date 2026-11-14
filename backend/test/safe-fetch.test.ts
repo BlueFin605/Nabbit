@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { request as httpRequest } from 'node:http';
 import { createServer, type AddressInfo } from 'node:net';
 import { Readable } from 'node:stream';
-import { safeFetch, safeFetchImage, safeFetchJson, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
+import { safeFetch, safeFetchCaptions, safeFetchImage, safeFetchJson, isBlockedAddress, connectInOrder, orderAddresses, responseFromIncoming } from '../src/import/safe-fetch.js';
 import { ImportError } from '../src/import/import-error.js';
 
 const PUBLIC = '93.184.216.34';
@@ -493,5 +493,32 @@ describe('allowedOrigin (safeFetchJson)', () => {
     const fetchImpl = vi.fn(async (u: string) => (u.endsWith('/p.json') ? redirect('https://a.example/q.json') : json()));
     const r = await safeFetchJson('https://a.example/p.json', { resolve: resolvePublic, fetchImpl: fetchImpl as never }, 1000, { allowedOrigin: 'https://a.example' });
     expect(r.url).toBe('https://a.example/q.json');
+  });
+});
+
+describe('safeFetchCaptions', () => {
+  const TRACK = 'https://www.youtube.com/api/timedtext?v=abcdEFGhij1&lang=en';
+  const body = (text: string, type: string) => new Response(text, { status: 200, headers: { 'content-type': type } });
+
+  it.each(['text/xml; charset=UTF-8', 'application/json', 'application/ttml+xml', 'text/plain'])('accepts caption type %s, pinned like safeFetch', async (type) => {
+    const fetchImpl = vi.fn(async () => body('<transcript/>', type));
+    const r = await safeFetchCaptions(TRACK, { resolve: resolvePublic, fetchImpl: fetchImpl as never });
+    expect(r).toEqual({ url: TRACK, text: '<transcript/>' });
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
+    expect(init.pinnedAddress).toBe(PUBLIC);
+  });
+  it('rejects other content types', async () => {
+    const fetchImpl = vi.fn(async () => body('x', 'image/png'));
+    expect(await codeOf(safeFetchCaptions(TRACK, { resolve: resolvePublic, fetchImpl: fetchImpl as never }))).toBe('not_html');
+  });
+  it('refuses a redirect off the track origin before fetching it', async () => {
+    const fetchImpl = vi.fn(async () => redirect('https://evil.example/t'));
+    expect(await codeOf(safeFetchCaptions(TRACK, { resolve: resolvePublic, fetchImpl: fetchImpl as never }))).toBe('bad_url');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  it('blocks private addresses', async () => {
+    const fetchImpl = vi.fn(async () => body('x', 'text/xml'));
+    expect(await codeOf(safeFetchCaptions(TRACK, { resolve: async () => ['10.0.0.1'], fetchImpl: fetchImpl as never }))).toBe('blocked_address');
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
