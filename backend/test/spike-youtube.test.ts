@@ -133,6 +133,11 @@ describe('spike-youtube script', () => {
     expect(stdout).toMatch(/captionStatus: 503/);
     expect(stdout).toMatch(/captionResult: empty text/);
   });
+  it('is INCONCLUSIVE when fewer than 3 URLs are checked', async () => {
+    const { stdout } = await runOn([`${base}/good`, `${base}/good`]);
+    expect(stdout).toContain('Verdict: INCONCLUSIVE (need 3+ URLs; pass a urls file)');
+    expect(stdout).not.toMatch(/Verdict: (GO|NO-GO)/);
+  });
   it('exits 0 with a clear message when the urls file is missing', async () => {
     const { stdout } = await run(process.execPath, ['scripts/spike-youtube.mjs', join(tmpdir(), 'does-not-exist-spike.txt')]);
     expect(stdout).toMatch(/cannot read urls file/);
@@ -142,7 +147,7 @@ describe('spike-youtube script', () => {
 describe('resolveUrls', () => {
   it('falls back to the built-in default list including the known video', () => {
     expect(DEFAULT_URLS).toContain('https://youtu.be/yk6tQfArMvw');
-    expect(DEFAULT_URLS.length).toBeGreaterThanOrEqual(3);
+    expect(DEFAULT_URLS).toEqual(["https://youtu.be/yk6tQfArMvw"]);
     expect(resolveUrls(undefined)).toEqual(DEFAULT_URLS);
   });
   it('reads and filters a given file', () => {

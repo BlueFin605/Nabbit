@@ -14,8 +14,6 @@ const MIN_CAPTION = 200;
 
 export const DEFAULT_URLS = [
   'https://youtu.be/yk6tQfArMvw',
-  'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-  'https://www.youtube.com/watch?v=jNQXAC9IVRw',
 ];
 
 export function resolveUrls(file) {
@@ -195,7 +193,8 @@ async function main() {
   }
   const usable = rows.filter((r) => r.usable).length;
   console.log(`\nSummary: usable ${usable} of ${rows.length}`);
-  console.log(`Verdict: ${usable >= 2 && usable >= (rows.length * 2) / 3 ? 'GO' : 'NO-GO'}`);
+  const verdict = rows.length < 3 ? 'INCONCLUSIVE (need 3+ URLs; pass a urls file)' : usable >= 2 && usable >= (rows.length * 2) / 3 ? 'GO' : 'NO-GO';
+  console.log(`Verdict: ${verdict}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
