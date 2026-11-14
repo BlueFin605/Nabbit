@@ -1,0 +1,104 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { canonicalYoutubeUrl, captionsToText, extractPlayerData, isYoutubeUrl, pickCaptionTrack, youtubeVideoId } from '../src/import/extract-youtube.js';
+
+const fx = (n: string) => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), 'utf8');
+const ID = 'abcdEFGhij1';
+
+describe('isYoutubeUrl', () => {
+  it('accepts https youtube hosts, trailing dot and case', () => {
+    for (const h of ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'WWW.YouTube.com.']) {
+      expect(isYoutubeUrl(`https://${h}/watch?v=${ID}`)).toBe(true);
+    }
+  });
+  it('rejects http, other hosts and garbage', () => {
+    expect(isYoutubeUrl(`http://www.youtube.com/watch?v=${ID}`)).toBe(false);
+    expect(isYoutubeUrl(`https://evil.com/watch?v=${ID}`)).toBe(false);
+    expect(isYoutubeUrl('https://youtube.com.evil.com/')).toBe(false);
+    expect(isYoutubeUrl('not a url')).toBe(false);
+  });
+  it('honours e2e hosts only in development', () => {
+    const url = 'https://fixture.test/watch';
+    expect(isYoutubeUrl(url, { NODE_ENV: 'development', NABBIT_E2E_YOUTUBE_HOSTS: 'a.test, Fixture.test' })).toBe(true);
+    expect(isYoutubeUrl(url, { NODE_ENV: 'production', NABBIT_E2E_YOUTUBE_HOSTS: 'fixture.test' })).toBe(false);
+    expect(isYoutubeUrl(url, { NODE_ENV: 'development' })).toBe(false);
+  });
+});
+
+describe('youtubeVideoId', () => {
+  it('reads watch, youtu.be and shorts URLs', () => {
+    expect(youtubeVideoId(`https://www.youtube.com/watch?v=${ID}&t=5s`)).toBe(ID);
+    expect(youtubeVideoId(`https://youtu.be/${ID}?si=zzz`)).toBe(ID);
+    expect(youtubeVideoId(`https://www.youtube.com/shorts/${ID}`)).toBe(ID);
+    expect(youtubeVideoId(`https://m.youtube.com/watch?v=${ID}`)).toBe(ID);
+  });
+  it('rejects bad ids, wrong paths, other hosts and garbage', () => {
+    expect(youtubeVideoId('https://www.youtube.com/watch?v=short')).toBeUndefined();
+    expect(youtubeVideoId(`https://www.youtube.com/watch?v=${ID}x`)).toBeUndefined();
+    expect(youtubeVideoId('https://www.youtube.com/watch')).toBeUndefined();
+    expect(youtubeVideoId(`https://www.youtube.com/playlist?v=${ID}`)).toBeUndefined();
+    expect(youtubeVideoId(`https://example.com/watch?v=${ID}`)).toBeUndefined();
+    expect(youtubeVideoId(`http://youtu.be/${ID}`)).toBeUndefined();
+    expect(youtubeVideoId('nope')).toBeUndefined();
+  });
+});
+
+describe('canonicalYoutubeUrl', () => {
+  it('normalises and drops extra params', () => {
+    const want = `https://www.youtube.com/watch?v=${ID}`;
+    expect(canonicalYoutubeUrl(`https://youtu.be/${ID}?si=a&t=3`)).toBe(want);
+    expect(canonicalYoutubeUrl(`https://www.youtube.com/watch?v=${ID}&list=PL1&t=9`)).toBe(want);
+    expect(canonicalYoutubeUrl(`https://www.youtube.com/shorts/${ID}`)).toBe(want);
+  });
+  it('returns undefined when there is no valid id', () => {
+    expect(canonicalYoutubeUrl('https://www.youtube.com/')).toBeUndefined();
+    expect(canonicalYoutubeUrl('https://example.com/x')).toBeUndefined();
+  });
+});
+
+describe('extractPlayerData', () => {
+  it('reads title, description and caption tracks despite braces in strings', () => {
+    const d = extractPlayerData(fx('youtube-watch.html'))!;
+    expect(d.title).toBe('Easy Garlic Noodles');
+    expect(d.description).toContain('https://example.com/garlic-noodles');
+    expect(d.description).toContain('use } and { carefully "quoted"');
+    expect(d.captionTracks).toHaveLength(3);
+    expect(d.captionTracks[1]).toEqual({ baseUrl: expect.stringContaining('kind=asr'), languageCode: 'en', kind: 'asr' });
+  });
+  it('gives empty tracks when the page has none', () => {
+    const d = extractPlayerData('<script>var ytInitialPlayerResponse = {"videoDetails":{"title":"T","shortDescription":"D"}};</script>');
+    expect(d).toEqual({ title: 'T', description: 'D', captionTracks: [] });
+  });
+  it('returns undefined without player data, with bad JSON, or for empty input', () => {
+    expect(extractPlayerData('<html>consent wall</html>')).toBeUndefined();
+    expect(extractPlayerData('var ytInitialPlayerResponse = {"a": ')).toBeUndefined();
+    expect(extractPlayerData('var ytInitialPlayerResponse = {not json};')).toBeUndefined();
+    expect(extractPlayerData('')).toBeUndefined();
+  });
+});
+
+describe('pickCaptionTrack', () => {
+  const t = (languageCode: string, kind?: string) => ({ baseUrl: `u-${languageCode}-${kind ?? 'm'}`, languageCode, ...(kind ? { kind } : {}) });
+  it('prefers manual English, then auto English, then the first', () => {
+    expect(pickCaptionTrack([t('de'), t('en', 'asr'), t('en-GB')])?.baseUrl).toBe('u-en-GB-m');
+    expect(pickCaptionTrack([t('de'), t('en', 'asr')])?.baseUrl).toBe('u-en-asr');
+    expect(pickCaptionTrack([t('de'), t('fr')])?.baseUrl).toBe('u-de-m');
+  });
+  it('returns undefined for no tracks', () => {
+    expect(pickCaptionTrack([])).toBeUndefined();
+  });
+});
+
+describe('captionsToText', () => {
+  it('flattens json3', () => {
+    expect(captionsToText(fx('youtube-captions.json3'))).toBe('Boil the noodles then add garlic and butter');
+  });
+  it('flattens XML, decoding entities', () => {
+    expect(captionsToText(fx('youtube-captions.xml'))).toBe('Boil the noodles then add garlic & butter it\'s "easy"');
+  });
+  it('returns empty for bad or empty bodies', () => {
+    expect(captionsToText('{broken')).toBe('');
+    expect(captionsToText('')).toBe('');
+    expect(captionsToText('<html></html>')).toBe('');
+  });
+});
