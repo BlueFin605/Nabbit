@@ -25,7 +25,7 @@ import { extractStructured } from '../import/extract-structured.js';
 import { extractAppData, MAX_APP_DATA_BYTES } from '../import/extract-app-data.js';
 import { ImportError } from '../import/import-error.js';
 import { stripTrackingParams } from '../import/source-url.js';
-import { getLlmParser } from '../import/llm-parse.js';
+import { getLlmParser, isNotRecipe } from '../import/llm-parse.js';
 import { countSteps, type RecipeDraft } from '@nabbit/recipe-core';
 import { safeFetch as realSafeFetch, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
@@ -85,7 +85,7 @@ async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, s
       return heuristic;
     }
     const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
-    if (!recipe) return heuristic;
+    if (!recipe || isNotRecipe(recipe)) return heuristic; // NotRecipe -> 422 is handled in a later ticket
     if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
     return { recipe, confidence: 'ai' };
   } catch {
