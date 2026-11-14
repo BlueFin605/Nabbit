@@ -78,7 +78,8 @@ export function isYoutubeUrl(url: string | undefined): boolean {
   if (!url) return false;
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' && YOUTUBE_HOSTS.has(u.hostname.toLowerCase().replace(/\.$/, ''));
+    const host = u.hostname.toLowerCase().replace(/\.$/, '');
+    return u.protocol === 'https:' && (YOUTUBE_HOSTS.has(host) || (environment.extraYoutubeHosts ?? []).includes(host));
   } catch {
     return false;
   }

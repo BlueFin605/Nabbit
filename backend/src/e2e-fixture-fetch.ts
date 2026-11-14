@@ -17,7 +17,10 @@ import type { SafeFetchDeps } from './import/safe-fetch.js';
 export const FIXTURE_HOST = 'nabbit-fixtures.test';
 /** Second fixture hostname, served from the same origin; the stack lists it in NABBIT_E2E_INSTAGRAM_HOSTS so it counts as Instagram. */
 export const FIXTURE_IG_HOST = 'ig.nabbit-fixtures.test';
-const FIXTURE_HOSTS: readonly string[] = [FIXTURE_HOST, FIXTURE_IG_HOST];
+/** Third fixture hostname for YouTube watch pages; the stack lists it in NABBIT_E2E_YOUTUBE_HOSTS (and the e2e build's extraYoutubeHosts). */
+export const FIXTURE_YT_HOST = 'yt.nabbit-fixtures.test';
+const FIXTURE_HOSTS: readonly string[] = [FIXTURE_HOST, FIXTURE_IG_HOST, FIXTURE_YT_HOST];
+const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 /** A routable-looking address the guard accepts (never connected to; the fetch is redirected). */
 const FIXTURE_ADDRESS = '93.184.216.34';
 
@@ -44,6 +47,12 @@ export function fixtureFetchDeps(env: NodeJS.ProcessEnv = process.env): SafeFetc
     fetchImpl: ((input: string | URL, init?: RequestInit) => {
       const u = new URL(String(input));
       if (!FIXTURE_HOSTS.includes(u.hostname)) return Promise.reject(new Error('fixture mode: unknown host'));
+      // Watch pages live at /watch?v=<id>; the static fixture site holds them as /yt/<id>.html (only well-formed ids map).
+      if (u.hostname === FIXTURE_YT_HOST && u.pathname === '/watch') {
+        const id = u.searchParams.get('v') ?? '';
+        if (!VIDEO_ID.test(id)) return Promise.resolve(new Response('not found', { status: 404 }));
+        return fetch(`${origin}/yt/${id}.html`, { method: 'GET', redirect: 'manual', headers: init?.headers, signal: init?.signal });
+      }
       return fetch(origin + u.pathname + u.search, { method: 'GET', redirect: 'manual', headers: init?.headers, signal: init?.signal });
     }) as typeof fetch,
   };
