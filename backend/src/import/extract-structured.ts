@@ -1,6 +1,6 @@
 import { parse, type HTMLElement } from 'node-html-parser';
-import { convertTemperatures, parseIngredient, toMetric } from '@nabbit/recipe-core';
-import type { RecipeDraft } from '@nabbit/recipe-core';
+import { mapSteps, MAX_STEP_DEPTH, convertTemperatures, parseIngredient, toMetric } from '@nabbit/recipe-core';
+import type { RecipeDraft, StepNode } from '@nabbit/recipe-core';
 
 export type StructuredDraft = RecipeDraft & { imageUrl?: string };
 
@@ -19,6 +19,11 @@ type Json = unknown;
 type Obj = Record<string, unknown>;
 
 const isObj = (v: Json): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** The API limits headings to 5000 chars; keep imported group headings well inside that. */
+const MAX_HEADING = 200;
+/** Cap a heading at MAX_HEADING UTF-16 units without leaving half a surrogate pair at the cut. */
+const capHeading = (s: string): string => s.slice(0, MAX_HEADING).replace(/[\uD800-\uDBFF]$/, '').trim();
 
 /** Strip tags and decode entities (HTML is parsed, never executed). */
 function cleanText(raw: string): string {
@@ -86,18 +91,39 @@ function jsonLdRecipe(root: HTMLElement): Obj | undefined {
   return undefined;
 }
 
-function stepsFrom(v: Json, out: string[], depth = 0): void {
-  if (out.length >= MAX_ITEMS || depth > MAX_DEPTH) return;
+/** Leaf-step budget shared across one recipe's whole step tree. */
+interface StepBudget {
+  left: number;
+}
+
+/**
+ * Method steps from schema.org `recipeInstructions`. A `HowToSection` (any object with `itemListElement`) becomes a
+ * group headed by its name, at any depth; a recipe without sections yields the flat list it always did. Groups nested
+ * deeper than the stored-recipe depth cap are spliced into their parent so the draft still validates.
+ */
+function stepsFrom(v: Json, budget: StepBudget = { left: MAX_ITEMS }, depth = 0, level = 0): StepNode[] {
+  const out: StepNode[] = [];
+  if (budget.left <= 0 || depth > MAX_DEPTH) return out;
   if (typeof v === 'string') {
-    out.push(...toLines(v));
+    for (const line of toLines(v)) {
+      if (budget.left <= 0) break;
+      out.push(line);
+      budget.left--;
+    }
   } else if (Array.isArray(v)) {
-    for (const x of v.slice(0, MAX_ITEMS)) stepsFrom(x, out, depth + 1);
+    for (const x of v.slice(0, MAX_ITEMS)) out.push(...stepsFrom(x, budget, depth + 1, level));
   } else if (isObj(v)) {
-    if (v['itemListElement'] !== undefined) stepsFrom(v['itemListElement'], out, depth + 1);
-    else if (typeof v['text'] === 'string') out.push(...toLines(v['text']));
-    else if (typeof v['name'] === 'string') out.push(...toLines(v['name']));
+    if (v['itemListElement'] !== undefined) {
+      const group = level < MAX_STEP_DEPTH - 1;
+      const children = stepsFrom(v['itemListElement'], budget, depth + 1, group ? level + 1 : level);
+      if (children.length === 0) return out;
+      const name = group ? capHeading(cleanText(asString(v['name']) ?? '')) : '';
+      if (!group) out.push(...children);
+      else out.push(name ? { heading: name, steps: children } : { steps: children });
+    } else if (typeof v['text'] === 'string') out.push(...stepsFrom(v['text'], budget, depth + 1, level));
+    else if (typeof v['name'] === 'string') out.push(...stepsFrom(v['name'], budget, depth + 1, level));
   }
-  if (out.length > MAX_ITEMS) out.length = MAX_ITEMS;
+  return out;
 }
 
 function parseServings(v: Json): number {
@@ -148,7 +174,7 @@ function imageFrom(v: Json, base: string): string | undefined {
 interface Raw {
   title: string;
   ingredients: string[];
-  steps: string[];
+  steps: StepNode[];
   servings: number;
   tags: string[];
   image?: string;
@@ -160,8 +186,7 @@ function fromJsonLd(node: Obj, base: string): Raw {
     .slice(0, MAX_ITEMS)
     .map((x) => cleanText(asString(x) ?? ''))
     .filter(Boolean);
-  const steps: string[] = [];
-  stepsFrom(node['recipeInstructions'], steps);
+  const steps = stepsFrom(node['recipeInstructions']);
   return {
     title: cleanText(asString(node['name']) ?? ''),
     ingredients,
@@ -192,6 +217,58 @@ function propValue(el: HTMLElement): string {
   return el.text;
 }
 
+const isHowToSection = (el: HTMLElement): boolean => /schema\.org\/HowToSection\b/i.test(el.getAttribute('itemtype') ?? '');
+
+/** Plain step lines under one element: its `li`s, else its `itemprop="text"`s, else its own text. */
+function flatMicroSteps(el: HTMLElement, budget: StepBudget): StepNode[] {
+  const out: StepNode[] = [];
+  const push = (lines: string[]) => {
+    for (const l of lines) {
+      if (budget.left <= 0) return;
+      out.push(l);
+      budget.left--;
+    }
+  };
+  const lis = el.querySelectorAll('li');
+  const texts = el.querySelectorAll('[itemprop="text"]');
+  if (lis.length) lis.forEach((li) => push(toLines(li.text)));
+  else if (texts.length) texts.forEach((t) => push(toLines(t.text)));
+  else push(toLines(el.innerHTML));
+  return out;
+}
+
+/**
+ * Steps inside one microdata recipeInstructions element. A HowToSection scope owning `itemListElement` children becomes
+ * a group, nested only as deep as the stored-recipe cap: below that the section's items are flattened in place, so the
+ * recursion (and its per-level subtree queries) is bounded by MAX_STEP_DEPTH however deeply the page nests.
+ * A section with no `itemListElement` children reads like any other element (plain `li`s etc.), grouped only if named.
+ */
+function microSteps(el: HTMLElement, budget: StepBudget, level: number): StepNode[] {
+  if (!(isHowToSection(el) && el.hasAttribute('itemscope'))) return flatMicroSteps(el, budget);
+  const group = level < MAX_STEP_DEPTH - 1;
+  const owned = el
+    .querySelectorAll('[itemprop]')
+    .slice(0, MAX_NODES)
+    .filter((e) => nearestScope(e) === el);
+  const hasProp = (e: HTMLElement, n: string) => (e.getAttribute('itemprop') ?? '').split(/\s+/).includes(n);
+  const items = owned.filter((e) => hasProp(e, 'itemListElement'));
+  const nameEl = owned.find((e) => hasProp(e, 'name'));
+  const name = nameEl ? capHeading(cleanText(propValue(nameEl))) : '';
+  const children: StepNode[] = [];
+  if (items.length === 0) {
+    children.push(...flatMicroSteps(el, budget));
+    if (!group || !name) return children;
+  } else {
+    for (const item of items) {
+      children.push(...(group ? microSteps(item, budget, level + 1) : flatMicroSteps(item, budget)));
+      if (budget.left <= 0) break;
+    }
+    if (!group) return children;
+  }
+  if (children.length === 0) return [];
+  return [name ? { heading: name, steps: children } : { steps: children }];
+}
+
 function microdataRecipe(root: HTMLElement, base: string): Raw | undefined {
   const scope = root
     .querySelectorAll('[itemscope]')
@@ -211,16 +288,12 @@ function microdataRecipe(root: HTMLElement, base: string): Raw | undefined {
     .map((e) => cleanText(propValue(e)))
     .filter(Boolean);
 
-  const steps: string[] = [];
+  const budget: StepBudget = { left: MAX_ITEMS };
+  const steps: StepNode[] = [];
   for (const el of named('recipeInstructions')) {
-    const lis = el.querySelectorAll('li');
-    const texts = el.querySelectorAll('[itemprop="text"]');
-    if (lis.length) lis.forEach((li) => steps.push(...toLines(li.text)));
-    else if (texts.length) texts.forEach((t) => steps.push(...toLines(t.text)));
-    else steps.push(...toLines(el.innerHTML));
-    if (steps.length >= MAX_ITEMS) break;
+    steps.push(...microSteps(el, budget, 0));
+    if (budget.left <= 0) break;
   }
-  steps.length = Math.min(steps.length, MAX_ITEMS);
 
   const nameEl = first('name');
   const imgEl = first('image');
@@ -256,7 +329,7 @@ export function extractStructured(html: string, pageUrl: string): StructuredDraf
       sourceUrl: pageUrl,
       servings: raw.servings,
       ingredients: raw.ingredients.map((l) => toMetric(parseIngredient(l))),
-      steps: raw.steps.map(convertTemperatures),
+      steps: mapSteps(raw.steps, convertTemperatures),
       tags: raw.tags,
     },
   };

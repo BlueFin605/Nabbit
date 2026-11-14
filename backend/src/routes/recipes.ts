@@ -8,13 +8,12 @@
  *   POST   /recipes/{id}/restore  undo a soft delete within the 30 days
  * Stored as pk=OWNER#{ownerId}, sk=RECIPE#{id}; attributes are the Recipe fields plus `ttl` when deleted.
  */
-import { newId, toMetric, type Ingredient, type Recipe } from '@nabbit/recipe-core';
+import { MAX_STEP_COUNT, MAX_STEP_DEPTH, countSteps, newId, toMetric, type Ingredient, type OriginalSize, type Recipe, type StepNode } from '@nabbit/recipe-core';
 import { ConditionFailedError, RECIPE_SK_PREFIX, getDb, ownerPk, recipeSk, type Item } from '../db.js';
 import { HttpError, assertMaxBytes, route, type RequestCtx } from '../router.js';
 
 const MAX_TITLE = 200;
 const MAX_INGREDIENTS = 200;
-const MAX_STEPS = 100;
 const MAX_TAGS = 50;
 const MAX_STRING = 5000;
 /** Serialized recipe cap, well under DynamoDB's 400 KB item limit. */
@@ -34,6 +33,27 @@ function str(v: unknown, field: string, max = MAX_STRING): string {
 }
 function optStr(v: unknown, field: string): string | undefined {
   return v === undefined || v === null ? undefined : str(v, field);
+}
+
+/** A step is a string or a group `{heading?, steps}`; nesting is capped by MAX_STEP_DEPTH, total leaves by MAX_STEP_COUNT. */
+function parseStepNodes(v: unknown, field: string, depth: number): StepNode[] {
+  if (!Array.isArray(v)) return bad(`${field} must be an array`);
+  if (depth > MAX_STEP_DEPTH) return bad(`steps nest at most ${MAX_STEP_DEPTH} deep`);
+  if (v.length > MAX_STEP_COUNT) return bad(`steps must have at most ${MAX_STEP_COUNT}`);
+  return v.map((n, i): StepNode => {
+    const f = `${field}[${i}]`;
+    if (typeof n === 'string') return str(n, f);
+    if (!isObj(n)) return bad(`${f} must be a string or a group`);
+    const heading = optStr(n.heading, `${f}.heading`);
+    if (!Array.isArray(n.steps) || n.steps.length === 0) bad(`${f}.steps must be a non-empty array`);
+    return { ...(heading !== undefined ? { heading } : {}), steps: parseStepNodes(n.steps, `${f}.steps`, depth + 1) };
+  });
+}
+
+function parseSteps(v: unknown): StepNode[] {
+  const steps = parseStepNodes(v, 'steps', 1);
+  if (countSteps(steps) > MAX_STEP_COUNT) bad(`steps must have at most ${MAX_STEP_COUNT}`);
+  return steps;
 }
 
 function parseIngredient(v: unknown, i: number): Ingredient {
@@ -59,34 +79,47 @@ function parseIngredient(v: unknown, i: number): Ingredient {
   return toMetric(ing); // always recomputed server-side; any client `metric` is discarded
 }
 
-type Fields = Pick<Recipe, 'title' | 'sourceUrl' | 'imageKey' | 'servings' | 'ingredients' | 'steps' | 'tags'>;
+type Fields = Pick<Recipe, 'title' | 'sourceUrl' | 'imageKey' | 'servings' | 'ingredients' | 'steps' | 'tags' | 'scaleBy' | 'originalSize'>;
+
+const validServings = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
+
+function parseIngredients(v: unknown, field: string): Ingredient[] {
+  if (!Array.isArray(v) || v.length > MAX_INGREDIENTS) return bad(`${field} must be an array of at most ${MAX_INGREDIENTS}`);
+  return v.map(parseIngredient);
+}
+
+/** The first-size backup: same servings and ingredient rules as the live recipe. */
+function parseOriginalSize(v: unknown): OriginalSize {
+  if (!isObj(v)) return bad('originalSize must be an object');
+  if (!validServings(v.servings)) bad('originalSize.servings must be a positive number');
+  return { servings: v.servings as number, ingredients: parseIngredients(v.ingredients, 'originalSize.ingredients') };
+}
 
 /** Validate and normalise the client-editable recipe fields. Everything else is server-owned. */
 function parseFields(body: unknown, ownerId: string): Fields {
   if (!isObj(body)) return bad('body must be a JSON object');
   const title = str(body.title, 'title').trim();
   if (title === '' || title.length > MAX_TITLE) bad(`title must be 1-${MAX_TITLE} characters`);
-  if (typeof body.servings !== 'number' || !Number.isFinite(body.servings) || body.servings <= 0) {
-    bad('servings must be a positive number');
-  }
-  if (!Array.isArray(body.ingredients) || body.ingredients.length > MAX_INGREDIENTS) {
-    bad(`ingredients must be an array of at most ${MAX_INGREDIENTS}`);
-  }
-  if (!Array.isArray(body.steps) || body.steps.length > MAX_STEPS) bad(`steps must be an array of at most ${MAX_STEPS}`);
+  if (!validServings(body.servings)) bad('servings must be a positive number');
+  const ingredients = parseIngredients(body.ingredients, 'ingredients');
   const tags = body.tags ?? [];
   if (!Array.isArray(tags) || tags.length > MAX_TAGS) bad(`tags must be an array of at most ${MAX_TAGS}`);
   const sourceUrl = optStr(body.sourceUrl, 'sourceUrl');
   const imageKey = optStr(body.imageKey, 'imageKey');
   // Image keys are `{ownerId}/{uuid}`; refuse to reference another owner's image.
   if (imageKey !== undefined && !imageKey.startsWith(`${ownerId}/`)) bad('imageKey is not yours');
+  const scaleBy = optStr(body.scaleBy, 'scaleBy');
+  if (scaleBy !== undefined && !ingredients.some((g) => g.id === scaleBy)) bad('scaleBy must be the id of one of the ingredients');
   const fields: Fields = {
     title,
     servings: body.servings as number,
-    ingredients: (body.ingredients as unknown[]).map(parseIngredient),
-    steps: (body.steps as unknown[]).map((s, i) => str(s, `steps[${i}]`)),
+    ingredients,
+    steps: parseSteps(body.steps),
     tags: (tags as unknown[]).map((t, i) => str(t, `tags[${i}]`)),
     ...(sourceUrl !== undefined ? { sourceUrl } : {}),
     ...(imageKey !== undefined ? { imageKey } : {}),
+    ...(scaleBy !== undefined ? { scaleBy } : {}),
+    ...(body.originalSize !== undefined && body.originalSize !== null ? { originalSize: parseOriginalSize(body.originalSize) } : {}),
   };
   assertMaxBytes(fields, MAX_RECIPE_BYTES);
   return fields;

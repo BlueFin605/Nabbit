@@ -64,7 +64,7 @@ const isConflict = (e: unknown): boolean => e instanceof HttpErrorResponse && e.
     .bar button.current { font-weight: 600; }
     .name-form { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
     .name-form mat-form-field { flex: 1; }
-    .quick { position: sticky; top: 0; z-index: 2; background: var(--mat-sys-surface, #fff); padding: 8px 0; }
+    .quick { position: sticky; top: var(--top-bar-h); z-index: 2; background: var(--mat-sys-surface, #fff); padding: 8px 0; }
     .quick mat-form-field { width: 100%; }
     h2.aisle { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; margin: 16px 0 4px; opacity: 0.7; }
     ul { list-style: none; margin: 0; padding: 0; }

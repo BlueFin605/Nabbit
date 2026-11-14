@@ -6,9 +6,16 @@
 .photo-pick input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .uploading { display: inline-flex; align-items: center; gap: 8px; }
 .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
-.ingredient, .step-row { border: 1px solid var(--mat-sys-outline-variant, #ccc); border-radius: 12px; padding: 8px; margin-bottom: 8px; background: var(--mat-sys-surface, #fff); }
-.step-row { display: flex; align-items: flex-start; gap: 8px; }
-.step-field { flex: 1; }
+.ingredient, .step-row, .group-row { border: 1px solid var(--mat-sys-outline-variant, #ccc); border-radius: 12px; padding: 8px; margin-bottom: 8px; background: var(--mat-sys-surface, #fff); }
+.step-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.group-row { background: var(--mat-sys-surface-container-low, #f7f2fa); }
+.group-head { display: flex; align-items: flex-start; gap: 8px; }
+.group-body { margin-left: 12px; padding-left: 8px; border-left: 3px solid var(--mat-sys-outline-variant, #ccc); }
+.row-controls { display: flex; flex-wrap: wrap; gap: 4px; }
+.row-controls button { min-height: 48px; min-width: 48px; }
+.level-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.level-actions button { min-height: 48px; }
+.step-field { flex: 1 1 160px; min-width: 160px; }
 .row-head { display: flex; justify-content: space-between; align-items: center; }
 .handle { min-width: 48px; min-height: 48px; border: 0; background: none; font-size: 1.4rem; cursor: grab; touch-action: none; }
 .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -29,3 +36,6 @@ details summary { cursor: pointer; min-height: 40px; display: flex; align-items:
 .candidate { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
 .candidate.chosen { border-color: var(--mat-sys-primary, #6750a4); }
 .candidate img { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 6px; }
+
+.scale-by-label { display: flex; align-items: center; gap: 8px; min-height: 48px; cursor: pointer; }
+.scale-by-label input[type='radio'] { width: 24px; height: 24px; margin: 0; }

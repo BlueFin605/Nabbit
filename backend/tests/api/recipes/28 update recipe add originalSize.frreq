@@ -1,0 +1,49 @@
+{
+    "id": "ba55a03d-5058-481d-8574-b00ce2d967b7",
+    "name": "28 update recipe add originalSize",
+    "verb": "put",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{scaleRecipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Scaled Pancakes\",\"servings\":4,\"ingredients\":[{\"id\":\"ing-flour\",\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"id\":\"ing-milk\",\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix.\",\"Fry.\"],\"tags\":[\"breakfast\"],\"scaleBy\":\"ing-milk\",\"originalSize\":{\"servings\":2,\"ingredients\":[{\"id\":\"ing-flour\",\"name\":\"flour\",\"quantity\":100,\"unit\":\"g\"},{\"id\":\"ing-milk\",\"name\":\"milk\",\"quantity\":150,\"unit\":\"ml\"}]},\"version\":{{scaleVersion}}}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"version\",\n    \"scaleBy\",\n    \"originalSize\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"const\": \"Scaled Pancakes\"\n    },\n    \"scaleBy\": {\n      \"const\": \"ing-milk\"\n    },\n    \"ingredients\": {\n      \"type\": \"array\",\n      \"minItems\": 2,\n      \"maxItems\": 2,\n      \"items\": {\n        \"type\": \"object\",\n        \"required\": [\n          \"id\",\n          \"name\",\n          \"unit\",\n          \"scalable\"\n        ],\n        \"properties\": {\n          \"id\": {\n            \"type\": \"string\"\n          },\n          \"name\": {\n            \"type\": \"string\"\n          },\n          \"unit\": {\n            \"type\": \"string\"\n          },\n          \"scalable\": {\n            \"type\": \"boolean\"\n          },\n          \"quantity\": {\n            \"type\": [\n              \"number\",\n              \"null\"\n            ]\n          }\n        }\n      }\n    },\n    \"version\": {\n      \"const\": 2\n    },\n    \"originalSize\": {\n      \"type\": \"object\",\n      \"required\": [\n        \"servings\",\n        \"ingredients\"\n      ],\n      \"properties\": {\n        \"servings\": {\n          \"const\": 2\n        },\n        \"ingredients\": {\n          \"type\": \"array\",\n          \"minItems\": 2,\n          \"maxItems\": 2,\n          \"items\": {\n            \"type\": \"object\",\n            \"required\": [\n              \"id\",\n              \"name\",\n              \"unit\",\n              \"scalable\"\n            ],\n            \"properties\": {\n              \"id\": {\n                \"type\": \"string\"\n              },\n              \"name\": {\n                \"type\": \"string\"\n              },\n              \"unit\": {\n                \"type\": \"string\"\n              },\n              \"scalable\": {\n                \"type\": \"boolean\"\n              },\n              \"quantity\": {\n                \"type\": [\n                  \"number\",\n                  \"null\"\n                ]\n              }\n            }\n          }\n        }\n      }\n    }\n  }\n}"
+        }
+    },
+    "capture": [
+        {
+            "variable": "scaleVersion",
+            "from": "body",
+            "path": "$.version",
+            "id": "a6aae675-4648-42f4-8243-651db6a5731f"
+        }
+    ]
+}

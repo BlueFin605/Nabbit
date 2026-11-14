@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router, provideRouter } from '@angular/router';
@@ -21,14 +23,14 @@ const flour: Ingredient = {
   metric: { quantity: 480, unit: 'ml' },
 };
 const salt: Ingredient = { id: 'i2', original: 'salt to taste', quantity: null, unit: '', name: 'salt', scalable: false };
-const recipe = (): Recipe => ({
+const recipe = (steps: Recipe['steps'] = ['Heat oven to 350°F', 'Mix']): Recipe => ({
   id: 'r1',
   title: 'Pancakes',
   sourceUrl: 'https://example.com/p',
   imageKey: 'o/img1',
   servings: 4,
   ingredients: [flour, salt],
-  steps: ['Heat oven to 350°F', 'Mix'],
+  steps,
   tags: [],
   version: 1,
   createdAt: '2026-01-01T00:00:00Z',
@@ -93,6 +95,63 @@ describe('RecipeDetail', () => {
     expect(el().querySelectorAll('.steps li')).toHaveLength(2);
     expect(el().querySelector('.source a')?.getAttribute('href')).toBe('https://example.com/p');
     expect(el().querySelector('a[href="/recipes/r1/edit"]')).not.toBeNull();
+  });
+
+  describe('step groups', () => {
+    it('flat steps render one top-level list with no headings or nested lists', async () => {
+      await setup();
+      expect(el().querySelectorAll('ol.steps')).toHaveLength(1);
+      expect(el().querySelectorAll('.steps h3, .steps ol')).toHaveLength(0);
+    });
+
+    it('a group with a heading shows an h3 above its own ol', async () => {
+      await setup(() => of(recipe(['Prep', { heading: 'Sauce', steps: ['Chop', 'Simmer'] }])));
+      const h = el().querySelector('.steps h3');
+      expect(h?.textContent?.trim()).toBe('Sauce');
+      const inner = h?.parentElement?.querySelector('ol');
+      expect(inner?.querySelectorAll(':scope > li')).toHaveLength(2);
+      expect((h as Element).compareDocumentPosition(inner as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('nests two deep with headings visible and native nested lists for numbering', async () => {
+      await setup(() => of(recipe([{ heading: 'Outer', steps: ['A', { heading: 'Inner', steps: ['B', 'C'] }] }, 'Last'])));
+      const top = el().querySelector('ol.steps') as Element;
+      expect(top.querySelectorAll(':scope > li')).toHaveLength(2);
+      const headings = Array.from(el().querySelectorAll('.steps h3')).map((h) => h.textContent?.trim());
+      expect(headings).toEqual(['Outer', 'Inner']);
+      expect(el().querySelectorAll('.steps ol ol')).toHaveLength(1);
+    });
+
+    it('a headingless group is an indented ol without an h3', async () => {
+      await setup(() => of(recipe(['A', { steps: ['B', 'C'] }])));
+      expect(el().querySelectorAll('.steps h3')).toHaveLength(0);
+      expect(el().querySelectorAll('.steps ol')).toHaveLength(1);
+      expect(el().querySelectorAll('.steps ol > li')).toHaveLength(2);
+    });
+
+    it('group li is not a list-item, so it does not consume a number in the parent ol', async () => {
+      await setup(() => of(recipe(['Prep', { heading: 'Sauce', steps: ['Chop'] }, 'Last'])));
+      const group = el().querySelector('.steps li.group') as HTMLElement;
+      const computed = getComputedStyle(group).display;
+      if (computed === 'block') {
+        // jsdom applied the component stylesheet
+        expect(computed).not.toBe('list-item');
+      } else {
+        // jest does not compile the component .scss, so guard the rule in source
+        const scss = readFileSync(join(__dirname, 'recipe-detail.scss'), 'utf8');
+        const rule = /\.steps li\.group\s*\{([^}]*)\}/.exec(scss)?.[1] ?? '';
+        expect(rule).toMatch(/display:\s*block/);
+      }
+      // the numbered siblings are the only list-item children of the top-level ol
+      expect(el().querySelectorAll('ol.steps > li:not(.group)')).toHaveLength(2);
+    });
+
+    it('converts temperatures inside nested steps in metric mode only', async () => {
+      await setup(() => of(recipe([{ heading: 'Bake', steps: [{ steps: ['Heat oven to 350°F'] }] }])));
+      expect(el().querySelector('.steps')?.textContent).toContain('180°C');
+      await click('mat-button-toggle[value="original"] button');
+      expect(el().querySelector('.steps')?.textContent).toContain('350°F');
+    });
   });
 
   it('renders metric by default with the note separately and marks to-taste', async () => {
@@ -207,6 +266,16 @@ describe('RecipeDetail', () => {
       expect(body).not.toHaveProperty('id');
       // the view now treats 8 as the stored size
       expect(el().querySelector('.save-size')).toBeNull();
+    });
+
+    it('save as new size sends the nested step tree unchanged', async () => {
+      const steps: Recipe['steps'] = ['Prep', { heading: 'Sauce', steps: ['Chop', { steps: ['Simmer 350°F'] }] }, 'Last'];
+      await setup(() => of(recipe(steps)));
+      await click('button[aria-label="More servings"]');
+      stubDialog(true);
+      await click('.save-size');
+      const [, body] = updateRecipe.mock.calls[0] as [string, { steps: unknown }];
+      expect(body.steps).toEqual(steps);
     });
 
     it('does not save when the dialog is cancelled', async () => {
@@ -350,6 +419,381 @@ describe('RecipeDetail', () => {
       expect(snackOpen).toHaveBeenCalledWith("Couldn't add that ingredient", 'OK', { duration: 5000 });
       expect(addBtn(0).textContent).not.toContain('✓');
       expect(remember).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('scale by ingredient', () => {
+    const milk: Ingredient = { id: 'milk', original: '4 l milk', quantity: 4, unit: 'l', name: 'milk', scalable: true, metric: { quantity: 4000, unit: 'ml' } };
+    const rennet: Ingredient = { id: 'ren', original: '1 tsp rennet', quantity: 1, unit: 'tsp', name: 'rennet', scalable: true };
+    const cheese = (scaleBy?: string): Recipe => ({ ...recipe(), ingredients: [milk, rennet, salt], ...(scaleBy ? { scaleBy } : {}) });
+    const scaleSelect = () => el().querySelector<HTMLSelectElement>('select.scale-by');
+    const amountBox = () => el().querySelector<HTMLInputElement>('input.anchor-amount');
+    const unitSelect = () => el().querySelector<HTMLSelectElement>('select.anchor-unit');
+    const reset = () => el().querySelector<HTMLButtonElement>('button.reset-scale');
+    const factorText = () => el().querySelector('.factor')?.textContent ?? '';
+    const choose = async (sel: HTMLSelectElement | null, value: string) => {
+      (sel as HTMLSelectElement).value = value;
+      sel?.dispatchEvent(new Event('change'));
+      await settle();
+    };
+    const type = async (value: string) => {
+      (amountBox() as HTMLInputElement).value = value;
+      amountBox()?.dispatchEvent(new Event('input'));
+      await settle();
+    };
+
+    it('lists Servings plus only scalable ingredients with a quantity, with a label', async () => {
+      await setup(() => of(cheese()));
+      const labels = Array.from(scaleSelect()?.options ?? []).map((o) => o.textContent?.trim());
+      expect(labels).toEqual(['Servings', 'milk', 'rennet']);
+      expect(el().querySelector('label[for="scale-by"]')?.textContent).toContain('Scale by');
+    });
+
+    it('opens in Servings mode (stepper, no Reset) when the recipe has no scaleBy', async () => {
+      await setup(() => of(cheese()));
+      expect(el().querySelector('.stepper')).not.toBeNull();
+      expect(amountBox()).toBeNull();
+      expect(reset()).toBeNull();
+    });
+
+    it('opens in ingredient mode on scaleBy, preset to the stored amount', async () => {
+      await setup(() => of(cheese('milk')));
+      expect(scaleSelect()?.value).toBe('milk');
+      expect(el().querySelector('.stepper')).toBeNull();
+      expect(amountBox()?.value).toBe('4');
+      expect(unitSelect()?.value).toBe('l');
+      expect(reset()).toBeNull();
+    });
+
+    it('ignores a scaleBy that is not an anchor', async () => {
+      await setup(() => of(cheese('salt')));
+      expect(el().querySelector('.stepper')).not.toBeNull();
+    });
+
+    it('milk 4 l -> 6 l gives x1.5, derived servings and scaled ingredients', async () => {
+      await setup(() => of(cheese('milk')));
+      await click('mat-button-toggle[value="original"] button');
+      await type('6');
+      expect(factorText()).toContain('×1.5');
+      expect(el().querySelector('.derived-servings')?.textContent).toContain('6');
+      expect(ingredients()[0]).toContain('6 l milk');
+      expect(ingredients()[1]).toContain('1½ tsp rennet');
+    });
+
+    it('rounds derived servings to the nearest 0.5', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('4.3');
+      expect(el().querySelector('.derived-servings')?.textContent).toContain('4.5');
+    });
+
+    it('switching the unit ml -> l keeps the same target', async () => {
+      await setup(() => of(cheese('milk')));
+      await choose(unitSelect(), 'ml');
+      await type('6000');
+      expect(factorText()).toContain('×1.5');
+      await choose(unitSelect(), 'l');
+      await type('6');
+      expect(factorText()).toContain('×1.5');
+    });
+
+    it('a comma decimal is accepted', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6,0');
+      expect(factorText()).toContain('×1.5');
+    });
+
+    it('a wrong-family unit is not offered, but a bad programmatic unit shows an alert and keeps the factor', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      const sel = unitSelect() as HTMLSelectElement;
+      const opt = document.createElement('option');
+      opt.value = 'g';
+      sel.appendChild(opt);
+      await choose(sel, 'g');
+      const err = el().querySelector('.scale-error');
+      expect(err?.getAttribute('role')).toBe('alert');
+      expect(err?.textContent).toMatch(/can't convert/i);
+      expect(factorText()).toContain('×1.5');
+    });
+
+    it('invalid amount shows an error and keeps the previous factor', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      await type('abc');
+      expect(el().querySelector('.scale-error')?.textContent).toMatch(/greater than zero/);
+      expect(factorText()).toContain('×1.5');
+      await type('0');
+      expect(factorText()).toContain('×1.5');
+      await type('8');
+      expect(el().querySelector('.scale-error')).toBeNull();
+      expect(factorText()).toContain('×2');
+    });
+
+    it('the unit select only offers the same family', async () => {
+      await setup(() => of(cheese('milk')));
+      const opts = Array.from(unitSelect()?.options ?? []).map((o) => o.value);
+      expect(opts).toContain('ml');
+      expect(opts).not.toContain('g');
+    });
+
+    it('Reset appears once scaled and restores the stored amount', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      expect(reset()).not.toBeNull();
+      await click('button.reset-scale');
+      expect(reset()).toBeNull();
+      expect(amountBox()?.value).toBe('4');
+      expect(ingredients()[0]).toContain('4 l milk');
+      expect(el().querySelector('.scale-error')).toBeNull();
+    });
+
+    it('Reset also works in Servings mode', async () => {
+      await setup();
+      await click('[aria-label="More servings"]');
+      expect(reset()).not.toBeNull();
+      await click('button.reset-scale');
+      expect(el().querySelector('.stepper output')?.textContent).toBe('4');
+      expect(reset()).toBeNull();
+    });
+
+    it('switching back to Servings shows the stepper at the stored servings', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      await choose(scaleSelect(), 'servings');
+      expect(el().querySelector('.stepper output')?.textContent).toBe('4');
+      expect(reset()).toBeNull();
+    });
+
+    it('add-to-list receives the ingredient-scaled ingredients', async () => {
+      await setup(() => of(cheese('milk')));
+      await type('6');
+      const open = jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+      await click('.actions button');
+      const data = open.mock.calls[0][1]?.data as { ingredients: Ingredient[] };
+      expect(data.ingredients[0].quantity).toBe(6);
+    });
+
+    describe('derived servings bounds', () => {
+      const save = () => el().querySelector<HTMLButtonElement>('button.save-size');
+      const derived = () => el().querySelector('.derived-servings')?.textContent ?? '';
+
+      it('a normal 4 l -> 6 l keeps Save enabled with 6 servings and no explanation', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('6');
+        expect(derived()).toContain('≈ 6 servings');
+        expect(save()?.disabled).toBe(false);
+        expect(save()?.textContent).toContain('6 servings');
+        expect(el().querySelector('.size-bounds')).toBeNull();
+      });
+
+      it('a tiny target shows "< 1", disables Save with an aria-describedby explanation, and still scales', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('0.1');
+        expect(derived()).toContain('under 1 serving');
+        expect(derived()).not.toContain('servings');
+        expect(derived()).not.toMatch(/≈ 0/);
+        expect(save()?.disabled).toBe(true);
+        expect(save()?.textContent).not.toContain('(0 servings)');
+        expect(save()?.textContent).toContain('(under 1 serving)');
+        const note = el().querySelector('.size-bounds');
+        expect(note?.textContent).toContain('between 1 and 99');
+        expect(save()?.getAttribute('aria-describedby')).toBe(note?.id);
+        expect(ingredients()[0]).toContain('milk');
+        expect(factorText()).toContain('×0.03');
+      });
+
+      it('a huge target shows "> 99" and disables Save', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('1000');
+        expect(derived()).toContain('over 99 servings');
+        expect(save()?.textContent).toContain('(over 99 servings)');
+        expect(save()?.disabled).toBe(true);
+        expect(el().querySelector('.size-bounds')).not.toBeNull();
+      });
+
+      it('add-to-list still works out of bounds', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('0.1');
+        const open = jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(undefined) } as never);
+        await click('.actions button');
+        const data = open.mock.calls[0][1]?.data as { ingredients: Ingredient[] };
+        expect(data.ingredients[0].quantity).toBeCloseTo(0.1);
+      });
+
+      it('links the amount input to its error', async () => {
+        await setup(() => of(cheese('milk')));
+        await type('abc');
+        const err = el().querySelector('.scale-error');
+        expect(err?.id).toBeTruthy();
+        expect(amountBox()?.getAttribute('aria-describedby')).toBe(err?.id);
+      });
+
+      it('Servings mode stepper is unchanged', async () => {
+        await setup(() => of(cheese()));
+        await click('button[aria-label="More servings"]');
+        expect(el().querySelector('.stepper output')?.textContent).toContain('5');
+        expect(el().querySelector('.size-bounds')).toBeNull();
+        expect(save()?.disabled).toBe(false);
+      });
+    });
+
+    it('announces the factor and servings politely', async () => {
+      await setup(() => of(cheese('milk')));
+      expect(el().querySelector('.scale-summary')?.getAttribute('aria-live')).toBe('polite');
+    });
+  });
+
+  describe('first-size backup and restore original size', () => {
+    const milk: Ingredient = { id: 'milk', original: '4 l milk', quantity: 4, unit: 'l', name: 'milk', scalable: true, metric: { quantity: 4000, unit: 'ml' } };
+    const cheese = (extra: Partial<Recipe> = {}): Recipe => ({ ...recipe(), ingredients: [milk, salt], scaleBy: 'milk', ...extra });
+    const backup = { servings: 3, ingredients: [{ ...milk, quantity: 3, original: '3 l milk', metric: { quantity: 3000, unit: 'ml' as const } }, salt] };
+    const stubDialog = (ok: boolean) =>
+      jest.spyOn(TestBed.inject(MatDialog), 'open').mockReturnValue({ afterClosed: () => of(ok) } as never);
+    const typeAmount = async (v: string) => {
+      const box = el().querySelector<HTMLInputElement>('input.anchor-amount') as HTMLInputElement;
+      box.value = v;
+      box.dispatchEvent(new Event('input'));
+      await settle();
+    };
+    const restoreBtn = () => el().querySelector<HTMLButtonElement>('button.restore-original');
+    const body = () => (updateRecipe.mock.calls[0] as [string, { servings: number; ingredients: Ingredient[]; scaleBy?: string; originalSize?: unknown }])[1];
+
+    it('ingredient mode: milk 4 l -> 6 l with 4 servings saves 6 servings, keeps scaleBy', async () => {
+      await setup(() => of(cheese()));
+      await typeAmount('6');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().servings).toBe(6);
+      expect(body().scaleBy).toBe('milk');
+      expect(body().ingredients[0]).toMatchObject({ id: 'milk', quantity: 6 });
+    });
+
+    it('first save writes originalSize with the pre-save stored values', async () => {
+      const r = cheese();
+      await setup(() => of(r));
+      await typeAmount('6');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().originalSize).toEqual({ servings: 4, ingredients: [milk, salt] });
+    });
+
+    it('the stepper path also writes the first backup', async () => {
+      await setup(() => of(recipe()));
+      await click('button[aria-label="More servings"]');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().originalSize).toEqual({ servings: 4, ingredients: [flour, salt] });
+    });
+
+    it('a later save sends the existing originalSize unchanged', async () => {
+      await setup(() => of(cheese({ servings: 6, originalSize: backup })));
+      await typeAmount('8');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().originalSize).toEqual(backup);
+      expect(body().servings).toBe(12); // stored 6 servings at 4 l; 8 l is x2
+    });
+
+    it('hides Restore without a backup', async () => {
+      await setup(() => of(cheese()));
+      expect(restoreBtn()).toBeNull();
+    });
+
+    it('shows Restore with a backup', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      expect(restoreBtn()?.textContent).toContain('Restore original size');
+    });
+
+    it('opens the compare dialog with current and original, then PUTs the original without originalSize', async () => {
+      const r = cheese({ servings: 6, originalSize: backup });
+      await setup(() => of(r));
+      const open = stubDialog(true);
+      await click('button.restore-original');
+      const data = open.mock.calls[0][1]?.data as { currentServings: number; originalServings: number; mode: string };
+      expect(data.currentServings).toBe(6);
+      expect(data.originalServings).toBe(3);
+      expect(data.mode).toBe('metric');
+      expect(updateRecipe).toHaveBeenCalledTimes(1);
+      const [id, b, version] = updateRecipe.mock.calls[0] as [string, Record<string, unknown>, number];
+      expect(id).toBe('r1');
+      expect(version).toBe(1);
+      expect(b['servings']).toBe(3);
+      expect(b['ingredients']).toEqual(backup.ingredients);
+      expect(b).not.toHaveProperty('originalSize');
+      expect(b['scaleBy']).toBe('milk');
+      expect(b['title']).toBe('Pancakes');
+      expect(b).not.toHaveProperty('version');
+    });
+
+    it('restore keeps scaleBy when it exists in the original ingredients', async () => {
+      await setup(() => of(cheese({ servings: 6, originalSize: backup })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect((updateRecipe.mock.calls[0] as [string, Record<string, unknown>])[1]['scaleBy']).toBe('milk');
+    });
+
+    it('restore omits scaleBy when it is not in the original ingredients, and succeeds', async () => {
+      const added: Ingredient = { ...salt, id: 'added', name: 'added' };
+      const r = cheese({ servings: 6, ingredients: [milk, added], scaleBy: 'added', originalSize: backup });
+      await setup(() => of(r));
+      updateRecipe.mockImplementation((_i: string, input: { servings: number }) => of({ ...cheese(), servings: input.servings, version: 2 }));
+      const open = stubDialog(true);
+      await click('button.restore-original');
+      expect((updateRecipe.mock.calls[0] as [string, object])[1]).not.toHaveProperty('scaleBy');
+      expect((open.mock.calls[0][1]?.data as { clearsScaleBy: boolean }).clearsScaleBy).toBe(true);
+      expect(restoreBtn()).toBeNull();
+    });
+
+    it('a too_large 400 on restore shows a specific message', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'too_large' } })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(el().querySelector('.size-error')?.textContent).toContain('too large to keep a backup');
+    });
+
+    it('a too_large 400 on Save as new size shows a specific message', async () => {
+      await setup(() => of(cheese()));
+      await typeAmount('6');
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'too_large' } })));
+      stubDialog(true);
+      await click('.save-size');
+      expect(el().querySelector('.size-error')?.textContent).toContain('too large to keep a backup');
+    });
+
+    it('cancelled restore sends nothing', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      stubDialog(false);
+      await click('button.restore-original');
+      expect(updateRecipe).not.toHaveBeenCalled();
+    });
+
+    it('a 409 on restore shows the reload offer', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'version_conflict' } })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(el().querySelector('.conflict')?.textContent).toContain('reload');
+      getRecipe.mockReturnValue(of(cheese({ version: 3 })));
+      await click('.reload');
+      expect(getRecipe).toHaveBeenCalledTimes(2);
+      expect(el().querySelector('.conflict')).toBeNull();
+    });
+
+    it('a non-conflict restore failure shows an error', async () => {
+      await setup(() => of(cheese({ originalSize: backup })));
+      updateRecipe.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(el().querySelector('.size-error')?.textContent).toContain("Couldn't restore");
+    });
+
+    it('after a successful restore the view shows the restored recipe and hides Restore', async () => {
+      await setup(() => of(cheese({ servings: 6, originalSize: backup })));
+      updateRecipe.mockImplementation((_i: string, input: { servings: number }) => of({ ...cheese(), servings: input.servings, version: 2 }));
+      stubDialog(true);
+      await click('button.restore-original');
+      expect(restoreBtn()).toBeNull();
     });
   });
 });

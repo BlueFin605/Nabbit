@@ -1,28 +1,36 @@
-import { Component, computed, inject } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { filter, map } from 'rxjs';
+import { AvatarMenu } from './core/shell/avatar-menu';
 import { Auth } from './core/auth/auth';
+import { AppUpdates } from './core/shell/app-updates';
 
 const HIDE_NAV_ON = ['/signin', '/callback'];
 
 @Component({
   selector: 'app-root',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, AvatarMenu],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
 export class App {
   protected readonly auth = inject(Auth);
   private readonly router = inject(Router);
+  private readonly appUpdates = inject(AppUpdates);
 
-  private readonly url = toSignal(
-    this.router.events.pipe(
-      filter((e) => e instanceof NavigationEnd),
-      map((e) => e.urlAfterRedirects),
-    ),
-    { initialValue: this.router.url },
-  );
+  private readonly url = signal(this.router.url);
+  /** Incremented on every NavigationEnd (even to the same URL); the avatar menu closes when it changes. */
+  protected readonly navigations = signal(0);
+
+  constructor() {
+    this.appUpdates.start();
+    this.router.events.pipe(takeUntilDestroyed()).subscribe((e) => {
+      if (e instanceof NavigationEnd) {
+        this.url.set(e.urlAfterRedirects);
+        this.navigations.update((n) => n + 1);
+      }
+    });
+  }
 
   protected readonly showNav = computed(
     () => this.auth.isAuthenticated() && !HIDE_NAV_ON.some((p) => this.url().startsWith(p)),

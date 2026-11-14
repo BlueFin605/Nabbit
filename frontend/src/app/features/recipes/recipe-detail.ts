@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, DestroyRef, computed, inject, input, signal, type OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { map, switchMap } from 'rxjs';
@@ -6,21 +7,43 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
-import { convertTemperatures, formatQuantity, scaleRecipeIngredients, type Ingredient } from '@nabbit/recipe-core';
+import {
+  convertTemperatures,
+  anchorAmount,
+  formatQuantity,
+  isScaleAnchor,
+  mapSteps,
+  scaleIngredient,
+  type Ingredient,
+  type StepGroup,
+  type StepNode,
+  type Unit,
+} from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { Recipe, RecipeInput } from '../../core/api/api.types';
 import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
+import { HttpErrorResponse } from '@angular/common/http';
 import { CONFLICT_MESSAGE, isVersionConflict } from './recipe-editor';
 import { imageUrl } from '../../core/api/image-url';
 import { RecipeDeleter } from './recipe-deleter';
 import { AddToListDialog, listItemName, type AddToListData, type AddToListResult } from './add-to-list-dialog';
 import { ListTarget } from '../lists/list-target';
+import { RestoreSizeDialog, type RestoreSizeData } from './restore-size-dialog';
+import { anchorFactor, formatFactor, roundHalf, unitsInFamily } from './scale-state';
 
 export const UNIT_MODE_KEY = 'nabbit.unitMode';
 export const MIN_SERVINGS = 1;
 export const MAX_SERVINGS = 99;
 
 type Mode = 'metric' | 'original';
+type ScaleMode = 'servings' | { ingredientId: string };
+const TOO_LARGE_MSG = 'This recipe is too large to keep a backup of the original size.';
+
+/** The backup doubles the payload, so the API can answer 400 { error: 'too_large' }. */
+function isTooLarge(err: unknown): boolean {
+  return err instanceof HttpErrorResponse && err.status === 400 && (err.error as { error?: string } | null)?.error === 'too_large';
+}
+
 type Load = { status: 'loading' } | { status: 'notFound' } | { status: 'error' } | { status: 'ok'; recipe: Recipe };
 
 interface WakeLockSentinelLike {
@@ -39,7 +62,7 @@ function readMode(): Mode {
 /** Single recipe view: scaled ingredients, steps, unit toggle and keep-awake. Scaling is client-side only. */
 @Component({
   selector: 'app-recipe-detail',
-  imports: [RouterLink, MatButtonModule, MatButtonToggleModule, MatSlideToggleModule],
+  imports: [NgTemplateOutlet, RouterLink, MatButtonModule, MatButtonToggleModule, MatSlideToggleModule],
   styleUrl: './recipe-detail.scss',
   template: `
     @switch (load().status) {
@@ -67,12 +90,55 @@ function readMode(): Mode {
           <h1>{{ r.title }}</h1>
 
           <div class="controls">
-            <div class="stepper" role="group" aria-label="Servings">
-              <button mat-stroked-button type="button" aria-label="Fewer servings" [disabled]="servings() <= min" (click)="step(-1)">−</button>
-              <output aria-live="polite">{{ servings() }}</output>
-              <button mat-stroked-button type="button" aria-label="More servings" [disabled]="servings() >= max" (click)="step(1)">+</button>
-              <span>servings</span>
+            <div class="scale-by-field">
+              <label for="scale-by">Scale by</label>
+              <select id="scale-by" class="scale-by" [value]="scaleValue()" (change)="chooseScale($event)">
+                <option value="servings" [selected]="scaleValue() === 'servings'">Servings</option>
+                @for (a of anchors(); track a.id) {
+                  <option [value]="a.id" [selected]="scaleValue() === a.id">{{ a.name }}</option>
+                }
+              </select>
             </div>
+
+            @if (anchor(); as a) {
+              <div class="anchor-box" role="group" [attr.aria-label]="'Amount of ' + a.name">
+                <label for="anchor-amount">Amount of {{ a.name }}</label>
+                <input
+                  id="anchor-amount"
+                  class="anchor-amount"
+                  type="text"
+                  inputmode="decimal"
+                  [value]="amountValue()"
+                  [attr.aria-invalid]="scaleError() ? 'true' : null"
+                  [attr.aria-describedby]="scaleError() ? 'scale-error' : null"
+                  (input)="setAmount($event)"
+                />
+                <label for="anchor-unit" class="visually-hidden">Unit</label>
+                <!-- Changing the unit keeps the typed number: 6 l -> ml means 6 ml, not 6000 ml. -->
+                <select id="anchor-unit" class="anchor-unit" [value]="unitValue()" (change)="setUnit($event)">
+                  @for (u of anchorUnits(); track u) {
+                    <option [value]="u" [selected]="u === unitValue()">{{ u || '(none)' }}</option>
+                  }
+                </select>
+              </div>
+              <p class="scale-summary" aria-live="polite">
+                <span class="factor">×{{ factorText() }}</span>
+                <span class="derived-servings">{{ servingsText() }}</span>
+              </p>
+            } @else {
+              <div class="stepper" role="group" aria-label="Servings">
+                <button mat-stroked-button type="button" aria-label="Fewer servings" [disabled]="servings() <= min" (click)="step(-1)">−</button>
+                <output aria-live="polite">{{ servings() }}</output>
+                <button mat-stroked-button type="button" aria-label="More servings" [disabled]="servings() >= max" (click)="step(1)">+</button>
+                <span>servings</span>
+              </div>
+            }
+            @if (scaleError(); as e) {
+              <p id="scale-error" class="scale-error" role="alert">{{ e }}</p>
+            }
+            @if (resized()) {
+              <button mat-stroked-button type="button" class="reset-scale" (click)="resetScale()">Reset</button>
+            }
 
             <mat-button-toggle-group aria-label="Units" [value]="mode()" (change)="setMode($event.value)">
               <mat-button-toggle value="metric">Metric</mat-button-toggle>
@@ -88,8 +154,21 @@ function readMode(): Mode {
 
           @if (resized()) {
             <div class="resize">
-              <button mat-flat-button type="button" class="save-size" [disabled]="savingSize()" (click)="confirmResize()">
-                Save as new size ({{ servings() }} servings)
+              <button mat-flat-button type="button" class="save-size" [disabled]="savingSize() || !servingsInBounds()"
+                [attr.aria-describedby]="servingsInBounds() ? null : 'size-bounds'"
+                (click)="confirmResize()"
+              >
+                Save as new size ({{ servingsLabel() }})
+              </button>
+              @if (!servingsInBounds()) {
+                <p id="size-bounds" class="size-bounds">Resulting servings must be between {{ min }} and {{ max }}.</p>
+              }
+            </div>
+          }
+          @if (r.originalSize) {
+            <div class="restore">
+              <button mat-stroked-button type="button" class="restore-original" [disabled]="savingSize()" (click)="confirmRestore()">
+                Restore original size
               </button>
             </div>
           }
@@ -126,9 +205,7 @@ function readMode(): Mode {
 
           <h2>Steps</h2>
           <ol class="steps">
-            @for (s of steps(); track $index) {
-              <li>{{ s }}</li>
-            }
+            <ng-container *ngTemplateOutlet="stepList; context: { $implicit: steps() }" />
           </ol>
 
           @if (r.sourceUrl) {
@@ -143,6 +220,23 @@ function readMode(): Mode {
         }
       }
     }
+    <ng-template #stepList let-nodes>
+      @for (n of nodes; track $index) {
+        @if (isString(n)) {
+          <li>{{ n }}</li>
+        } @else {
+          @let g = asGroup(n);
+          <li class="group">
+            @if (g.heading) {
+              <h3>{{ g.heading }}</h3>
+            }
+            <ol>
+              <ng-container *ngTemplateOutlet="stepList; context: { $implicit: g.steps }" />
+            </ol>
+          </li>
+        }
+      }
+    </ng-template>
   `,
 })
 export class RecipeDetail implements OnInit {
@@ -168,27 +262,60 @@ export class RecipeDetail implements OnInit {
   /** Ingredient ids added to the list since servings or units last changed. */
   protected readonly added = signal<ReadonlySet<string>>(new Set());
   private readonly adding = new Set<string>();
-  /** null until the user touches the stepper; then overrides the recipe's stored servings. */
-  private readonly chosen = signal<number | null>(null);
+  /** The ONE scale factor (1 = stored recipe); both the stepper and the ingredient amount box set it. */
+  private readonly factor = signal(1);
+  protected readonly scaleMode = signal<ScaleMode>('servings');
+  /** Typed amount / unit for the anchor box; null = the stored anchor amount and unit. */
+  private readonly amountText = signal<string | null>(null);
+  private readonly amountUnit = signal<Unit | null>(null);
+  protected readonly scaleError = signal<string | null>(null);
 
   protected readonly recipe = computed(() => {
     const l = this.load();
     return l.status === 'ok' ? l.recipe : null;
   });
-  protected readonly servings = computed(() => this.chosen() ?? this.recipe()?.servings ?? 1);
+  /** Derived from the factor, rounded to the nearest 0.5. */
+  protected readonly servings = computed(() => roundHalf((this.recipe()?.servings ?? 1) * this.factor()));
+
+  /** Whether the derived servings are a size the recipe can be saved at (the stepper's range). */
+  protected readonly servingsInBounds = computed(() => this.servings() >= MIN_SERVINGS && this.servings() <= MAX_SERVINGS);
+  /** The servings phrase for display: never "0"; out-of-range values read "under min serving" / "over max servings". */
+  protected readonly servingsLabel = computed(() => {
+    const n = this.servings();
+    if (n < MIN_SERVINGS) return `under ${MIN_SERVINGS} serving`;
+    if (n > MAX_SERVINGS) return `over ${MAX_SERVINGS} servings`;
+    return `${n} ${n === 1 ? 'serving' : 'servings'}`;
+  });
+  protected readonly servingsText = computed(() => (this.servingsInBounds() ? `≈ ${this.servingsLabel()}` : this.servingsLabel()));
+
+  protected readonly anchors = computed(() => (this.recipe()?.ingredients ?? []).filter(isScaleAnchor));
+  /** The stored ingredient the amount box scales by, or null in Servings mode. */
+  protected readonly anchor = computed((): Ingredient | null => {
+    const m = this.scaleMode();
+    return m === 'servings' ? null : (this.anchors().find((i) => i.id === m.ingredientId) ?? null);
+  });
+  protected readonly scaleValue = computed(() => this.anchor()?.id ?? 'servings');
+  protected readonly amountValue = computed(() => {
+    const a = this.anchor();
+    return this.amountText() ?? (a ? String(Number(anchorAmount(a).quantity.toFixed(3))) : '');
+  });
+  protected readonly unitValue = computed((): Unit => {
+    const a = this.anchor();
+    return this.amountUnit() ?? (a ? anchorAmount(a).unit : '');
+  });
+  protected readonly anchorUnits = computed(() => unitsInFamily(this.anchor()?.unit ?? ''));
+  protected readonly factorText = computed(() => formatFactor(this.factor()));
 
   /** The stored ingredients scaled to the chosen servings (a new array; the recipe is untouched). */
   readonly scaledIngredients = computed<Ingredient[]>(() => {
     const r = this.recipe();
     if (!r) return [];
-    return scaleRecipeIngredients(r.ingredients, r.servings, this.servings());
+    const f = this.factor();
+    return r.ingredients.map((i) => scaleIngredient(i, f));
   });
 
-  /** The stepper differs from the stored servings. */
-  protected readonly resized = computed(() => {
-    const r = this.recipe();
-    return !!r && this.servings() !== r.servings;
-  });
+  /** The size differs from the stored recipe (either mode). */
+  protected readonly resized = computed(() => !!this.recipe() && this.factor() !== 1);
 
   protected readonly lines = computed(() =>
     this.scaledIngredients().map((i) => ({
@@ -199,11 +326,20 @@ export class RecipeDetail implements OnInit {
       fixed: !i.scalable,
     })),
   );
-  protected readonly steps = computed(() => {
+  protected readonly steps = computed((): StepNode[] => {
     const r = this.recipe();
     if (!r) return [];
-    return this.mode() === 'metric' ? r.steps.map(convertTemperatures) : r.steps;
+    return this.mode() === 'metric' ? mapSteps(r.steps, convertTemperatures) : r.steps;
   });
+
+  protected isString(n: StepNode): n is string {
+    return typeof n === 'string';
+  }
+
+  /** Narrows a non-string node inside the recursive (untyped `let-nodes`) template context. */
+  protected asGroup(n: StepNode): StepGroup {
+    return n as StepGroup;
+  }
 
   protected readonly wakeSupported = typeof navigator !== 'undefined' && !!(navigator as WakeLockNav).wakeLock;
   protected readonly awake = signal(false);
@@ -232,7 +368,7 @@ export class RecipeDetail implements OnInit {
   protected reload(): void {
     this.conflict.set(false);
     this.sizeError.set(null);
-    this.chosen.set(null);
+    this.resetScale();
     this.fetch();
   }
 
@@ -243,7 +379,10 @@ export class RecipeDetail implements OnInit {
       return;
     }
     this.api.getRecipe(id).subscribe({
-      next: (recipe) => this.load.set(recipe.deletedAt ? { status: 'notFound' } : { status: 'ok', recipe }),
+      next: (recipe) => {
+        this.load.set(recipe.deletedAt ? { status: 'notFound' } : { status: 'ok', recipe });
+        this.openScaleMode(recipe);
+      },
       error: (err: { status?: number }) =>
         this.load.set({ status: err?.status === 404 || err?.status === 410 ? 'notFound' : 'error' }),
     });
@@ -275,6 +414,8 @@ export class RecipeDetail implements OnInit {
     void [_c, _u, _d];
     const input: RecipeInput = {
       ...rest,
+      // The first resize keeps the pre-save size as a backup; later saves leave it as is.
+      originalSize: r.originalSize ?? { servings: r.servings, ingredients: r.ingredients },
       servings,
       // The scaled quantity no longer matches the original text, so drop it from scaled lines.
       ingredients: this.scaledIngredients().map((i, n) => {
@@ -289,13 +430,61 @@ export class RecipeDetail implements OnInit {
     this.api.updateRecipe(id, input, version).subscribe({
       next: (updated) => {
         this.savingSize.set(false);
-        this.chosen.set(null);
+        this.resetScale();
         this.load.set({ status: 'ok', recipe: updated });
       },
       error: (err: unknown) => {
         this.savingSize.set(false);
         if (isVersionConflict(err)) this.conflict.set(true);
-        else this.sizeError.set("Couldn't save the new size. Try again.");
+        else this.sizeError.set(isTooLarge(err) ? TOO_LARGE_MSG : "Couldn't save the new size. Try again.");
+      },
+    });
+  }
+
+  /** Compare dialog (current -> first size), then PUT the first size back with the backup removed. */
+  protected confirmRestore(): void {
+    const r = this.recipe();
+    const original = r?.originalSize;
+    if (!r || !original) return;
+    const data: RestoreSizeData = {
+      currentServings: r.servings,
+      originalServings: original.servings,
+      current: r.ingredients,
+      original: original.ingredients,
+      mode: this.mode(),
+      clearsScaleBy: !!r.scaleBy && !original.ingredients.some((i) => i.id === r.scaleBy),
+    };
+    this.dialog
+      .open<RestoreSizeDialog, RestoreSizeData, boolean>(RestoreSizeDialog, { data })
+      .afterClosed()
+      .subscribe((ok) => {
+        if (ok === true) this.restore(r, original);
+      });
+  }
+
+  private restore(r: Recipe, original: NonNullable<Recipe['originalSize']>): void {
+    const { id, version, createdAt: _c, updatedAt: _u, deletedAt: _d, originalSize: _o, ...rest } = r;
+    void [_c, _u, _d, _o];
+    // scaleBy must name an ingredient in the same body; drop it if the original no longer has it.
+    const { scaleBy, ...withoutScaleBy } = rest;
+    const input: RecipeInput = {
+      ...withoutScaleBy,
+      ...(scaleBy && original.ingredients.some((i) => i.id === scaleBy) ? { scaleBy } : {}),
+      servings: original.servings,
+      ingredients: original.ingredients,
+    };
+    this.savingSize.set(true);
+    this.sizeError.set(null);
+    this.api.updateRecipe(id, input, version).subscribe({
+      next: (updated) => {
+        this.savingSize.set(false);
+        this.resetScale();
+        this.load.set({ status: 'ok', recipe: updated });
+      },
+      error: (err: unknown) => {
+        this.savingSize.set(false);
+        if (isVersionConflict(err)) this.conflict.set(true);
+        else this.sizeError.set(isTooLarge(err) ? TOO_LARGE_MSG : "Couldn't restore the original size. Try again.");
       },
     });
   }
@@ -305,7 +494,56 @@ export class RecipeDetail implements OnInit {
   }
 
   protected step(delta: number): void {
-    this.chosen.set(Math.min(MAX_SERVINGS, Math.max(MIN_SERVINGS, this.servings() + delta)));
+    const r = this.recipe();
+    if (!r) return;
+    const next = Math.min(MAX_SERVINGS, Math.max(MIN_SERVINGS, this.servings() + delta));
+    this.factor.set(next / r.servings);
+    this.added.set(new Set());
+  }
+
+  /** Opens in ingredient mode when the recipe's scaleBy names an anchor ingredient, else Servings. */
+  private openScaleMode(r: Recipe): void {
+    const by = r.scaleBy && r.ingredients.find((i) => i.id === r.scaleBy && isScaleAnchor(i));
+    this.scaleMode.set(by ? { ingredientId: by.id } : 'servings');
+    this.resetScale();
+  }
+
+  protected chooseScale(ev: Event): void {
+    const v = (ev.target as HTMLSelectElement).value;
+    this.scaleMode.set(v === 'servings' ? 'servings' : { ingredientId: v });
+    this.resetScale();
+  }
+
+  /** Back to the stored servings / stored anchor amount (factor 1). Non-destructive. */
+  protected resetScale(): void {
+    this.factor.set(1);
+    this.amountText.set(null);
+    this.amountUnit.set(null);
+    this.scaleError.set(null);
+    this.added.set(new Set());
+  }
+
+  protected setAmount(ev: Event): void {
+    this.amountText.set((ev.target as HTMLInputElement).value);
+    this.applyAnchor();
+  }
+
+  protected setUnit(ev: Event): void {
+    this.amountUnit.set((ev.target as HTMLSelectElement).value as Unit);
+    this.applyAnchor();
+  }
+
+  /** Recomputes the factor from the amount box; on bad input shows an error and keeps the previous factor. */
+  private applyAnchor(): void {
+    const a = this.anchor();
+    if (!a) return;
+    const res = anchorFactor(a, this.amountValue(), this.unitValue());
+    if ('error' in res) {
+      this.scaleError.set(res.error);
+      return;
+    }
+    this.scaleError.set(null);
+    this.factor.set(res.factor);
     this.added.set(new Set());
   }
 

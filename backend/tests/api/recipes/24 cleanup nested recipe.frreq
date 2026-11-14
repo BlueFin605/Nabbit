@@ -1,0 +1,37 @@
+{
+    "id": "74d71a07-5c68-4dbd-b3e1-86d8711aabda",
+    "name": "24 cleanup nested recipe",
+    "verb": "delete",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{nestedRecipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "ResponseCode",
+        "headers": [],
+        "body": "None",
+        "httpCode": 204
+    }
+}

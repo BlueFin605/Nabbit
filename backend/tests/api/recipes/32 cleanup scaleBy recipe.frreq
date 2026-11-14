@@ -1,0 +1,37 @@
+{
+    "id": "433a03d2-af9c-4e77-a6a9-d1264dcc015e",
+    "name": "32 cleanup scaleBy recipe",
+    "verb": "delete",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{scaleRecipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "ResponseCode",
+        "headers": [],
+        "body": "None",
+        "httpCode": 204
+    }
+}

@@ -1,0 +1,41 @@
+{
+    "id": "5ab731be-82b9-41ff-a0d6-9f5e631d8f87",
+    "name": "27 create recipe scaleBy missing ingredient",
+    "verb": "post",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "application/json",
+        "body": "{\"title\":\"Scaled Pancakes\",\"servings\":4,\"ingredients\":[{\"id\":\"ing-flour\",\"name\":\"flour\",\"quantity\":200,\"unit\":\"g\"},{\"id\":\"ing-milk\",\"name\":\"milk\",\"quantity\":300,\"unit\":\"ml\"}],\"steps\":[\"Mix.\",\"Fry.\"],\"tags\":[\"breakfast\"],\"scaleBy\":\"no-such-ingredient\"}"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 400,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"error\"\n  ],\n  \"properties\": {\n    \"error\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    }\n  }\n}"
+        }
+    }
+}

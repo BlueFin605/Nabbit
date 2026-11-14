@@ -1,6 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, signal, viewChild, type ElementRef, type OnInit } from '@angular/core';
 import { Router } from '@angular/router';
+import { countSteps, flattenSteps, isStepGroup, type StepNode } from '@nabbit/recipe-core';
 import { RecipeEditor } from '../recipes/recipe-editor';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -95,6 +96,32 @@ function appendNew<T>(base: T[], extra: T[], key: (t: T) => string): T[] {
   return out;
 }
 
+/**
+ * Appends the steps of `extra` at the top level of `base`, skipping any whose lower-cased text already appears at any
+ * depth of `base` (or earlier in `extra`). Extra groups keep their structure; groups left empty are dropped.
+ */
+function mergeSteps(base: StepNode[], extra: StepNode[]): StepNode[] {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const seen = new Set(flattenSteps(base).map(norm));
+  const fresh = (nodes: StepNode[]): StepNode[] => {
+    const out: StepNode[] = [];
+    for (const n of nodes) {
+      if (isStepGroup(n)) {
+        const steps = fresh(n.steps);
+        if (steps.length > 0) out.push({ ...n, steps });
+      } else {
+        const k = norm(n);
+        if (k && !seen.has(k)) {
+          seen.add(k);
+          out.push(n);
+        }
+      }
+    }
+    return out;
+  };
+  return [...base, ...fresh(extra)];
+}
+
 /** Adds the ingredients and steps of `extra` to `base`, skipping duplicates (same lower-cased text). Confidence is 'ai' if either side is. */
 export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft {
   return {
@@ -103,7 +130,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     recipe: {
       ...base.recipe,
       ingredients: appendNew(base.recipe.ingredients, extra.recipe.ingredients, (i) => i.original ?? i.name),
-      steps: appendNew(base.recipe.steps, extra.recipe.steps, (st) => st),
+      steps: mergeSteps(base.recipe.steps, extra.recipe.steps),
     },
   };
 }
@@ -221,7 +248,7 @@ export class Import implements OnInit {
   protected readonly chosenCandidate = signal<string | undefined>(undefined);
   protected readonly isEmpty = computed(() => {
     const d = this.draft();
-    return !!d && d.recipe.ingredients.length === 0 && d.recipe.steps.length === 0;
+    return !!d && d.recipe.ingredients.length === 0 && countSteps(d.recipe.steps) === 0;
   });
 
   /** Non-error guidance shown above the box (the needs_text paste prompt). */

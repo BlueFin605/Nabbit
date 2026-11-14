@@ -1,0 +1,40 @@
+{
+    "id": "73e6fe2a-b3a6-4d8c-88d8-652526abff5f",
+    "name": "22 get nested recipe",
+    "verb": "get",
+    "protocol": "http",
+    "url": "{{baseUrl}}/recipes/{{nestedRecipeId}}",
+    "headers": [],
+    "parameters": [],
+    "body": {
+        "contentType": "none"
+    },
+    "authentication": {
+        "authentication": "inherit",
+        "awsSig": {
+            "signUrl": false,
+            "accessKey": "",
+            "secretKey": "",
+            "sessionToken": "",
+            "awsRegion": "eu-central-1",
+            "serviceName": ""
+        },
+        "basicAuth": {
+            "userName": "",
+            "password": ""
+        },
+        "bearerToken": {
+            "token": ""
+        }
+    },
+    "runs": [],
+    "validation": {
+        "type": "Body",
+        "headers": [],
+        "body": "JsonSchema",
+        "httpCode": 200,
+        "jsonSchema": {
+            "schema": "{\n  \"type\": \"object\",\n  \"required\": [\n    \"id\",\n    \"title\",\n    \"steps\",\n    \"version\"\n  ],\n  \"properties\": {\n    \"id\": {\n      \"type\": \"string\",\n      \"minLength\": 1\n    },\n    \"title\": {\n      \"const\": \"Nested Pancakes\"\n    },\n    \"steps\": {\n      \"const\": [\n        \"Prep the pan.\",\n        {\n          \"heading\": \"Batter\",\n          \"steps\": [\n            \"Mix dry.\",\n            {\n              \"heading\": \"Fold\",\n              \"steps\": [\n                \"Fold in the milk.\"\n              ]\n            }\n          ]\n        },\n        \"Serve.\"\n      ]\n    },\n    \"version\": {\n      \"type\": \"integer\",\n      \"minimum\": 1\n    }\n  }\n}"
+        }
+    }
+}

@@ -2,6 +2,11 @@
 
 html {
   height: 100%;
+  /* Sticky top bar: 56px + 1px border + safe area. Shared by app.scss, lists.ts and scroll-padding. */
+  --top-bar-h: calc(57px + env(safe-area-inset-top));
+  /* Fixed bottom nav height (item + padding + border + safe area); snackbars offset by it. Keep in step with .bottom-nav in app.scss. */
+  --bottom-nav-h: calc(73px + env(safe-area-inset-bottom));
+  scroll-padding-top: calc(var(--top-bar-h) + 8px);
   @include mat.theme(
     (
       color: (
@@ -31,4 +36,14 @@ h1 {
 /* Large touch targets on interactive Material buttons. */
 .mat-mdc-button-base {
   min-height: 48px;
+}
+
+/* The persistent "new version" snackbar must not cover the fixed bottom nav or the recipes FAB. */
+.update-prompt {
+  /* nav + the recipes FAB (64px at 80px up) */
+  margin-bottom: calc(var(--bottom-nav-h) + 72px) !important;
+  .mat-mdc-button-base,
+  button {
+    min-width: 44px;
+  }
 }
