@@ -1,6 +1,7 @@
 /**
  * Recipe import (owner from the JWT; NOTHING is saved, the client previews the draft then POSTs /recipes):
- *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars)
+ *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars), optional boolean `forceRecipe`
+ *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (forceRecipe: true keeps the heuristic draft instead)
  *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[] }  (url imports only; imageUrl === candidates[0])
  *     400 { error } invalid body        422 { error: <ImportError code> }
  *     429 { error: 'rate_limited' } + retry-after (seconds)
@@ -67,11 +68,13 @@ export function llmGlobalLimit(): number {
 
 /**
  * Low-confidence heuristic drafts get one LLM attempt, within the per-owner daily cap and then the app-wide daily cap.
- * Any failure keeps the heuristic draft.
+ * Any failure keeps the heuristic draft. A NotRecipe verdict throws ImportError('not_a_recipe', .., reason) (-> 422) unless
+ * forceRecipe is set, in which case the heuristic draft is kept.
  */
-async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string): Promise<RecipeDraft> {
+async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string, forceRecipe = false): Promise<RecipeDraft> {
   const h = heuristic.recipe;
   if (h.ingredients.length >= 2 && countSteps(h.steps) >= 2) return heuristic;
+  let notRecipe: string | undefined;
   try {
     const parser = getLlmParser();
     if (!parser) return heuristic;
@@ -85,13 +88,22 @@ async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, s
       return heuristic;
     }
     const recipe = await parser.parse(text, sourceUrl ? { sourceUrl } : {});
-    if (!recipe || isNotRecipe(recipe)) return heuristic; // NotRecipe -> 422 is handled in a later ticket
-    if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
-    return { recipe, confidence: 'ai' };
+    if (!recipe) return heuristic;
+    if (isNotRecipe(recipe)) {
+      if (forceRecipe) return heuristic;
+      notRecipe = recipe.reason;
+    } else {
+      if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
+      return { recipe, confidence: 'ai' };
+    }
   } catch {
     return heuristic;
   }
+  // Thrown outside the try so the catch-all above cannot swallow it.
+  throw new ImportError('not_a_recipe', notRecipe, notRecipe);
 }
+
+const importErrorResult = (err: ImportError) => ({ status: 422, body: err.reason !== undefined ? { error: err.code, reason: err.reason } : { error: err.code } });
 
 /** After redirects the page must still be on an Instagram host and not on a login/challenge/privacy interstitial. */
 function isInstagramFinalPage(finalUrl: string): boolean {
@@ -117,7 +129,16 @@ async function countImport(ownerId: string) {
   return undefined;
 }
 
-async function importRecipe({ ownerId, body }: RequestCtx) {
+async function importRecipe(ctx: RequestCtx) {
+  try {
+    return await importRecipeInner(ctx);
+  } catch (err) {
+    if (err instanceof ImportError) return importErrorResult(err);
+    throw err;
+  }
+}
+
+async function importRecipeInner({ ownerId, body }: RequestCtx) {
   if (!isObj(body)) throw new HttpError(400, 'body must be a JSON object');
   const hasUrl = body.url !== undefined;
   const hasText = body.text !== undefined;
@@ -127,12 +148,15 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
     throw new HttpError(400, `text must be 1-${MAX_IMPORT_TEXT} characters`);
   }
 
+  if (body.forceRecipe !== undefined && typeof body.forceRecipe !== 'boolean') throw new HttpError(400, 'forceRecipe must be a boolean');
+  const forceRecipe = body.forceRecipe === true;
+
   const limited = await countImport(ownerId);
   if (limited) return limited;
 
   if (hasText) {
     const text = body.text as string;
-    return { status: 200, body: { draft: await maybeLlm(ownerId, text, extractFromText(text)) } };
+    return { status: 200, body: { draft: await maybeLlm(ownerId, text, extractFromText(text), undefined, forceRecipe) } };
   }
   const rawUrl = (body.url as string).trim();
   if (isInstagramUrl(rawUrl)) {
@@ -153,7 +177,7 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
       return needsText;
     }
     if (!caption) return needsText;
-    return { status: 200, body: { draft: await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url), ...images } };
+    return { status: 200, body: { draft: await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url, forceRecipe), ...images } };
   }
   const url = rawUrl;
 
@@ -181,14 +205,14 @@ async function importRecipe({ ownerId, body }: RequestCtx) {
         return { status: 200, body: { draft, ...(appImages.length ? { imageUrl: appImages[0], candidates: appImages } : {}) } };
       }
       if (app?.text) {
-        const ai = await maybeLlm(ownerId, app.text, extractFromText('', { sourceUrl }), sourceUrl);
+        const ai = await maybeLlm(ownerId, app.text, extractFromText('', { sourceUrl }), sourceUrl, forceRecipe);
         if (ai.confidence === 'ai') return { status: 200, body: { draft: ai, ...images } };
       }
       return { status: 422, body: { error: 'needs_text' } };
     }
-    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, sourceUrl), ...images } };
+    return { status: 200, body: { draft: await maybeLlm(ownerId, text, heuristic, sourceUrl, forceRecipe), ...images } };
   } catch (err) {
-    if (err instanceof ImportError) return { status: 422, body: { error: err.code } };
+    if (err instanceof ImportError) return importErrorResult(err);
     throw err;
   }
 }

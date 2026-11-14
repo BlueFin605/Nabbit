@@ -572,6 +572,87 @@ describe('LLM fallback and Instagram needs_text', () => {
     expect(item?.ttl).toBe(Math.floor(nowMs / 1000) + 2 * 86400);
   });
 
+  describe('not_a_recipe guardrail', () => {
+    const NOT = { notRecipe: true, reason: 'This is a news article.' };
+    const llmCounts = () => ({
+      owner: db.items.get('OWNER#u1\u0000RATE#llm#2026-11-02')?.count,
+      global: db.items.get('GLOBAL\u0000RATE#llm#2026-11-02')?.count,
+    });
+    beforeEach(() => {
+      result = async () => NOT;
+    });
+
+    it('text: NotRecipe -> 422 not_a_recipe with the reason, no draft; counters bumped once', async () => {
+      const res = await call({ text: LOW });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'not_a_recipe', reason: NOT.reason });
+      expect(parsed).toHaveLength(1);
+      expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+    });
+
+    it('text: forceRecipe true keeps the heuristic draft (200)', async () => {
+      const res = await call({ text: LOW, forceRecipe: true });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(parsed).toHaveLength(1);
+      expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+    });
+
+    it('forceRecipe false behaves like absent', async () => {
+      const res = await call({ text: LOW, forceRecipe: false });
+      expect(res.status).toBe(422);
+    });
+
+    it.each(['yes', 1, null, {}])('non-boolean forceRecipe %j -> 400', async (v) => {
+      const res = await call({ text: LOW, forceRecipe: v });
+      expect(res.status).toBe(400);
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('well-formed text never reaches the LLM, so no 422', async () => {
+      const res = await call({ text: GOOD });
+      expect(res.status).toBe(200);
+      expect(parsed).toHaveLength(0);
+    });
+
+    it('url page text: 422 not_a_recipe, and forceRecipe -> 200 heuristic', async () => {
+      page = async () => ({ url: 'https://example.com/r', html: `<html><body><p>${'Gently simmer the sauce for a good while. '.repeat(8)}</p></body></html>` });
+      const res = await call({ url: 'https://example.com/r' });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'not_a_recipe', reason: NOT.reason });
+      const forced = await call({ url: 'https://example.com/r', forceRecipe: true });
+      expect(forced.status).toBe(200);
+      expect(forced.json.draft.confidence).toBe('heuristic');
+    });
+
+    it('Instagram caption: 422 not_a_recipe is not swallowed into needs_text; forceRecipe -> 200', async () => {
+      const IG = 'https://www.instagram.com/p/abc/';
+      page = async () => ({ url: IG, html: readFileSync(new URL('./fixtures/instagram-jsonld.html', import.meta.url), 'utf8') });
+      const res = await call({ url: IG });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'not_a_recipe', reason: NOT.reason });
+      const forced = await call({ url: IG, forceRecipe: true });
+      expect(forced.status).toBe(200);
+      expect(forced.json.draft.confidence).toBe('heuristic');
+    });
+
+    it('JS-shell reduced text: 422 not_a_recipe, not needs_text; forceRecipe -> needs_text (no heuristic text to keep)', async () => {
+      const U = 'https://recipes.co.nz/recipes/the-best-lasagne/';
+      page = async () => ({ url: U, html: readFileSync(new URL('./fixtures/gatsby-shell.html', import.meta.url), 'utf8') });
+      setImportDeps({
+        safeFetch: async () => page(),
+        fetchJson: async () => ({ url: 'https://recipes.co.nz/page-data/recipes/the-best-lasagne/page-data.json', text: readFileSync(new URL('./fixtures/gatsby-page-data.json', import.meta.url), 'utf8') }),
+        now: () => nowMs,
+      });
+      const res = await call({ url: U });
+      expect(res.status).toBe(422);
+      expect(res.json).toEqual({ error: 'not_a_recipe', reason: NOT.reason });
+      const forced = await call({ url: U, forceRecipe: true });
+      expect(forced.status).toBe(422);
+      expect(forced.json).toEqual({ error: 'needs_text' });
+    });
+  });
+
   describe('app-wide daily LLM cap', () => {
     const GLOBAL_KEY = 'GLOBAL\u0000RATE#llm#2026-11-02';
     afterEach(() => {
