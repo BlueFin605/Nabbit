@@ -7,7 +7,7 @@ import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient, StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, NEEDS_TEXT_YOUTUBE_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, isYoutubeUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -809,6 +809,119 @@ describe('Import', () => {
     q('.discard')?.click();
     expect(nav).toHaveBeenCalledWith(['/recipes']);
     expect(createRecipe).not.toHaveBeenCalled();
+  });
+
+  describe('YouTube import', () => {
+    const YT = 'https://www.youtube.com/watch?v=abc123';
+    const needsText = () => httpErr(422, { error: 'needs_text' });
+    const yt = (source: 'linked-page' | 'transcript', title = 'Pancakes'): ImportResult => ({
+      ...result({ confidence: source === 'transcript' ? 'ai' : 'structured', recipe: { title, servings: 4, ingredients: [ing()], steps: ['Mix'], tags: [] } }),
+      source,
+      videoUrl: YT,
+    });
+
+    it('isYoutubeUrl matches youtube hosts over https only', () => {
+      expect(isYoutubeUrl(YT)).toBe(true);
+      expect(isYoutubeUrl('https://m.youtube.com/watch?v=1')).toBe(true);
+      expect(isYoutubeUrl('https://youtube.com/watch?v=1')).toBe(true);
+      expect(isYoutubeUrl('https://youtu.be/abc')).toBe(true);
+      expect(isYoutubeUrl('http://youtu.be/abc')).toBe(false);
+      expect(isYoutubeUrl('https://notyoutube.com/x')).toBe(false);
+      expect(isYoutubeUrl('https://youtube.com.evil.test/x')).toBe(false);
+      expect(isYoutubeUrl(undefined)).toBe(false);
+    });
+
+    it('needs_text shows the transcript message and paste box; pasted text imports as text with the video URL as source', async () => {
+      await setup({}, (() => {
+        let n = 0;
+        return () => (n++ === 0 ? needsText() : of(result()));
+      })());
+      type(YT);
+      await tapImport();
+      expect(q('[role="alert"]')).toBeNull();
+      expect(q('.info')?.textContent).toContain(NEEDS_TEXT_YOUTUBE_MESSAGE);
+      expect(NEEDS_TEXT_YOUTUBE_MESSAGE).toBe(
+        "Couldn't get the transcript automatically. On YouTube open the description, tap Show transcript, copy it and paste it here.",
+      );
+      expect(q('mat-label')?.textContent).toContain('Paste the transcript');
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+      expect(q('.comment-appender')).toBeNull();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: YT }));
+    });
+
+    it('a shared youtu.be link arriving via the url input starts a URL import', async () => {
+      await setup({ url: 'https://youtu.be/abc123' });
+      expect(importRecipe).toHaveBeenCalledWith({ url: 'https://youtu.be/abc123' });
+    });
+
+    it('linked-page drafts show the banner and a Watch the video link', async () => {
+      await setup({}, () => of(yt('linked-page')));
+      type(YT);
+      await tapImport();
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
+      expect(q('.use-transcript')?.textContent).toContain('Use the video transcript instead');
+      const a = q<HTMLAnchorElement>('a.watch-video');
+      expect(a?.getAttribute('href')).toBe(YT);
+      expect(a?.getAttribute('target')).toBe('_blank');
+      expect(a?.getAttribute('rel')).toBe('noopener noreferrer');
+    });
+
+    it('the rerun re-sends the same URL with ignoreLinkedRecipe, replaces the draft and swaps the banner', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? of(yt('transcript', 'From Video')) : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: YT, ignoreLinkedRecipe: true });
+      expect(q('h1:not(:first-child), app-recipe-view h1')?.textContent).toContain('From Video');
+      expect(q('.use-transcript')).toBeNull();
+      expect(q('.source-banner')?.textContent).toContain('From the video transcript - check quantities');
+      expect(el().textContent).toContain('AI-assisted - check the ingredients');
+    });
+
+    it('shows a loading state during the rerun and disables the button', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? NEVER : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      fixture.detectChanges();
+      expect(q<HTMLButtonElement>('.use-transcript')?.disabled).toBe(true);
+    });
+
+    it('a failed rerun keeps the current draft and shows the error beside the banner', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? needsText() : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
+      expect(q('.rerun-error')?.textContent).toContain(NEEDS_TEXT_YOUTUBE_MESSAGE);
+      expect(q('app-recipe-view')?.textContent).toContain('Pancakes');
+    });
+
+    it('a transcript draft shows the AI banner and the transcript note but no rerun button', async () => {
+      await setup({}, () => of(yt('transcript')));
+      type(YT);
+      await tapImport();
+      expect(q('.source-banner')?.textContent).toContain('From the video transcript - check quantities');
+      expect(el().textContent).toContain('AI-assisted - check the ingredients');
+      expect(q('.use-transcript')).toBeNull();
+      expect(q('a.watch-video')).not.toBeNull();
+    });
+
+    it('non-YouTube drafts show none of the video banners', async () => {
+      await setup();
+      type('https://example.com/r');
+      await tapImport();
+      expect(q('.source-banner')).toBeNull();
+      expect(q('a.watch-video')).toBeNull();
+    });
   });
 });
 

@@ -36,6 +36,9 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorCode, string> = {
 /** needs_text for a non-Instagram page (client-rendered recipe the server could not read). */
 export const NEEDS_TEXT_GENERIC_MESSAGE =
   "That site builds its recipes with JavaScript, so we can't read it. Copy the recipe text from the page and paste it here.";
+/** needs_text for a YouTube URL (no transcript could be fetched). */
+export const NEEDS_TEXT_YOUTUBE_MESSAGE =
+  "Couldn't get the transcript automatically. On YouTube open the description, tap Show transcript, copy it and paste it here.";
 export const RATE_LIMIT_MESSAGE = "You've imported a lot — try again in a while.";
 export const GENERIC_ERROR_MESSAGE = "Couldn't import that recipe.";
 
@@ -66,6 +69,19 @@ export function isInstagramUrl(url: string | undefined): boolean {
   }
 }
 
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be']);
+
+/** True for an https URL whose hostname (one trailing dot ignored) is exactly youtube.com / www. / m. / youtu.be. */
+export function isYoutubeUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && YOUTUBE_HOSTS.has(u.hostname.toLowerCase().replace(/\.$/, ''));
+  } catch {
+    return false;
+  }
+}
+
 const IG_POST_PATH = /^\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)\/?$/;
 
 /**
@@ -86,6 +102,8 @@ export function canonicalInstagramUrl(url: string): string {
     return url;
   }
 }
+
+type RunMode = 'fresh' | 'replace' | 'merge' | 'rerun';
 
 /** Appends items of `extra` whose lower-cased text is not already in `base`. */
 function appendNew<T>(base: T[], extra: T[], key: (t: T) => string): T[] {
@@ -163,6 +181,9 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     .candidates { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
     .candidate { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
     .candidate.chosen { border-color: var(--mat-sys-primary, #6750a4); }
+    .source-banner { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+    .source-banner .text { flex: 1 1 auto; }
+    .rerun-error { margin: 0 0 8px; }
     .loading { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
   `,
   template: `
@@ -170,7 +191,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
 
     @if (!draft()) {
       <mat-form-field class="box" appearance="outline">
-        <mat-label>{{ needsText() ? (needsTextGeneric() ? 'Paste the recipe text' : 'Paste the caption') :'Paste a link or recipe text' }}</mat-label>
+        <mat-label>{{ needsText() ? (needsTextYoutube() ? 'Paste the transcript' : needsTextGeneric() ? 'Paste the recipe text' : 'Paste the caption') :'Paste a link or recipe text' }}</mat-label>
         <textarea #box matInput rows="4" [value]="value()" (input)="onInput($event)"></textarea>
       </mat-form-field>
 
@@ -209,6 +230,22 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
         }
         @if (d.confidence === 'ai') {
           <p class="banner" role="note">AI-assisted - check the ingredients</p>
+        }
+        @if (source() || videoUrl()) {
+          <div class="banner source-banner" role="note">
+            <span class="text">{{ source() === 'linked-page' ? 'Imported from the recipe page linked in the video' : source() === 'transcript' ? 'From the video transcript - check quantities' : '' }}</span>
+            @if (videoUrl(); as v) {
+              <a class="watch-video" [href]="v" target="_blank" rel="noopener noreferrer">Watch the video</a>
+            }
+            @if (source() === 'linked-page') {
+              <button mat-stroked-button type="button" class="use-transcript" [disabled]="loading() || editorDirty()" (click)="useTranscript()">
+                Use the video transcript instead
+              </button>
+            }
+          </div>
+          @if (rerunError(); as e) {
+            <p class="error rerun-error" role="alert">{{ e }}</p>
+          }
         }
         @if (isEmpty()) {
           <p class="banner" role="note">We couldn't find a recipe there. Fill it in yourself — the source link is kept.</p>
@@ -319,7 +356,14 @@ export class Import implements OnInit {
   protected readonly needsTextGeneric = signal(false);
   /** True when the import came from an Instagram URL or an Instagram needs_text flow: offer the comment appender. */
   protected readonly igSource = signal(false);
+  /** True when the needs_text came from a YouTube URL (transcript message and label). */
+  protected readonly needsTextYoutube = signal(false);
   protected readonly comment = signal('');
+  /** Where a YouTube draft came from, and the video it was made from. */
+  protected readonly source = signal<'linked-page' | 'transcript' | undefined>(undefined);
+  protected readonly videoUrl = signal<string | undefined>(undefined);
+  /** Error from the "Use the video transcript instead" rerun; the current draft is kept. */
+  protected readonly rerunError = signal<string | null>(null);
 
   /** Set after a not_a_recipe 422: the request to re-run with forceRecipe, and the model's reason. */
   protected readonly notRecipe = signal<{ request: ImportRequest; reason?: string } | null>(null);
@@ -394,10 +438,11 @@ export class Import implements OnInit {
     this.run(request, 'fresh');
   }
 
-  private run(request: ImportRequest, mode: 'fresh' | 'replace' | 'merge'): void {
+  private run(request: ImportRequest, mode: RunMode): void {
     this.error.set(null);
     this.info.set(null);
     this.notRecipe.set(null);
+    this.rerunError.set(null);
     this.loading.set(true);
     this.api.importRecipe(request).subscribe({
       next: (res) => {
@@ -408,11 +453,15 @@ export class Import implements OnInit {
         this.loading.set(false);
         if (mode === 'fresh' && this.isNeedsText(err)) {
           this.pendingUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
+          const youtube = isYoutubeUrl(this.pendingUrl);
           const generic = !!this.pendingUrl && !isInstagramUrl(this.pendingUrl);
           this.needsText.set(true);
           this.needsTextGeneric.set(generic);
+          this.needsTextYoutube.set(youtube);
           this.value.set('');
-          this.info.set(generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
+          this.info.set(youtube ? NEEDS_TEXT_YOUTUBE_MESSAGE : generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
+        } else if (mode === 'rerun') {
+          this.rerunError.set(this.isNeedsText(err) ? NEEDS_TEXT_YOUTUBE_MESSAGE : this.messageFor(err));
         } else if (mode === 'fresh' && this.isNotRecipe(err)) {
           this.notRecipe.set({ request, reason: (err.error as { reason?: string }).reason });
         } else {
@@ -421,6 +470,13 @@ export class Import implements OnInit {
         if (mode === 'fresh') setTimeout(() => this.box()?.nativeElement.focus());
       },
     });
+  }
+
+  /** Re-runs the same video URL without the linked recipe page. A failure leaves the current draft in place. */
+  protected useTranscript(): void {
+    const url = this.sourceUrl;
+    if (!url || this.loading() || this.editorDirty()) return;
+    this.run({ url, ignoreLinkedRecipe: true }, 'rerun');
   }
 
   protected importAnyway(): void {
@@ -437,6 +493,7 @@ export class Import implements OnInit {
       this.pendingUrl = stripTrackingParams(nr.request.url);
       this.needsText.set(true);
       this.needsTextGeneric.set(!isInstagramUrl(this.pendingUrl));
+      this.needsTextYoutube.set(isYoutubeUrl(this.pendingUrl));
     }
     setTimeout(() => this.box()?.nativeElement.focus());
   }
@@ -467,7 +524,7 @@ ${c}` }, 'replace');
     return err instanceof HttpErrorResponse && err.status === 422 && (err.error as { error?: string } | null)?.error === 'needs_text';
   }
 
-  private onResult(res: ImportResult, mode: 'fresh' | 'replace' | 'merge'): void {
+  private onResult(res: ImportResult, mode: RunMode): void {
     this.loading.set(false);
     const existing = this.draft();
     const incoming = mode === 'merge' && existing ? mergeDrafts(existing, res.draft) : res.draft;
@@ -477,6 +534,10 @@ ${c}` }, 'replace');
     this.mode.set('preview');
     this.edited.set(false);
     this.comment.set('');
+    if (mode !== 'merge') {
+      this.source.set(res.source);
+      this.videoUrl.set(res.videoUrl);
+    }
     if (mode !== 'fresh') return; // keep the photo choice the user already has
     // Always offer the found photo(s) so they can be re-picked after declining.
     this.candidates.set(res.candidates?.length ? res.candidates : res.imageUrl ? [res.imageUrl] : []);
