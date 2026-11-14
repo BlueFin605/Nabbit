@@ -22,10 +22,9 @@ import { ownerPk, rateSk, llmDaySk, GLOBAL_PK, getDb } from '../db.js';
 import { extractFromText, htmlToText } from '../import/extract-text.js';
 import { extractImageCandidates } from '../import/extract-images.js';
 import { canonicalInstagramUrl, extractInstagramCaption, isInstagramUrl } from '../import/extract-instagram.js';
-import { extractStructured } from '../import/extract-structured.js';
+import { extractStructuredPage, withoutImageUrl } from '../import/structured-page.js';
 import { extractAppData, MAX_APP_DATA_BYTES } from '../import/extract-app-data.js';
 import { ImportError } from '../import/import-error.js';
-import { stripTrackingParams } from '../import/source-url.js';
 import { getLlmParser, isNotRecipe } from '../import/llm-parse.js';
 import { countSteps, type RecipeDraft } from '@nabbit/recipe-core';
 import { safeFetch as realSafeFetch, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
@@ -186,15 +185,8 @@ async function importRecipeInner({ ownerId, body }: RequestCtx) {
 
   try {
     const page = await deps.safeFetch(url);
-    const sourceUrl = stripTrackingParams(page.url);
-    const structured = extractStructured(page.html, sourceUrl);
-    const candidates = extractImageCandidates(page.html, page.url, structured?.imageUrl);
-    const images = candidates.length ? { imageUrl: candidates[0], candidates } : {};
-    if (structured) {
-      const draft = { ...structured };
-      delete draft.imageUrl;
-      return { status: 200, body: { draft, ...images } };
-    }
+    const { sourceUrl, structured, images } = extractStructuredPage(page);
+    if (structured) return { status: 200, body: { draft: withoutImageUrl(structured), ...images } };
     const text = htmlToText(page.html);
     const heuristic = extractFromText(text, { sourceUrl });
     // Client-rendered shell (e.g. Gatsby, CSR Next): essentially no text and nothing parsed. Try the page's embedded app data
