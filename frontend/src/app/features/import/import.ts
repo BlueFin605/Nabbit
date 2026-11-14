@@ -159,7 +159,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
     .not-recipe { padding: 12px 16px; border-radius: 12px; margin: 8px 0; background: var(--mat-sys-tertiary-container, #fde7b0); }
     .not-recipe .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    .top { position: sticky; top: 0; z-index: 2; background: var(--mat-sys-surface, #fff); }
+    .top { position: sticky; top: var(--top-bar-h); z-index: 2; background: var(--mat-sys-surface, #fff); }
     .candidates { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
     .candidate { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
     .candidate.chosen { border-color: var(--mat-sys-primary, #6750a4); }
