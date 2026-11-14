@@ -7,7 +7,7 @@ import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient, StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, NEEDS_TEXT_YOUTUBE_MESSAGE, RERUN_NO_TRANSCRIPT_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, isYoutubeUrl, mergeDrafts, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, NEEDS_TEXT_YOUTUBE_MESSAGE, RERUN_NOT_RECIPE_MESSAGE, RERUN_NO_TRANSCRIPT_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, isYoutubeUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -361,7 +361,7 @@ describe('Import', () => {
   });
 
   describe('AI import', () => {
-    const IG ='https://www.instagram.com/reel/abc/';
+    const IG = 'https://www.instagram.com/reel/abc/';
     const needsText = () => httpErr(422, { error: 'needs_text' });
     const onlyOnce = (first: () => unknown, then: () => unknown) => {
       let n = 0;
@@ -745,6 +745,20 @@ describe('Import', () => {
       expect(createRecipe).toHaveBeenCalledTimes(1);
     });
 
+    it.each([
+      ['a blank title', { title: '  ', servings: 4, ingredients: [ing()], steps: ['Mix'], tags: [] }],
+      ['an empty draft', { title: 'T', servings: 4, ingredients: [], steps: [], tags: [] }],
+    ])('Save in preview with %s goes through the editor (edit mode, its save path) instead of posting the raw draft', async (_, recipe) => {
+      await imported(() => of(result({ confidence: 'heuristic', recipe })));
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      all('app-import-action-bar .save')[0].click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(q('app-recipe-editor')).not.toBeNull();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      expect((createRecipe.mock.calls[0] as [RecipeInput])[0].title).toBe(recipe.title.trim() || 'Untitled recipe');
+    });
+
     it('Edit switches to the editor and the toggle reads Back to preview on both bars', async () => {
       await imported();
       expect(all('.toggle-edit')[0].textContent?.trim()).toBe('Edit');
@@ -903,6 +917,21 @@ describe('Import', () => {
       expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
       expect(q('.rerun-error')?.textContent).toContain(RERUN_NO_TRANSCRIPT_MESSAGE);
       expect(q('.rerun-error')?.textContent).not.toContain('paste');
+      expect(q('app-recipe-view')?.textContent).toContain('Pancakes');
+    });
+
+    it('a rerun answered not_a_recipe keeps the linked-page draft with an honest message (no paste prompt)', async () => {
+      await setup({}, (r) =>
+        (r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? httpErr(422, { error: 'not_a_recipe', reason: 'A vlog' }) : of(yt('linked-page')),
+      );
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(q('.rerun-error')?.textContent?.trim()).toBe(RERUN_NOT_RECIPE_MESSAGE);
+      expect(RERUN_NOT_RECIPE_MESSAGE).toBe("The video transcript doesn't look like a recipe, so the recipe page version is kept.");
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
       expect(q('app-recipe-view')?.textContent).toContain('Pancakes');
     });
 

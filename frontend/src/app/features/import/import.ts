@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, input, signal, viewChild, type ElementRef, type OnInit } from '@angular/core';
+import { Component, Injector, afterNextRender, computed, inject, input, signal, viewChild, type ElementRef, type OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { MatDialog } from '@angular/material/dialog';
 import { countSteps, flattenSteps, isStepGroup, type StepNode } from '@nabbit/recipe-core';
@@ -41,6 +41,8 @@ export const NEEDS_TEXT_YOUTUBE_MESSAGE =
   "Couldn't get the transcript automatically. On YouTube open the description, tap Show transcript, copy it and paste it here.";
 /** Rerun with ignoreLinkedRecipe answered needs_text: there is no paste box while a draft is showing. */
 export const RERUN_NO_TRANSCRIPT_MESSAGE = 'No transcript is available for this video, so the recipe page version is kept.';
+/** A transcript rerun answered not_a_recipe: the linked-page draft stays (there is no paste box while a draft shows). */
+export const RERUN_NOT_RECIPE_MESSAGE = "The video transcript doesn't look like a recipe, so the recipe page version is kept.";
 export const RATE_LIMIT_MESSAGE = "You've imported a lot — try again in a while.";
 export const GENERIC_ERROR_MESSAGE = "Couldn't import that recipe.";
 
@@ -321,6 +323,7 @@ export class Import implements OnInit {
   private readonly router = inject(Router);
   private readonly snack = inject(MatSnackBar);
   private readonly dialog = inject(MatDialog);
+  private readonly injector = inject(Injector);
 
   /** Web Share Target query params, bound via withComponentInputBinding. */
   readonly title = input<string>();
@@ -398,13 +401,24 @@ export class Import implements OnInit {
     }
   }
 
-  /** Save from either bar: the editor owns the form in edit mode (validation included); preview saves the draft. */
+  /**
+   * Save from either bar: the editor owns the form in edit mode (its normalisation included, e.g. a blank title becomes
+   * "Untitled recipe"); preview saves the draft as is. An empty or untitled draft would fail the backend, so preview
+   * switches to the editor and saves through it once it has rendered.
+   */
   protected onSave(): void {
-    if (this.mode() === 'edit') this.editor()?.requestSave();
-    else {
-      const d = this.draft();
-      if (d) this.save(d.recipe);
+    if (this.mode() === 'edit') {
+      this.editor()?.requestSave();
+      return;
     }
+    const d = this.draft();
+    if (!d) return;
+    if (this.isEmpty() || !d.recipe.title.trim()) {
+      this.mode.set('edit');
+      afterNextRender(() => this.editor()?.requestSave(), { injector: this.injector });
+      return;
+    }
+    this.save(d.recipe);
   }
 
   protected onCandidate(c: string | undefined): void {
@@ -473,7 +487,9 @@ export class Import implements OnInit {
           this.value.set('');
           this.info.set(youtube ? NEEDS_TEXT_YOUTUBE_MESSAGE : generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
         } else if (mode === 'rerun') {
-          this.rerunError.set(this.isNeedsText(err) ? RERUN_NO_TRANSCRIPT_MESSAGE : this.messageFor(err));
+          this.rerunError.set(
+            this.isNeedsText(err) ? RERUN_NO_TRANSCRIPT_MESSAGE : this.isNotRecipe(err) ? RERUN_NOT_RECIPE_MESSAGE : this.messageFor(err),
+          );
         } else if (mode === 'fresh' && this.isNotRecipe(err)) {
           this.notRecipe.set({ request, reason: (err.error as { reason?: string }).reason });
         } else {
