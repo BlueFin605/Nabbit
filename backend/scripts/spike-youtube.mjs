@@ -1,5 +1,5 @@
 // Spike: can we read YouTube watch pages and captions anonymously from AWS? (NAB-166, spec section C)
-// Usage (AWS CloudShell, Node 24): node spike-youtube.mjs urls.txt
+// Usage (AWS CloudShell, Node 24): node spike-youtube.mjs [urls.txt]  (no file = built-in default list)
 // Plain GET, honest User-Agent, no cookies, no auth. Always exits 0. Zero dependencies.
 import { Buffer } from 'node:buffer';
 import { readFileSync } from 'node:fs';
@@ -11,6 +11,17 @@ const MAX_REDIRECTS = 4;
 const TIMEOUT_MS = 10_000;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MIN_CAPTION = 200;
+
+export const DEFAULT_URLS = [
+  'https://youtu.be/yk6tQfArMvw',
+  'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  'https://www.youtube.com/watch?v=jNQXAC9IVRw',
+];
+
+export function resolveUrls(file) {
+  if (!file) return DEFAULT_URLS;
+  return readFileSync(file, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+}
 
 function unescapeHtml(s) {
   return s
@@ -116,20 +127,22 @@ async function fetchFollowing(url, allowHttp, accept = 'text/html') {
   throw new Error('too many redirects');
 }
 
-// Try json3 first, then the plain (XML) form.
+// Try json3 first, then the plain (XML) form. Returns the text and every HTTP status seen.
 async function fetchCaptionText(baseUrl, allowHttp) {
+  const statuses = [];
   for (const fmt of ['json3', undefined]) {
     const u = new URL(baseUrl);
     if (fmt) u.searchParams.set('fmt', fmt);
     const { status, body } = await fetchFollowing(u.href, allowHttp, '*/*');
+    statuses.push(status);
     const text = status === 200 ? flattenCaptions(body) : '';
-    if (text) return text;
+    if (text) return { text, statuses };
   }
-  return '';
+  return { text: '', statuses };
 }
 
 export async function probe(url, allowHttp = false) {
-  const row = { url, status: 0, wall: false, playerParsed: false, title: '', descriptionLength: 0, tracks: '', captionLength: 0, usable: false, links: [] };
+  const row = { url, status: 0, wall: false, playerParsed: false, title: '', descriptionLength: 0, tracks: '', captionLength: 0, captionStatus: '', captionResult: 'no track', usable: false, links: [] };
   try {
     const { status, finalUrl, body } = await fetchFollowing(url, allowHttp);
     const player = extractPlayerResponse(body);
@@ -145,7 +158,13 @@ export async function probe(url, allowHttp = false) {
       links: extractDescriptionLinks(description),
     });
     const track = selectCaptionTrack(tracks);
-    if (track?.baseUrl) row.captionLength = (await fetchCaptionText(track.baseUrl, allowHttp)).length;
+    if (track?.baseUrl) {
+      const { text, statuses } = await fetchCaptionText(track.baseUrl, allowHttp);
+      row.captionLength = text.length;
+      row.captionStatus = [...new Set(statuses)].join(', ');
+      const bad = statuses.find((st) => st !== 200);
+      row.captionResult = text ? 'ok' : bad !== undefined ? `caption fetch failed (status ${bad})` : 'empty text';
+    }
     row.usable = row.playerParsed && row.captionLength >= MIN_CAPTION;
   } catch (e) {
     row.error = e instanceof Error ? e.message : String(e);
@@ -155,11 +174,14 @@ export async function probe(url, allowHttp = false) {
 
 async function main() {
   const file = process.argv[2];
-  if (!file) {
-    console.log('usage: node spike-youtube.mjs urls.txt');
+  let urls;
+  try {
+    urls = resolveUrls(file);
+  } catch (e) {
+    console.log(`cannot read urls file ${file}: ${e instanceof Error ? e.message : String(e)}`);
     return;
   }
-  const urls = readFileSync(file, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+  if (!file) console.log('no urls file given, using the built-in default list');
   const allowHttp = process.env.SPIKE_ALLOW_HTTP === '1';
   const pause = process.env.SPIKE_PAUSE_MS !== undefined ? Number(process.env.SPIKE_PAUSE_MS) : 1500;
   const rows = [];
@@ -177,5 +199,10 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await main();
+  try {
+    await main();
+  } catch (e) {
+    console.log(`spike failed unexpectedly: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  process.exitCode = 0;
 }
