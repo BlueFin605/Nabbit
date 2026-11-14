@@ -39,6 +39,8 @@ export const NEEDS_TEXT_GENERIC_MESSAGE =
 /** needs_text for a YouTube URL (no transcript could be fetched). */
 export const NEEDS_TEXT_YOUTUBE_MESSAGE =
   "Couldn't get the transcript automatically. On YouTube open the description, tap Show transcript, copy it and paste it here.";
+/** Rerun with ignoreLinkedRecipe answered needs_text: there is no paste box while a draft is showing. */
+export const RERUN_NO_TRANSCRIPT_MESSAGE = 'No transcript is available for this video, so the recipe page version is kept.';
 export const RATE_LIMIT_MESSAGE = "You've imported a lot — try again in a while.";
 export const GENERIC_ERROR_MESSAGE = "Couldn't import that recipe.";
 
@@ -231,11 +233,13 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
         @if (d.confidence === 'ai') {
           <p class="banner" role="note">AI-assisted - check the ingredients</p>
         }
-        @if (source() || videoUrl()) {
+        @if (source()) {
           <div class="banner source-banner" role="note">
             <span class="text">{{ source() === 'linked-page' ? 'Imported from the recipe page linked in the video' : source() === 'transcript' ? 'From the video transcript - check quantities' : '' }}</span>
             @if (videoUrl(); as v) {
+              @if (isYoutube(v)) {
               <a class="watch-video" [href]="v" target="_blank" rel="noopener noreferrer">Watch the video</a>
+              }
             }
             @if (source() === 'linked-page') {
               <button mat-stroked-button type="button" class="use-transcript" [disabled]="loading() || editorDirty()" (click)="useTranscript()">
@@ -243,6 +247,9 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
               </button>
             }
           </div>
+          @if (source() === 'linked-page' && editorDirty()) {
+            <p class="hint rerun-hint" role="note">You've edited the recipe below. Save or discard your edits before switching to the transcript, or they would be lost.</p>
+          }
           @if (rerunError(); as e) {
             <p class="error rerun-error" role="alert">{{ e }}</p>
           }
@@ -412,6 +419,10 @@ export class Import implements OnInit {
     }
   }
 
+  protected isYoutube(url: string | undefined): boolean {
+    return isYoutubeUrl(url);
+  }
+
   protected val(e: Event): string {
     return (e.target as HTMLInputElement | HTMLTextAreaElement).value;
   }
@@ -461,7 +472,7 @@ export class Import implements OnInit {
           this.value.set('');
           this.info.set(youtube ? NEEDS_TEXT_YOUTUBE_MESSAGE : generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
         } else if (mode === 'rerun') {
-          this.rerunError.set(this.isNeedsText(err) ? NEEDS_TEXT_YOUTUBE_MESSAGE : this.messageFor(err));
+          this.rerunError.set(this.isNeedsText(err) ? RERUN_NO_TRANSCRIPT_MESSAGE : this.messageFor(err));
         } else if (mode === 'fresh' && this.isNotRecipe(err)) {
           this.notRecipe.set({ request, reason: (err.error as { reason?: string }).reason });
         } else {

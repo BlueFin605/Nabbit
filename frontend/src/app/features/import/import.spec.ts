@@ -7,7 +7,7 @@ import { NEVER, of, throwError } from 'rxjs';
 import type { Ingredient, StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, NEEDS_TEXT_YOUTUBE_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, isYoutubeUrl, mergeDrafts, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, NEEDS_TEXT_YOUTUBE_MESSAGE, RERUN_NO_TRANSCRIPT_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, isYoutubeUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -901,8 +901,41 @@ describe('Import', () => {
       await fixture.whenStable();
       fixture.detectChanges();
       expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
-      expect(q('.rerun-error')?.textContent).toContain(NEEDS_TEXT_YOUTUBE_MESSAGE);
+      expect(q('.rerun-error')?.textContent).toContain(RERUN_NO_TRANSCRIPT_MESSAGE);
+      expect(q('.rerun-error')?.textContent).not.toContain('paste');
       expect(q('app-recipe-view')?.textContent).toContain('Pancakes');
+    });
+
+    it.each(['javascript:alert(1)', 'https://evil.example/watch?v=1', 'http://www.youtube.com/watch?v=1'])('never renders %s as a link', async (bad) => {
+      await setup({}, () => of({ ...yt('linked-page'), videoUrl: bad } as ImportResult));
+      type(YT);
+      await tapImport();
+      expect(q('a.watch-video')).toBeNull();
+      expect(q('.source-banner')).not.toBeNull();
+    });
+
+    it('a videoUrl without a source renders no banner', async () => {
+      await setup({}, () => of({ ...result(), videoUrl: YT } as ImportResult));
+      type(YT);
+      await tapImport();
+      expect(q('.source-banner')).toBeNull();
+    });
+
+    it('explains the disabled rerun button when editor edits are unsaved', async () => {
+      await setup({}, () => of(yt('linked-page')));
+      type(YT);
+      await tapImport();
+      expect(q('.rerun-hint')).toBeNull();
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+      const t = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      t.value = 'Edited';
+      t.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+      expect(q<HTMLButtonElement>('.use-transcript')?.disabled).toBe(true);
+      expect(q('.rerun-hint')?.textContent).toContain('Save or discard your edits');
     });
 
     it('a transcript draft shows the AI banner and the transcript note but no rerun button', async () => {
