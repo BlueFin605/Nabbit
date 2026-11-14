@@ -235,8 +235,10 @@ export function isVersionConflict(err: unknown): boolean {
       <p class="error" role="alert">{{ e }}</p>
     }
     <div class="actions">
-      <button mat-flat-button type="button" class="save" [disabled]="saving() || uploading()" (click)="save()">{{ saveLabel() }}</button>
-      <button mat-button type="button" class="discard" [disabled]="saving()" (click)="cancelled.emit()">{{ cancelLabel() }}</button>
+      @if (!hideActions()) {
+        <button mat-flat-button type="button" class="save" [disabled]="saving() || uploading()" (click)="save()">{{ saveLabel() }}</button>
+        <button mat-button type="button" class="discard" [disabled]="saving()" (click)="cancelled.emit()">{{ cancelLabel() }}</button>
+      }
       <ng-content />
     </div>
   `,
@@ -256,6 +258,8 @@ export class RecipeEditor {
   readonly conflict = input(false);
   readonly saveLabel = input('Save');
   readonly cancelLabel = input('Discard');
+  /** Hides the built-in Save/Discard buttons when the host supplies its own (call `requestSave()` instead). */
+  readonly hideActions = input(false);
 
   readonly saved = output<RecipeInput>();
   /** A candidate was picked, or undefined when the user supplied/removed their own photo. */
@@ -604,6 +608,11 @@ export class RecipeEditor {
     if (key) out.imageKey = key;
     else delete out.imageKey;
     return out;
+  }
+
+  /** Runs the same save path as the Save button (emits `saved` unless already saving or uploading). */
+  requestSave(): void {
+    this.save();
   }
 
   protected save(): void {

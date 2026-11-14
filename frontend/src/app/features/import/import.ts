@@ -1,8 +1,13 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, signal, viewChild, type ElementRef, type OnInit } from '@angular/core';
 import { Router } from '@angular/router';
+import { MatDialog } from '@angular/material/dialog';
 import { countSteps, flattenSteps, isStepGroup, type StepNode } from '@nabbit/recipe-core';
 import { RecipeEditor } from '../recipes/recipe-editor';
+import { RecipeView } from '../recipes/recipe-view';
+import { ImportActionBar, type ImportMode } from './import-action-bar';
+import { ConfirmDialog, type ConfirmDialogData } from '../../shared/confirm-dialog';
+import { imageUrl } from '../../core/api/image-url';
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
@@ -142,7 +147,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
  */
 @Component({
   selector: 'app-import',
-  imports: [RecipeEditor, MatButtonModule, MatFormFieldModule, MatInputModule, MatProgressSpinnerModule],
+  imports: [RecipeEditor, RecipeView, ImportActionBar, MatButtonModule, MatFormFieldModule, MatInputModule, MatProgressSpinnerModule],
   styles: `
     :host { display: block; }
     .box { width: 100%; }
@@ -154,6 +159,10 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
     .error { color: var(--mat-sys-error, #b3261e); margin: 8px 0; }
     .not-recipe { padding: 12px 16px; border-radius: 12px; margin: 8px 0; background: var(--mat-sys-tertiary-container, #fde7b0); }
     .not-recipe .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .top { position: sticky; top: 0; z-index: 2; background: var(--mat-sys-surface, #fff); }
+    .candidates { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+    .candidate { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
+    .candidate.chosen { border-color: var(--mat-sys-primary, #6750a4); }
     .loading { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
   `,
   template: `
@@ -222,16 +231,42 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
             }
           </details>
         }
-        <app-recipe-editor
-          [recipe]="d.recipe"
-          [previewImage]="chosenCandidate()"
-          [candidates]="candidates()"
-          (candidateChosen)="onCandidate($event)"
-          [saving]="saving()"
-          [error]="error()"
-          (saved)="save($event)"
-          (cancelled)="discard()"
-        />
+        <app-import-action-bar class="top" [mode]="mode()" [saving]="saving()" (save)="onSave()" (edit)="toggleMode()" (discard)="discard()" />
+        @if (mode() === 'preview') {
+          @if (!d.recipe.imageKey && (chosenCandidate() || candidates().length)) {
+            @if (chosenCandidate()) {
+              <p class="photo-note" role="note">Photo found, will be saved</p>
+              <button mat-button type="button" class="decline-photo" (click)="onCandidate(undefined); showOptions.set(false)">Don't use this photo</button>
+            }
+            @if (!showOptions()) {
+              <button mat-button type="button" class="show-options" (click)="showOptions.set(true)">{{ chosenCandidate() ? 'Show photo options' : 'Use a found photo' }}</button>
+            } @else {
+              <div class="candidates">
+                @for (c of candidates(); track c) {
+                  <button type="button" class="candidate" [class.chosen]="c === chosenCandidate()" [attr.aria-pressed]="c === chosenCandidate()" aria-label="Use this photo" (click)="onCandidate(c)">
+                    <img [src]="c" alt="" width="72" height="72" />
+                  </button>
+                }
+              </div>
+            }
+          }
+          <app-recipe-view [recipe]="d.recipe" [imageUrl]="previewSrc()" [readOnly]="true" />
+          @if (saveError(); as e) {
+            <p class="error" role="alert">{{ e }}</p>
+          }
+        } @else {
+          <app-recipe-editor
+            [recipe]="d.recipe"
+            [previewImage]="chosenCandidate()"
+            [candidates]="candidates()"
+            (candidateChosen)="onCandidate($event)"
+            [saving]="saving()"
+            [error]="saveError()"
+            [hideActions]="true"
+            (saved)="save($event)"
+          />
+        }
+        <app-import-action-bar [mode]="mode()" [saving]="saving()" (save)="onSave()" (edit)="toggleMode()" (discard)="discard()" />
       }
     }
   `,
@@ -240,6 +275,7 @@ export class Import implements OnInit {
   private readonly api = inject(ApiClient);
   private readonly router = inject(Router);
   private readonly snack = inject(MatSnackBar);
+  private readonly dialog = inject(MatDialog);
 
   /** Web Share Target query params, bound via withComponentInputBinding. */
   readonly title = input<string>();
@@ -249,7 +285,18 @@ export class Import implements OnInit {
   private readonly box = viewChild<ElementRef<HTMLTextAreaElement>>('box');
   private readonly editor = viewChild(RecipeEditor);
   /** The editor resets when the draft changes, so the appender is off while the user has unsaved edits. */
-  protected readonly editorDirty = computed(() => this.editor()?.dirty() ?? false);
+  protected readonly editorDirty = computed(() => this.edited() || (this.editor()?.dirty() ?? false));
+
+  protected readonly mode = signal<ImportMode>('preview');
+  /** True once edits made in the editor were carried back into the draft (the editor is gone in preview). */
+  private readonly edited = signal(false);
+  /** Whether the found photo is shown (third-party image only loads after an explicit tap). */
+  protected readonly showOptions = signal(false);
+  protected readonly saveError = signal<string | null>(null);
+  protected readonly previewSrc = computed(() => {
+    const key = this.draft()?.recipe.imageKey;
+    return key ? imageUrl(key) : this.showOptions() ? this.chosenCandidate() : undefined;
+  });
 
   protected readonly value = signal('');
   protected readonly loading = signal(false);
@@ -284,6 +331,29 @@ export class Import implements OnInit {
   private caption: string | undefined;
   /** Key returned by images/import for a candidate, kept so a Save retry does not re-fetch. */
   private fetched: { candidate: string; imageKey: string } | undefined;
+
+  protected toggleMode(): void {
+    if (this.mode() === 'edit') {
+      const e = this.editor();
+      if (e) {
+        if (e.dirty()) this.edited.set(true);
+        const recipe = e.value();
+        this.draft.update((d) => (d ? { ...d, recipe } : d));
+      }
+      this.mode.set('preview');
+    } else {
+      this.mode.set('edit');
+    }
+  }
+
+  /** Save from either bar: the editor owns the form in edit mode (validation included); preview saves the draft. */
+  protected onSave(): void {
+    if (this.mode() === 'edit') this.editor()?.requestSave();
+    else {
+      const d = this.draft();
+      if (d) this.save(d.recipe);
+    }
+  }
 
   protected onCandidate(c: string | undefined): void {
     if (c !== this.fetched?.candidate) this.fetched = undefined;
@@ -404,6 +474,8 @@ ${c}` }, 'replace');
     const recipe = { ...incoming.recipe };
     if (this.sourceUrl && !recipe.sourceUrl) recipe.sourceUrl = this.sourceUrl;
     this.draft.set({ ...incoming, recipe });
+    this.mode.set('preview');
+    this.edited.set(false);
     this.comment.set('');
     if (mode !== 'fresh') return; // keep the photo choice the user already has
     // Always offer the found photo(s) so they can be re-picked after declining.
@@ -427,7 +499,7 @@ ${c}` }, 'replace');
   protected save(input: RecipeInput): void {
     if (this.saving()) return;
     this.saving.set(true);
-    this.error.set(null);
+    this.saveError.set(null);
     const chosen = this.chosenCandidate();
     if (input.imageKey || !chosen) {
       this.create(input);
@@ -454,12 +526,28 @@ ${c}` }, 'replace');
       next: (created) => void this.router.navigate(['/recipes', created.id]),
       error: () => {
         this.saving.set(false);
-        this.error.set("Couldn't save the recipe. Try again.");
+        this.saveError.set("Couldn't save the recipe. Try again.");
       },
     });
   }
 
+  /** Leaves without saving; asks first only when the draft was edited. */
   protected discard(): void {
-    void this.router.navigate(['/recipes']);
+    if (!this.editorDirty()) {
+      void this.router.navigate(['/recipes']);
+      return;
+    }
+    const data: ConfirmDialogData = {
+      title: 'Discard this recipe?',
+      message: "Your edits won't be saved.",
+      confirmLabel: 'Discard',
+      cancelLabel: 'Keep editing',
+    };
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, { data })
+      .afterClosed()
+      .subscribe((ok) => {
+        if (ok === true) void this.router.navigate(['/recipes']);
+      });
   }
 }

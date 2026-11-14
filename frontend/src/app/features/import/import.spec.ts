@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router, provideRouter } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
@@ -133,9 +134,8 @@ describe('Import', () => {
     await setup({}, () => of(result({}, 'https://example.com/p.jpg')));
     type('x');
     await tapImport();
-    expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
-    expect(q('summary')?.textContent).toContain('240 ml');
-    expect(q('details .original')?.textContent).toContain('1 cup flour');
+    expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
+    expect(q('app-recipe-view .ingredients')?.textContent).toContain('flour');
     // third-party photo is not loaded automatically and is labelled as unsaved
     expect(q('img.photo')).toBeNull();
     expect(q('.photo-note')?.textContent).toContain('Photo found, will be saved');
@@ -154,13 +154,15 @@ describe('Import', () => {
     expect(q('.banner')?.textContent).toContain('Check this one carefully');
   });
 
-  it('empty extraction opens a blank editor with the source link kept', async () => {
+  it('empty extraction opens a blank preview; Edit gives a blank editor with the source link kept', async () => {
     await setup({}, () =>
       of(result({ confidence: 'heuristic', recipe: { title: '', servings: 4, ingredients: [], steps: [], tags: [] } })),
     );
     jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     type('https://example.com/r');
     await tapImport();
+    q('.toggle-edit')?.click();
+    fixture.detectChanges();
     expect(q('input.title')).not.toBeNull();
     q('.save')?.click();
     expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://example.com/r' }));
@@ -189,6 +191,8 @@ describe('Import', () => {
     const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     type('https://example.com/r');
     await tapImport();
+    q('.toggle-edit')?.click();
+    fixture.detectChanges();
     const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
     title.value = 'Better pancakes';
     title.dispatchEvent(new Event('input'));
@@ -530,6 +534,10 @@ describe('Import', () => {
       fixture.detectChanges();
     }
     function editTitle(text: string) {
+      if (!q('input.title')) {
+        q('.toggle-edit')?.click();
+        fixture.detectChanges();
+      }
       const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
       title.value = text;
       title.dispatchEvent(new Event('input'));
@@ -552,8 +560,8 @@ describe('Import', () => {
       await fixture.whenStable();
       fixture.detectChanges();
       expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment' });
-      expect(q<HTMLInputElement>('input.title')?.value).toBe('Other');
-      expect(el().querySelectorAll('.ingredient')).toHaveLength(2);
+      expect(q('app-recipe-view h1')?.textContent).toContain('Other');
+      expect(el().querySelectorAll('app-recipe-view .ingredients li')).toHaveLength(2);
       expect(q('.photo-note')).not.toBeNull(); // photo choice kept
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
@@ -581,7 +589,7 @@ describe('Import', () => {
       await fixture.whenStable();
       fixture.detectChanges();
       expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment' });
-      expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+      expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
       expect(q('.banner')?.textContent).toContain('AI-assisted');
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
@@ -685,12 +693,111 @@ describe('Import', () => {
         fixture.detectChanges();
         expect(q('.comment-appender [role="alert"]')?.textContent).toContain("Instagram wouldn't let us read this post");
         expect(q('.info')).toBeNull();
-        expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+        expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
         expect(q('mat-label')?.textContent ?? '').not.toContain('Paste the caption');
         expect(document.activeElement).not.toBe(q('textarea'));
       } finally {
         jest.useRealTimers();
       }
+    });
+  });
+
+  describe('preview and edit modes', () => {
+    const all = (s: string) => el().querySelectorAll<HTMLButtonElement>(s);
+    async function imported(impl: (r: unknown) => unknown = () => of(result())) {
+      await setup({}, impl);
+      type('https://example.com/r');
+      await tapImport();
+    }
+    function toggle() {
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+    }
+    function editTitle(text: string) {
+      const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      title.value = text;
+      title.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('opens in read-only preview after an import', async () => {
+      await imported();
+      expect(q('app-recipe-view')).not.toBeNull();
+      expect(q('app-recipe-editor')).toBeNull();
+      expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
+    });
+
+    it('renders the action bar twice, top (sticky) and bottom', async () => {
+      await imported();
+      expect(el().querySelectorAll('app-import-action-bar')).toHaveLength(2);
+      expect(q('app-import-action-bar.top')).not.toBeNull();
+    });
+
+    it('Save from the top and from the bottom bar each save once', async () => {
+      await imported();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      all('app-import-action-bar .save')[0].click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      TestBed.resetTestingModule();
+      await imported();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      all('app-import-action-bar .save')[1].click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+    });
+
+    it('Edit switches to the editor and the toggle reads Back to preview on both bars', async () => {
+      await imported();
+      expect(all('.toggle-edit')[0].textContent?.trim()).toBe('Edit');
+      toggle();
+      expect(q('app-recipe-editor')).not.toBeNull();
+      expect(q('app-recipe-view')).toBeNull();
+      expect(all('.toggle-edit')[0].textContent?.trim()).toBe('Back to preview');
+      expect(all('.toggle-edit')[1].textContent?.trim()).toBe('Back to preview');
+      expect(q('app-recipe-editor .save')).toBeNull(); // editor's own buttons hidden
+    });
+
+    it('editor edits appear in the preview', async () => {
+      await imported();
+      toggle();
+      editTitle('Better pancakes');
+      toggle();
+      expect(q('app-recipe-view h1')?.textContent).toContain('Better pancakes');
+    });
+
+    it('Save from the bottom bar in edit mode saves the edited recipe through the editor', async () => {
+      await imported();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      toggle();
+      editTitle('Edited');
+      all('app-import-action-bar .save')[1].click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      expect((createRecipe.mock.calls[0] as [RecipeInput])[0].title).toBe('Edited');
+    });
+
+    it('Discard goes straight back when the draft was not edited', async () => {
+      await imported();
+      const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const open = jest.spyOn(TestBed.inject(MatDialog), 'open');
+      all('.discard')[1].click();
+      expect(open).not.toHaveBeenCalled();
+      expect(nav).toHaveBeenCalledWith(['/recipes']);
+    });
+
+    it.each(['in edit mode', 'back in preview'])('Discard confirms when the draft was edited (%s)', async (where) => {
+      await imported();
+      const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const open = jest
+        .spyOn(TestBed.inject(MatDialog), 'open')
+        .mockReturnValue({ afterClosed: () => of(false) } as never);
+      toggle();
+      editTitle('Edited');
+      if (where === 'back in preview') toggle();
+      q('.discard')?.click();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(nav).not.toHaveBeenCalled();
+      open.mockReturnValue({ afterClosed: () => of(true) } as never);
+      q('.discard')?.click();
+      expect(nav).toHaveBeenCalledWith(['/recipes']);
     });
   });
 
