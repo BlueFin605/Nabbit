@@ -21,6 +21,10 @@ type Obj = Record<string, unknown>;
 const isObj = (v: Json): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Strip tags and decode entities (HTML is parsed, never executed). */
+/** The API limits headings to 5000 chars; keep imported group headings well inside that. */
+const MAX_HEADING = 200;
+const capHeading = (s: string): string => s.slice(0, MAX_HEADING).trim();
+
 function cleanText(raw: string): string {
   let s = raw.length > MAX_TEXT * 4 ? raw.slice(0, MAX_TEXT * 4) : raw;
   s = parse(`<div>${s}</div>`).text;
@@ -112,7 +116,7 @@ function stepsFrom(v: Json, budget: StepBudget = { left: MAX_ITEMS }, depth = 0,
       const group = level < MAX_STEP_DEPTH - 1;
       const children = stepsFrom(v['itemListElement'], budget, depth + 1, group ? level + 1 : level);
       if (children.length === 0) return out;
-      const name = group ? cleanText(asString(v['name']) ?? '') : '';
+      const name = group ? capHeading(cleanText(asString(v['name']) ?? '')) : '';
       if (!group) out.push(...children);
       else out.push(name ? { heading: name, steps: children } : { steps: children });
     } else if (typeof v['text'] === 'string') out.push(...stepsFrom(v['text'], budget, depth + 1, level));
@@ -248,7 +252,7 @@ function microSteps(el: HTMLElement, budget: StepBudget, level: number): StepNod
   const hasProp = (e: HTMLElement, n: string) => (e.getAttribute('itemprop') ?? '').split(/\s+/).includes(n);
   const items = owned.filter((e) => hasProp(e, 'itemListElement'));
   const nameEl = owned.find((e) => hasProp(e, 'name'));
-  const name = nameEl ? cleanText(propValue(nameEl)) : '';
+  const name = nameEl ? capHeading(cleanText(propValue(nameEl))) : '';
   const children: StepNode[] = [];
   if (items.length === 0) {
     children.push(...flatMicroSteps(el, budget));

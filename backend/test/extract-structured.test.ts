@@ -157,6 +157,25 @@ describe('extractStructured nested steps', () => {
     expect(d.recipe.steps).toEqual([{ heading: 'Part', steps: ['One.'] }]);
   });
 
+  it('caps a very long JSON-LD section name to a safe heading length', () => {
+    const d = extractStructured(ld([section('  ' + 'x'.repeat(6000) + '  ', [step('One.')])]), URL_)!;
+    const g = d.recipe.steps[0] as { heading: string };
+    expect(g.heading.length).toBeLessThanOrEqual(200);
+    expect(g.heading).toBe(g.heading.trim());
+    expect(g.heading.startsWith('xxx')).toBe(true);
+  });
+
+  it('caps a very long microdata section name to a safe heading length', () => {
+    const html = `<div itemscope itemtype="https://schema.org/Recipe"><h1 itemprop="name">L</h1><span itemprop="recipeIngredient">1 onion</span>
+      <div itemprop="recipeInstructions" itemscope itemtype="https://schema.org/HowToSection">
+        <h3 itemprop="name">${'y'.repeat(6000)}</h3>
+        <div itemprop="itemListElement" itemscope itemtype="https://schema.org/HowToStep"><span itemprop="text">One.</span></div>
+      </div></div>`;
+    const d = extractStructured(html, URL_)!;
+    const g = d.recipe.steps[0] as { heading: string };
+    expect(g.heading.length).toBeLessThanOrEqual(200);
+  });
+
   it('drops empty sections', () => {
     const d = extractStructured(ld([section('Empty', []), step('One.')]), URL_)!;
     expect(d.recipe.steps).toEqual(['One.']);
