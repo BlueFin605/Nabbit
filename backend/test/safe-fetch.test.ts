@@ -507,6 +507,11 @@ describe('safeFetchCaptions', () => {
     const init = (fetchImpl.mock.calls[0] as unknown as [string, Record<string, unknown>])[1];
     expect(init.pinnedAddress).toBe(PUBLIC);
   });
+  it('a malformed URL is an ImportError bad_url, not a TypeError', async () => {
+    const fetchImpl = vi.fn(async () => body('x', 'text/xml'));
+    expect(await codeOf(safeFetchCaptions('not a url', { resolve: resolvePublic, fetchImpl: fetchImpl as never }))).toBe('bad_url');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
   it('rejects other content types', async () => {
     const fetchImpl = vi.fn(async () => body('x', 'image/png'));
     expect(await codeOf(safeFetchCaptions(TRACK, { resolve: resolvePublic, fetchImpl: fetchImpl as never }))).toBe('not_html');

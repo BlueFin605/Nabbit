@@ -1008,6 +1008,7 @@ describe('YouTube import', () => {
     expect(res.json.draft.confidence).toBe('ai');
     expect(res.json.draft.recipe.title).toBe('AI Lasagne');
     expect(res.json.draft.recipe.sourceUrl).toBe(VID);
+    expect(res.json.videoUrl).toBe(VID);
     expect(fetched).toEqual([VID]);
     expect(captionFetches).toEqual([TRACK]);
     expect(parsed).toHaveLength(1);
@@ -1162,6 +1163,13 @@ describe('YouTube import', () => {
     const res = await call({ url: VID, ignoreLinkedRecipe: v });
     expect(res.status).toBe(400);
     expect(fetched).toEqual([]);
+  });
+
+  it('time budget: ordered deadlines; LLM start + counters + the full 15 s LLM ends by ~24 s (API Gateway cuts at 29 s)', () => {
+    expect(YOUTUBE_LINKS_DEADLINE_MS).toBe(5_000);
+    expect(YOUTUBE_LLM_START_DEADLINE_MS).toBe(8_000);
+    expect(YOUTUBE_LINKS_DEADLINE_MS).toBeLessThan(YOUTUBE_LLM_START_DEADLINE_MS);
+    expect(YOUTUBE_LLM_START_DEADLINE_MS + 1_000 + 15_000).toBeLessThanOrEqual(24_000);
   });
 
   it('time budget: linked links are skipped once the deadline has passed', async () => {

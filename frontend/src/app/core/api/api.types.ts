@@ -43,7 +43,7 @@ export interface ImportResult {
   candidates?: string[];
   /** YouTube imports only: the draft came from a recipe page linked in the description, or from the video transcript. */
   source?: 'linked-page' | 'transcript';
-  /** YouTube linked-page imports: the canonical video URL (draft.recipe.sourceUrl is the recipe page). */
+  /** YouTube imports (both sources): the canonical video URL. On linked-page, draft.recipe.sourceUrl is the recipe page. */
   videoUrl?: string;
 }
 

@@ -3,7 +3,7 @@
  *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars), optional boolean `forceRecipe`
  *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (forceRecipe: true keeps the heuristic draft instead)
  *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[], source?: 'linked-page' | 'transcript', videoUrl? }
- *         (images: url imports only, imageUrl === candidates[0]; source/videoUrl: YouTube only, videoUrl on linked-page)
+ *         (images: url imports only, imageUrl === candidates[0]; source/videoUrl: YouTube only, both sources)
  *     400 { error } invalid body        422 { error: <ImportError code> }
  *     429 { error: 'rate_limited' } + retry-after (seconds)
  *   POST /recipes/images/import  body `{ url }` (https) -> 200 { imageKey }: downloads the image through the SSRF guard
@@ -47,17 +47,20 @@ export const MIN_PAGE_TEXT_CHARS = 200;
 const HOUR_MS = 3_600_000;
 
 /*
- * YouTube time budget. API Gateway cuts the request at 29 s and the import Lambda timeout is also 29 s. Worst case:
- *   watch page (safe-fetch cap 5 s)                                   -> t <= 5 s
- *   linked recipe pages, abandoned at YOUTUBE_LINKS_DEADLINE_MS       -> t <= 8 s
- *   caption track (5 s cap), the LLM is not started after 13 s        -> t <= 13 s
- *   LLM (Bedrock parser timeout 15 s)                                 -> t <= 28 s, ~1 s left for DynamoDB counters
- * Measured from the start of the request handler (cold start not included).
+ * YouTube time budget. API Gateway cuts the request at 29 s and the import Lambda timeout is also 29 s. Worst case,
+ * measured from the start of the request handler:
+ *   watch page (safe-fetch cap 5 s)                                         -> t <= 5 s
+ *   linked recipe pages, abandoned at YOUTUBE_LINKS_DEADLINE_MS             -> t <= 5 s
+ *   caption track, cut off at YOUTUBE_LLM_START_DEADLINE_MS; the LLM is not
+ *   started after it either (needs_text instead)                            -> t <= 8 s
+ *   2 DynamoDB counter writes (~<1 s) + LLM (Bedrock parser timeout 15 s)   -> t <= ~24 s
+ * That leaves ~5 s of the 29 s for cold start (not measured) and response overhead.
+ * A slow watch page (> 5 s used) means no linked lookup; a very slow one leaves no time for captions -> needs_text.
  */
 /** Linked-recipe lookups stop once this much of the request has elapsed; an in-flight page fetch is abandoned. */
-export const YOUTUBE_LINKS_DEADLINE_MS = 8_000;
-/** The transcript LLM call (up to 15 s) is not started after this point; the request returns needs_text instead. */
-export const YOUTUBE_LLM_START_DEADLINE_MS = 13_000;
+export const YOUTUBE_LINKS_DEADLINE_MS = 5_000;
+/** Caption fetch cut-off, and the transcript LLM call (up to 15 s) is not started after this point; needs_text instead. */
+export const YOUTUBE_LLM_START_DEADLINE_MS = 8_000;
 /** Fewer characters than this across description + transcript is not worth an LLM call. */
 export const MIN_YOUTUBE_TEXT_CHARS = 200;
 export const MAX_YOUTUBE_DESCRIPTION_CHARS = 6_000;
@@ -71,7 +74,7 @@ export interface ImportResponseBody {
   candidates?: string[];
   /** YouTube only: which attempt produced the draft. */
   source?: 'linked-page' | 'transcript';
-  /** YouTube linked-page only: the canonical video URL (draft.recipe.sourceUrl is the recipe page). */
+  /** YouTube only, both sources: the canonical video URL (on linked-page, draft.recipe.sourceUrl is the recipe page). */
   videoUrl?: string;
 }
 
@@ -234,7 +237,7 @@ async function importYoutube(ownerId: string, rawUrl: string, startMs: number, o
     throw new ImportError('not_a_recipe', recipe.reason, recipe.reason);
   }
   const draft: RecipeDraft = { recipe: { ...recipe, steps: flattenLeafStrings(recipe.steps), sourceUrl: videoUrl }, confidence: 'ai' };
-  const body: ImportResponseBody = { draft, source: 'transcript' };
+  const body: ImportResponseBody = { draft, source: 'transcript', videoUrl };
   return { status: 200, body };
 }
 
