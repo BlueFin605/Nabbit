@@ -15,7 +15,8 @@ test.describe('not-a-recipe guardrail', () => {
     await expect(panel).toContainText('Fake: this is a travel vlog');
 
     await page.getByRole('button', { name: 'Import anyway' }).click();
-    await expect(page.locator('input.title')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.locator('input.title')).toHaveCount(0);
     await expect(page.getByText("doesn't look like a recipe")).toHaveCount(0);
     await expect(page.getByRole('note').filter({ hasText: 'AI-assisted' })).toHaveCount(0);
   });

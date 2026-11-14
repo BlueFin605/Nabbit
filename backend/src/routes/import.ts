@@ -46,12 +46,15 @@ export interface ImportDeps {
   /** Same-origin embedded-app-data fetch (Gatsby page-data.json); SSRF-guarded and size-capped like safeFetch. */
   fetchJson: (url: string) => Promise<{ url: string; text: string }>;
   now: () => number;
+  /** Hourly import cap; only the local e2e stack raises it (local.ts). */
+  importLimit: number;
 }
 const defaults: ImportDeps = {
   safeFetch: (u) => realSafeFetch(u),
   fetchImage: (u) => safeFetchImage(u),
   fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES, { allowedOrigin: new URL(u).origin }),
   now: () => Date.now(),
+  importLimit: IMPORT_LIMIT_PER_HOUR,
 };
 let deps: ImportDeps = defaults;
 
@@ -122,7 +125,7 @@ async function countImport(ownerId: string) {
   const nowMs = deps.now();
   const hour = Math.floor(nowMs / HOUR_MS);
   const count = await getDb().incrementCounter(ownerPk(ownerId), rateSk('import', hour), Math.floor(nowMs / 1000) + 2 * 3600);
-  if (count > IMPORT_LIMIT_PER_HOUR) {
+  if (count > deps.importLimit) {
     const retryAfter = Math.max(1, Math.ceil(((hour + 1) * HOUR_MS - nowMs) / 1000));
     return { status: 429, body: { error: 'rate_limited' }, headers: { 'retry-after': String(retryAfter) } };
   }

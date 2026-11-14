@@ -9,10 +9,11 @@ test.describe('journey 6: URL import', () => {
     await page.getByLabel('Paste a link or recipe text').fill('https://nabbit-fixtures.test/pasta.html');
     await page.getByRole('button', { name: 'Import', exact: true }).click();
 
-    await expect(page.locator('input.title')).toHaveValue('Lemon Pasta');
+    await expect(page.locator('input.title')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Lemon Pasta' })).toBeVisible();
     await expect(page.getByRole('note').filter({ hasText: 'we guessed at the layout' })).toHaveCount(0);
-    await expect(page.locator('.ingredient .preview summary').nth(1)).toHaveText('240 ml cream');
-    await page.locator('button.save').click();
+    await expect(page.locator('ul.ingredients li').nth(1)).toContainText('240 ml cream');
+    await page.locator('button.save').first().click();
 
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Lemon Pasta' })).toBeVisible();
@@ -39,7 +40,7 @@ test.describe('journey 7: photo import', () => {
     await page.getByRole('button', { name: 'Show photo options' }).click();
     await expect(page.locator('button.candidate').first()).toBeVisible();
     expect(await page.locator('button.candidate').count()).toBeGreaterThanOrEqual(1);
-    await page.locator('button.save').click();
+    await page.locator('button.save').first().click();
 
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
     const [saved] = await api.recipes();
@@ -53,8 +54,8 @@ test.describe('journey 7: photo import', () => {
     await page.goto('/import');
     await page.getByLabel('Paste a link or recipe text').fill('https://nabbit-fixtures.test/nophoto.html');
     await page.getByRole('button', { name: 'Import', exact: true }).click();
-    await expect(page.locator('input.title')).toHaveValue('Broken Photo Pasta');
-    await page.locator('button.save').click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Broken Photo Pasta' })).toBeVisible();
+    await page.locator('button.save').first().click();
 
     await expect(page.getByText('Saved without a photo')).toBeVisible();
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);

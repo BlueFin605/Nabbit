@@ -14,10 +14,12 @@ test.describe('journey 1: paste import', () => {
     await page.getByRole('button', { name: 'Import', exact: true }).click();
 
     await expect(page.getByRole('note').filter({ hasText: 'Check this one carefully' })).toBeVisible();
-    await expect(page.locator('input.title')).toHaveValue('Fluffy Pancakes');
-    await expect(page.locator('.ingredient .preview summary').first()).toHaveText('480 ml all-purpose flour');
+    // The import opens in the read-only preview, not the editor.
+    await expect(page.locator('input.title')).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 1, name: 'Fluffy Pancakes' })).toBeVisible();
+    await expect(page.locator('ul.ingredients li').first()).toContainText('480 ml all-purpose flour');
 
-    await page.locator('button.save').click();
+    await page.locator('button.save').first().click();
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Fluffy Pancakes' })).toBeVisible();
     await expect(page.locator('ul.ingredients li').first()).toContainText('480 ml all-purpose flour');

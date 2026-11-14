@@ -86,12 +86,15 @@ test.describe('nested step groups', () => {
     await page.goto('/import');
     await page.getByLabel('Paste a link or recipe text').fill('https://nabbit-fixtures.test/sections.html');
     await page.getByRole('button', { name: 'Import', exact: true }).click();
-    await expect(page.locator('input.title')).toHaveValue('Layered Lasagne');
+    await expect(page.getByRole('heading', { level: 1, name: 'Layered Lasagne' })).toBeVisible();
+    // The read-only preview shows the groups; the editor behind Edit holds the same draft.
+    await expect(page.locator('ol.steps').getByRole('heading', { level: 3 })).toHaveText(['For the ragu', 'For the white sauce']);
+    await page.locator('button.toggle-edit').first().click();
     expect(await groupHeadings(page)).toEqual(['For the ragu', 'For the white sauce']);
     expect(await stepTexts(page)).toEqual([
       'Heat the oven to 180C.', 'Brown the mince.', 'Add the tomatoes and simmer.', 'Warm the milk and whisk until thick.',
     ]);
-    await page.locator('button.save').click();
+    await page.locator('button.save').first().click();
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
     const [summary] = await api.recipes();
     const saved = await api.recipe(summary.id);
