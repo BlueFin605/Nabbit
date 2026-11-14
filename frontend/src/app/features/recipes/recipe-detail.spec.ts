@@ -465,6 +465,14 @@ describe('RecipeDetail', () => {
       expect(reset()).toBeNull();
     });
 
+    it('presets the metric amount, not the stored gallons, in Metric mode', async () => {
+      const gal: Ingredient = { ...milk, original: '1.057 gallon milk', quantity: 1.0568, unit: 'gallon', metric: { quantity: 4, unit: 'l' } };
+      await setup(() => of({ ...cheese('milk'), ingredients: [gal, rennet, salt] }));
+      expect(amountBox()?.value).toBe('4');
+      expect(unitSelect()?.value).toBe('l');
+      expect(reset()).toBeNull();
+    });
+
     it('ignores a scaleBy that is not an anchor', async () => {
       await setup(() => of(cheese('salt')));
       expect(el().querySelector('.stepper')).not.toBeNull();
@@ -666,6 +674,20 @@ describe('RecipeDetail', () => {
       expect(body().servings).toBe(6);
       expect(body().scaleBy).toBe('milk');
       expect(body().ingredients[0]).toMatchObject({ id: 'milk', quantity: 6 });
+    });
+
+    it('saving while scaling by an ingredient remembers it as scaleBy even if the recipe had none', async () => {
+      const { scaleBy: _s, ...noDefault } = cheese();
+      void _s;
+      await setup(() => of(noDefault as Recipe));
+      const select = el().querySelector<HTMLSelectElement>('select.scale-by') as HTMLSelectElement;
+      select.value = 'milk';
+      select.dispatchEvent(new Event('change'));
+      await settle();
+      await typeAmount('6');
+      stubDialog(true);
+      await click('.save-size');
+      expect(body().scaleBy).toBe('milk');
     });
 
     it('first save writes originalSize with the pre-save stored values', async () => {
