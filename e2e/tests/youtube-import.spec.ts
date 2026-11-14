@@ -79,18 +79,23 @@ test.describe('journey 12: YouTube import', () => {
     expect((await api.recipe(recipes[0].id)).sourceUrl).toBe(NO_CAPTIONS);
   });
 
-  test('a vlog shows the not-a-recipe panel; Import anyway falls back to the paste prompt', async ({ page }) => {
+  test('a vlog shows the not-a-recipe panel; Import anyway previews a best-effort AI draft that saves', async ({ page, api }) => {
     await startImport(page, VLOG);
     const panel = page.locator('.not-recipe');
     await expect(panel).toContainText("That doesn't look like a recipe");
     await expect(panel).toContainText('Fake: this is a travel vlog');
 
-    // With forceRecipe the server refuses to draft a "recipe" from a vlog transcript: it asks for pasted text instead.
+    // forceRecipe makes the server's one LLM call a best-effort one (no isRecipe exit), so a draft comes back.
     await panel.getByRole('button', { name: 'Import anyway' }).click();
-    await expect(page.getByRole('status').filter({ hasText: "Couldn't get the transcript automatically" })).toBeVisible();
-    await expect(panel).toHaveCount(0);
-    await page.getByLabel('Paste the transcript').fill(TRANSCRIPT_TEXT);
-    await page.getByRole('button', { name: 'Import', exact: true }).click();
     await expect(page.getByRole('heading', { level: 1, name: 'Fake AI Soup' })).toBeVisible();
+    await expect(panel).toHaveCount(0);
+    await expect(page.getByLabel('Paste the transcript')).toHaveCount(0);
+    await expect(sourceBanner(page)).toContainText('From the video transcript - check quantities');
+
+    await page.locator('button.save').first().click();
+    await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
+    const recipes = await api.recipes();
+    expect(recipes.map((r) => r.title)).toEqual(['Fake AI Soup']);
+    expect((await api.recipe(recipes[0].id)).sourceUrl).toBe(VLOG);
   });
 });

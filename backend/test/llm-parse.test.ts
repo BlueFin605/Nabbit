@@ -89,6 +89,21 @@ describe('createBedrockParser', () => {
     expect(JSON.stringify(reqOf(b).system)).toContain('flat list');
   });
 
+  it('forceRecipe: the prompt drops the isRecipe exit and asks for a best-effort recipe', async () => {
+    const c = stub(JSON.stringify(GOOD));
+    const r = await createBedrockParser({ modelId: 'm', client: c }).parse('t', { flatSteps: true, forceRecipe: true });
+    expect(r && !isNotRecipe(r) && r.title).toBe('Pancakes');
+    const system = JSON.stringify(reqOf(c).system);
+    expect(system).not.toContain('isRecipe\\": false');
+    expect(system).toContain('best-effort');
+    expect(system).toContain('flat list');
+  });
+
+  it('forceRecipe: a model that still answers isRecipe false yields undefined, never NotRecipe', async () => {
+    const c = stub(JSON.stringify({ isRecipe: false, reason: 'A vlog.' }));
+    expect(await createBedrockParser({ modelId: 'm', client: c }).parse('t', { forceRecipe: true })).toBeUndefined();
+  });
+
   it('flattens grouped steps to leaf strings with flatSteps', async () => {
     const grouped = { ...GOOD, steps: [{ heading: 'Sauce', steps: ['Chop.', 'Simmer.'] }, 'Serve.'] };
     const r = await createBedrockParser({ modelId: 'm', client: stub(JSON.stringify(grouped)) }).parse('t', { flatSteps: true });

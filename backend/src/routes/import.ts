@@ -19,7 +19,8 @@
  * YouTube URLs (optional boolean `ignoreLinkedRecipe`; YOUTUBE_AUTOFETCH='0' disables, read per request): watch page ->
  *   linked recipe page from the description (schema.org only, no LLM; 200 with source 'linked-page' + videoUrl) unless
  *   ignoreLinkedRecipe -> caption transcript + LLM, always, flat steps (200 with source 'transcript', confidence 'ai').
- *   NotRecipe -> 422 not_a_recipe (forceRecipe -> needs_text); any other miss -> 422 needs_text. See YOUTUBE_* budget below.
+ *   NotRecipe -> 422 not_a_recipe; forceRecipe makes the one LLM call a best-effort one (no isRecipe exit) and nothing
+ *   usable -> needs_text; any other miss -> 422 needs_text. See YOUTUBE_* budget below.
  * Rate limit: 30 imports per owner per clock hour via an atomic DynamoDB counter
  * (pk=OWNER#{id}, sk=RATE#import#{epoch hour}, ttl 2h), incremented BEFORE any fetch so failures still count.
  */
@@ -114,7 +115,11 @@ export function llmGlobalLimit(): number {
  * One LLM attempt within the per-owner daily cap and then the app-wide daily cap (both bumped before the call).
  * No parser, a cap reached, or any error -> undefined.
  */
-async function callLlm(ownerId: string, text: string, ctx: { sourceUrl?: string; flatSteps?: boolean }): Promise<ParsedRecipe | NotRecipe | undefined> {
+async function callLlm(
+  ownerId: string,
+  text: string,
+  ctx: { sourceUrl?: string; flatSteps?: boolean; forceRecipe?: boolean },
+): Promise<ParsedRecipe | NotRecipe | undefined> {
   try {
     const parser = getLlmParser();
     if (!parser) return undefined;
@@ -230,7 +235,10 @@ async function importYoutube(ownerId: string, rawUrl: string, startMs: number, o
   if (!getLlmParser() || deps.now() >= llmDeadline) return NEEDS_TEXT();
 
   // Spoken prose has no heuristic parse, so the transcript path always asks the LLM (same caps as every other call).
-  const recipe = await callLlm(ownerId, youtubeLlmInput(player.title, player.description, transcript), { sourceUrl: videoUrl, flatSteps: true });
+  // With forceRecipe ("Import anyway" after not_a_recipe) there is no heuristic draft to keep, so the single LLM call
+  // is a forced best-effort one (no isRecipe exit); nothing usable -> needs_text.
+  const ctx = { sourceUrl: videoUrl, flatSteps: true, ...(opts.forceRecipe ? { forceRecipe: true } : {}) };
+  const recipe = await callLlm(ownerId, youtubeLlmInput(player.title, player.description, transcript), ctx);
   if (!recipe) return NEEDS_TEXT();
   if (isNotRecipe(recipe)) {
     if (opts.forceRecipe) return NEEDS_TEXT();

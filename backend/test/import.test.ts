@@ -1147,16 +1147,42 @@ describe('YouTube import', () => {
     expect(parsed).toHaveLength(0);
   });
 
-  it('NotRecipe -> 422 not_a_recipe; forceRecipe -> needs_text; one LLM bump per call', async () => {
-    result = async () => ({ notRecipe: true, reason: 'A travel vlog.' });
+  it('NotRecipe -> 422 not_a_recipe; forceRecipe -> one best-effort LLM call -> AI transcript draft', async () => {
+    // The fake answers NotRecipe unless the ctx asks for a forced best-effort recipe.
+    result = async () => (parsed.at(-1)!.ctx as { forceRecipe?: boolean }).forceRecipe ? aiRecipe : { notRecipe: true, reason: 'A travel vlog.' };
     const res = await call({ url: VID, ignoreLinkedRecipe: true });
     expect(res.status).toBe(422);
     expect(res.json).toEqual({ error: 'not_a_recipe', reason: 'A travel vlog.' });
+    expect(parsed[0]!.ctx).toEqual({ sourceUrl: VID, flatSteps: true });
     expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+
     const forced = await call({ url: VID, ignoreLinkedRecipe: true, forceRecipe: true });
-    expect(forced.status).toBe(422);
-    expect(forced.json).toEqual({ error: 'needs_text' });
+    expect(forced.status).toBe(200);
+    expect(forced.json.source).toBe('transcript');
+    expect(forced.json.videoUrl).toBe(VID);
+    expect(forced.json.draft.confidence).toBe('ai');
+    expect(forced.json.draft.recipe.title).toBe('AI Lasagne');
+    expect(forced.json.draft.recipe.sourceUrl).toBe(VID);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[1]!.ctx).toEqual({ sourceUrl: VID, flatSteps: true, forceRecipe: true });
     expect(llmCounts()).toEqual({ owner: 2, global: 2 });
+  });
+
+  it('forceRecipe with nothing usable (undefined or a stray NotRecipe) -> needs_text, one LLM call each', async () => {
+    result = async () => undefined;
+    expect((await call({ url: VID, ignoreLinkedRecipe: true, forceRecipe: true })).json).toEqual({ error: 'needs_text' });
+    result = async () => ({ notRecipe: true, reason: 'still a vlog' });
+    expect((await call({ url: VID, ignoreLinkedRecipe: true, forceRecipe: true })).json).toEqual({ error: 'needs_text' });
+    expect(parsed).toHaveLength(2);
+    expect(llmCounts()).toEqual({ owner: 2, global: 2 });
+  });
+
+  it('forceRecipe on the text path keeps the heuristic fallback (no forceRecipe ctx sent to the LLM)', async () => {
+    result = async () => ({ notRecipe: true, reason: 'nope' });
+    const res = await call({ text: 'Mystery dish\n\nIngredients\n2 cups flour\n', forceRecipe: true });
+    expect(res.status).toBe(200);
+    expect(res.json.draft.confidence).toBe('heuristic');
+    expect(parsed[0]!.ctx).toEqual({});
   });
 
   it.each(['yes', 1, null, {}])('non-boolean ignoreLinkedRecipe %j -> 400', async (v) => {

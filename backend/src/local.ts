@@ -49,18 +49,22 @@ export const FAKE_NOT_RECIPE_REASON = 'Fake: this is a travel vlog';
  */
 export function installE2eFakeLlm(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.NODE_ENV !== 'development' || env.NABBIT_E2E_FAKE_LLM !== '1') return false;
+  const soup = () => ({
+    title: 'Fake AI Soup',
+    servings: 4,
+    ingredients: ['2 cups fake stock', '1 onion', '3 carrots'].map((l) => toMetric(parseIngredient(l))),
+    steps: ['Chop the onion and carrots.', 'Simmer everything in the stock.', 'Serve hot.'],
+    tags: [],
+  });
   setLlmParser({
-    parse: async (text) =>
+    // A forced ("Import anyway") call has no isRecipe exit, so the not-a-recipe marker yields the soup too.
+    parse: async (text, ctx) =>
       text.includes(FAKE_NOT_RECIPE_MARKER)
-        ? { notRecipe: true as const, reason: FAKE_NOT_RECIPE_REASON }
+        ? ctx.forceRecipe
+          ? soup()
+          : { notRecipe: true as const, reason: FAKE_NOT_RECIPE_REASON }
         : text.includes(FAKE_LLM_MARKER)
-        ? {
-            title: 'Fake AI Soup',
-            servings: 4,
-            ingredients: ['2 cups fake stock', '1 onion', '3 carrots'].map((l) => toMetric(parseIngredient(l))),
-            steps: ['Chop the onion and carrots.', 'Simmer everything in the stock.', 'Serve hot.'],
-            tags: [],
-          }
+        ? soup()
         : undefined,
   });
   return true;
