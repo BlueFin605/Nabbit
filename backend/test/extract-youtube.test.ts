@@ -32,6 +32,12 @@ describe('youtubeVideoId', () => {
     expect(youtubeVideoId(`https://www.youtube.com/shorts/${ID}`)).toBe(ID);
     expect(youtubeVideoId(`https://m.youtube.com/watch?v=${ID}`)).toBe(ID);
   });
+  it('reads live and embed URLs', () => {
+    expect(youtubeVideoId(`https://www.youtube.com/live/${ID}?si=x`)).toBe(ID);
+    expect(youtubeVideoId(`https://youtube.com/embed/${ID}`)).toBe(ID);
+    expect(youtubeVideoId(`https://www.youtube.com/embed/${ID}/`)).toBe(ID);
+    expect(youtubeVideoId(`https://www.youtube.com/live/${ID}/extra`)).toBeUndefined();
+  });
   it('rejects bad ids, wrong paths, other hosts and garbage', () => {
     expect(youtubeVideoId('https://www.youtube.com/watch?v=short')).toBeUndefined();
     expect(youtubeVideoId(`https://www.youtube.com/watch?v=${ID}x`)).toBeUndefined();

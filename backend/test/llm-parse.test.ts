@@ -204,6 +204,13 @@ describe('validateModelOutput notRecipe and flattenLeafStrings', () => {
   it('trims and caps the reason at 200 chars', () => {
     expect(validateModelOutput({ isRecipe: false, reason: 'x'.repeat(300) })).toEqual({ notRecipe: true, reason: 'x'.repeat(200) });
   });
+  it('strips URLs and control characters from the reason (it is shown to the user verbatim)', () => {
+    const r = validateModelOutput({ isRecipe: false, reason: 'Not a recipe;\u0007 visit https://evil.example/x?y=1 or http://a.b now‮.\nThanks' });
+    expect(r).toEqual({ notRecipe: true, reason: 'Not a recipe; visit or now. Thanks' });
+  });
+  it('a reason that is only a URL is no usable reason', () => {
+    expect(validateModelOutput({ isRecipe: false, reason: ' https://evil.example/ ' })).toBeUndefined();
+  });
   it('still validates recipes with isRecipe absent or true', () => {
     expect(validateModelOutput({ ...GOOD, isRecipe: true })).toEqual(GOOD);
   });

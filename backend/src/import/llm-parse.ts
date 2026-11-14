@@ -52,6 +52,19 @@ const FORCED_SYSTEM_PROMPT = [INTRO_LINE, BEST_EFFORT_LINE, ...PROMPT_TAIL].join
 const FLAT_STEPS_LINE = 'steps must be a flat list of strings, no grouping.';
 const MAX_REASON_CHARS = 200;
 
+/**
+ * The not-a-recipe reason is model output steered by untrusted page text and is shown to the user verbatim: drop URLs
+ * (anything scheme://... or www....), control and bidi/format characters, and collapse whitespace.
+ */
+function cleanReason(s: string): string {
+  return s
+    .replace(/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S*/gi, '')
+    .replace(/[\p{Cc}\p{Cf}]/gu, (ch) => (/\s/.test(ch) ? ' ' : ''))
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .trim();
+}
+
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
 
 function strArray(v: unknown, minLen: number, maxLen: number, maxStr: number): string[] | undefined {
@@ -82,7 +95,7 @@ export function validateModelOutput(
   const o = raw as Record<string, unknown>;
   if (o.isRecipe === false) {
     if (typeof o.reason !== 'string') return undefined;
-    const reason = o.reason.trim().slice(0, MAX_REASON_CHARS).trim();
+    const reason = cleanReason(o.reason).slice(0, MAX_REASON_CHARS).trim();
     return reason ? { notRecipe: true, reason } : undefined;
   }
   if (!isStr(o.title, 200) || o.title.length < 1) return undefined;

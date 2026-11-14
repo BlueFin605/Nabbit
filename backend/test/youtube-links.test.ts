@@ -20,6 +20,15 @@ describe('candidateRecipeLinks', () => {
     expect(candidateRecipeLinks(skipped.join('\n'))).toEqual([]);
     expect(SKIP_HOST_PATTERNS.length).toBeGreaterThan(5);
   });
+  it('drops common shorteners, link-in-bio pages and affiliate redirectors', () => {
+    const skipped = [
+      'https://t.co/abc', 'https://tinyurl.com/abc', 'https://geni.us/abc', 'https://lnk.to/abc', 'https://ow.ly/abc', 'https://buff.ly/abc',
+      'https://rebrand.ly/abc', 'https://is.gd/abc', 'https://cutt.ly/abc', 'https://t.ly/abc', 'https://shorturl.at/abc', 'https://rstyle.me/abc',
+      'https://liketk.it/abc', 'https://shopltk.com/abc', 'https://beacons.ai/u', 'https://www.buymeacoffee.com/u', 'https://pin.it/abc',
+      'https://www.pinterest.com/u', 'https://www.threads.net/@u', 'https://discord.gg/abc', 'https://www.twitch.tv/u', 'https://open.spotify.com/x',
+    ];
+    expect(candidateRecipeLinks(skipped.join('\n'))).toEqual([]);
+  });
   it('does not treat lookalike hosts as skipped', () => {
     expect(candidateRecipeLinks('https://notamazon.example.com/x https://example.com/boxer')).toEqual([
       'https://notamazon.example.com/x',

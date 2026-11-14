@@ -24,7 +24,7 @@ export function isYoutubeUrl(rawUrl: string, env: NodeJS.ProcessEnv = process.en
 
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
-/** Video id from /watch?v=, youtu.be/<id> or /shorts/<id> on a YouTube host; undefined when absent or malformed. */
+/** Video id from /watch?v=, youtu.be/<id>, /shorts/<id>, /live/<id> or /embed/<id> on a YouTube host; undefined when absent or malformed. */
 export function youtubeVideoId(rawUrl: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
   try {
     const u = new URL(rawUrl);
@@ -36,7 +36,7 @@ export function youtubeVideoId(rawUrl: string, env: NodeJS.ProcessEnv = process.
     } else if (YOUTUBE_HOSTS.includes(host) || e2eYoutubeHosts(env).includes(host)) {
       if (u.pathname === '/watch') id = u.searchParams.get('v') ?? undefined;
       else {
-        const m = /^\/shorts\/([^/]+)\/?$/.exec(u.pathname);
+        const m = /^\/(?:shorts|live|embed)\/([^/]+)\/?$/.exec(u.pathname);
         id = m?.[1];
       }
     }
