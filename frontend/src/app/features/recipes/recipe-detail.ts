@@ -297,12 +297,22 @@ export class RecipeDetail implements OnInit {
   protected readonly scaleValue = computed(() => this.anchor()?.id ?? 'servings');
   protected readonly amountValue = computed(() => {
     const a = this.anchor();
-    return this.amountText() ?? (a ? String(Number(anchorAmount(a).quantity.toFixed(3))) : '');
+    return this.amountText() ?? (a ? String(Number(this.presetOf(a).quantity.toFixed(3))) : '');
   });
   protected readonly unitValue = computed((): Unit => {
     const a = this.anchor();
-    return this.amountUnit() ?? (a ? anchorAmount(a).unit : '');
+    return this.amountUnit() ?? (a ? this.presetOf(a).unit : '');
   });
+  /**
+   * The amount shown before editing: in Metric mode a US-unit ingredient shows its metric rendering
+   * (4 l, not 1.057 gallons). Already-metric ingredients keep the exact stored value (the metric
+   * rendering is rounded).
+   */
+  private presetOf(a: Ingredient): { quantity: number; unit: Unit } {
+    const stored = anchorAmount(a);
+    const storedIsMetric = ['ml', 'l', 'g', 'kg'].includes(stored.unit);
+    return this.mode() === 'metric' && a.metric && !storedIsMetric ? { quantity: a.metric.quantity, unit: a.metric.unit } : stored;
+  }
   protected readonly anchorUnits = computed(() => unitsInFamily(this.anchor()?.unit ?? ''));
   protected readonly factorText = computed(() => formatFactor(this.factor()));
 
@@ -416,6 +426,8 @@ export class RecipeDetail implements OnInit {
       ...rest,
       // The first resize keeps the pre-save size as a backup; later saves leave it as is.
       originalSize: r.originalSize ?? { servings: r.servings, ingredients: r.ingredients },
+      // Saved while scaling by an ingredient: reopen the recipe scaled by that ingredient.
+      ...(this.anchor() ? { scaleBy: this.anchor()!.id } : {}),
       servings,
       // The scaled quantity no longer matches the original text, so drop it from scaled lines.
       ingredients: this.scaledIngredients().map((i, n) => {

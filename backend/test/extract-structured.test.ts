@@ -280,7 +280,9 @@ describe('extractStructured nested steps', () => {
     );
     const t0 = Date.now();
     const d = extractStructured(html, URL_);
-    expect(Date.now() - t0).toBeLessThan(1500);
+    // Guards against quadratic/exponential blowup, not absolute speed: ~0.8s alone,
+    // ~1.8s when the full suite runs 23 workers in parallel, so leave generous headroom.
+    expect(Date.now() - t0).toBeLessThan(6000);
     expect(stepDepth(d!.recipe.steps)).toBeLessThanOrEqual(MAX_STEP_DEPTH);
     expect(flattenSteps(d!.recipe.steps)).toEqual(['Deep.']);
   });
