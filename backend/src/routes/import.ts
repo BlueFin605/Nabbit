@@ -1,7 +1,7 @@
 /**
  * Recipe import (owner from the JWT; NOTHING is saved, the client previews the draft then POSTs /recipes):
  *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars), optional boolean `forceRecipe`
- *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (forceRecipe: true makes the one LLM
+ *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (not for Instagram captions; forceRecipe: true makes the one LLM
  *         call a forced best-effort one; if that still yields nothing usable the heuristic draft is returned)
  *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[], source?: 'linked-page' | 'transcript', videoUrl? }
  *         (images: url imports only, imageUrl === candidates[0]; source/videoUrl: YouTube only, both sources)
@@ -16,7 +16,8 @@
  * JS-rendered shells (Gatsby page-data.json, Next.js __NEXT_DATA__; only when the page has almost no text and nothing parsed): the embedded app data
  * is reduced to text for the LLM (same caps/validation), or used directly when it holds a schema.org Recipe; nothing usable -> needs_text.
  * Instagram URLs: anonymous caption auto-fetch through the same safeFetch (INSTAGRAM_AUTOFETCH='0' disables it, read per request);
- * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text.
+ * the caption is imported as text. No caption, any fetch/ImportError, or auto-fetch off -> 422 needs_text. A NotRecipe
+ * verdict on a caption is never a 422: the heuristic draft (and photo) is returned for the client's comment appender.
  * YouTube URLs (optional boolean `ignoreLinkedRecipe`; YOUTUBE_AUTOFETCH='0' disables, read per request): watch page ->
  *   linked recipe page from the description (schema.org only, no LLM; 200 with source 'linked-page' + videoUrl) unless
  *   ignoreLinkedRecipe -> caption transcript + LLM, always, flat steps (200 with source 'transcript', confidence 'ai').
@@ -142,15 +143,24 @@ async function callLlm(
 /**
  * Low-confidence heuristic drafts get one LLM attempt (callLlm). Any failure keeps the heuristic draft. A NotRecipe
  * verdict throws ImportError('not_a_recipe', .., reason) (-> 422). With forceRecipe ("Import anyway") the one call is a
- * forced best-effort one (no isRecipe exit); a refusal anyway keeps the heuristic draft.
+ * forced best-effort one (no isRecipe exit); a refusal anyway keeps the heuristic draft. `keepOnNotRecipe` (Instagram
+ * captions) also keeps the heuristic draft on a NotRecipe verdict: "recipe in the comments" posts are recovered by the
+ * client's comment appender, which needs the draft and the post photo.
  */
-async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string, forceRecipe = false): Promise<RecipeDraft> {
+async function maybeLlm(
+  ownerId: string,
+  text: string,
+  heuristic: RecipeDraft,
+  sourceUrl?: string,
+  forceRecipe = false,
+  keepOnNotRecipe = false,
+): Promise<RecipeDraft> {
   const h = heuristic.recipe;
   if (h.ingredients.length >= 2 && countSteps(h.steps) >= 2) return heuristic;
   const recipe = await callLlm(ownerId, text, { ...(sourceUrl ? { sourceUrl } : {}), ...(forceRecipe ? { forceRecipe: true } : {}) });
   if (!recipe) return heuristic;
   if (isNotRecipe(recipe)) {
-    if (forceRecipe) return heuristic;
+    if (forceRecipe || keepOnNotRecipe) return heuristic;
     throw new ImportError('not_a_recipe', recipe.reason, recipe.reason);
   }
   if (recipe.ingredients.length < h.ingredients.length || countSteps(recipe.steps) < countSteps(h.steps)) return heuristic;
@@ -329,7 +339,9 @@ async function importRecipeInner({ ownerId, body }: RequestCtx) {
       return needsText;
     }
     if (!caption) return needsText;
-    return { status: 200, body: { draft: await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url, forceRecipe), ...images } };
+    // A caption that is not a recipe ("recipe in the comments") keeps the heuristic draft + photo: the comment appender recovers it.
+    const draft = await maybeLlm(ownerId, caption, extractFromText(caption, { sourceUrl: url }), url, forceRecipe, true);
+    return { status: 200, body: { draft, ...images } };
   }
   const url = rawUrl;
 

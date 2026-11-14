@@ -636,16 +636,17 @@ describe('LLM fallback and Instagram needs_text', () => {
       expect(parsed.map((p) => p.forceRecipe)).toEqual([undefined, true]);
     });
 
-    it('Instagram caption: 422 not_a_recipe is not swallowed into needs_text; forceRecipe -> 200', async () => {
+    it('Instagram caption: NotRecipe keeps the heuristic draft and the post photo (200, no 422), so "recipe in comments" posts reach the comment appender', async () => {
       const IG = 'https://www.instagram.com/p/abc/';
-      page = async () => ({ url: IG, html: readFileSync(new URL('./fixtures/instagram-jsonld.html', import.meta.url), 'utf8') });
+      const html = '<html><head><meta property="og:description" content="12 likes - cook on May 1, 2024: &quot;Best ever fudgy chocolate cake. Full recipe in the comments below!&quot;"><meta property="og:image" content="https://scontent.cdninstagram.com/v/t51/pic.jpg"></head><body></body></html>';
+      page = async () => ({ url: IG, html });
       const res = await call({ url: IG });
-      expect(res.status).toBe(422);
-      expect(res.json).toEqual({ error: 'not_a_recipe', reason: NOT.reason });
-      const forced = await call({ url: IG, forceRecipe: true });
-      expect(forced.status).toBe(200);
-      expect(forced.json.draft.confidence).toBe('heuristic');
-      expect(parsed.map((p) => p.forceRecipe)).toEqual([undefined, true]);
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('heuristic');
+      expect(res.json.candidates).toEqual(['https://scontent.cdninstagram.com/v/t51/pic.jpg']);
+      expect(res.json.imageUrl).toBe('https://scontent.cdninstagram.com/v/t51/pic.jpg');
+      expect(parsed).toHaveLength(1);
+      expect(llmCounts()).toEqual({ owner: 1, global: 1 });
     });
 
     it('JS-shell reduced text: 422 not_a_recipe, not needs_text; forceRecipe -> needs_text (no heuristic text to keep)', async () => {
