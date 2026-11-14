@@ -1,7 +1,8 @@
 /**
  * Recipe import (owner from the JWT; NOTHING is saved, the client previews the draft then POSTs /recipes):
  *   POST /recipes/import  body `{ url }` XOR `{ text }` (text <= 50,000 chars), optional boolean `forceRecipe`
- *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (forceRecipe: true keeps the heuristic draft instead)
+ *     422 { error: 'not_a_recipe', reason } when the LLM says the text is no recipe (forceRecipe: true makes the one LLM
+ *         call a forced best-effort one; if that still yields nothing usable the heuristic draft is returned)
  *     200 { draft: RecipeDraft, imageUrl?, candidates?: string[], source?: 'linked-page' | 'transcript', videoUrl? }
  *         (images: url imports only, imageUrl === candidates[0]; source/videoUrl: YouTube only, both sources)
  *     400 { error } invalid body        422 { error: <ImportError code> }
@@ -140,12 +141,13 @@ async function callLlm(
 
 /**
  * Low-confidence heuristic drafts get one LLM attempt (callLlm). Any failure keeps the heuristic draft. A NotRecipe
- * verdict throws ImportError('not_a_recipe', .., reason) (-> 422) unless forceRecipe is set, in which case the heuristic draft is kept.
+ * verdict throws ImportError('not_a_recipe', .., reason) (-> 422). With forceRecipe ("Import anyway") the one call is a
+ * forced best-effort one (no isRecipe exit); a refusal anyway keeps the heuristic draft.
  */
 async function maybeLlm(ownerId: string, text: string, heuristic: RecipeDraft, sourceUrl?: string, forceRecipe = false): Promise<RecipeDraft> {
   const h = heuristic.recipe;
   if (h.ingredients.length >= 2 && countSteps(h.steps) >= 2) return heuristic;
-  const recipe = await callLlm(ownerId, text, sourceUrl ? { sourceUrl } : {});
+  const recipe = await callLlm(ownerId, text, { ...(sourceUrl ? { sourceUrl } : {}), ...(forceRecipe ? { forceRecipe: true } : {}) });
   if (!recipe) return heuristic;
   if (isNotRecipe(recipe)) {
     if (forceRecipe) return heuristic;

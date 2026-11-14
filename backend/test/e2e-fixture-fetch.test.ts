@@ -69,6 +69,17 @@ describe('fixture deps are confined to the fixture host', () => {
       await expect(safeFetch(`http://${FIXTURE_HOST}/x`, deps)).rejects.toMatchObject({ code: 'bad_url' });
       await expect(safeFetch(`https://${FIXTURE_HOST}:8443/x`, deps)).rejects.toMatchObject({ code: 'bad_url' });
     });
+
+    it('maps YouTube /watch?v=<id> to /yt/<id>.html and 404s a malformed id without fetching', async () => {
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const deps = fixtureFetchDeps({ ...ON, NABBIT_E2E_FIXTURE_ORIGIN: origin })!;
+      const ok = await deps.fetchImpl!(`https://${FIXTURE_YT_HOST}/watch?v=abcDEF_1-23`);
+      expect(await ok.text()).toContain('/yt/abcDEF_1-23.html');
+      for (const bad of ['', 'short', '../../etc12', 'abcDEF_1-23x']) {
+        const res = await deps.fetchImpl!(`https://${FIXTURE_YT_HOST}/watch?v=${encodeURIComponent(bad)}`);
+        expect(res.status).toBe(404);
+      }
+    });
   });
 });
 

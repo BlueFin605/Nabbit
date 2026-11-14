@@ -35,7 +35,7 @@
         "body": "JsonSchema",
         "httpCode": 200,
         "jsonSchema": {
-            "schema": "{\"type\":\"object\",\"required\":[\"draft\"],\"not\":{\"required\":[\"error\"]},\"properties\":{\"draft\":{\"type\":\"object\",\"required\":[\"recipe\"],\"properties\":{\"confidence\":{\"type\":\"string\",\"not\":{\"const\":\"ai\"}},\"recipe\":{\"type\":\"object\",\"required\":[\"title\",\"ingredients\",\"steps\"]}}}}}"
+            "schema": "{\"type\":\"object\",\"required\":[\"draft\"],\"not\":{\"required\":[\"error\"]},\"properties\":{\"draft\":{\"type\":\"object\",\"required\":[\"recipe\",\"confidence\"],\"properties\":{\"confidence\":{\"const\":\"ai\"},\"recipe\":{\"type\":\"object\",\"required\":[\"title\",\"ingredients\",\"steps\"],\"properties\":{\"title\":{\"const\":\"Fake AI Soup\"},\"ingredients\":{\"type\":\"array\",\"minItems\":1},\"steps\":{\"type\":\"array\",\"minItems\":1}}}}}}}"
         }
     }
 }

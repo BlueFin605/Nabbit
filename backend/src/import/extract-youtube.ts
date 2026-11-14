@@ -150,6 +150,9 @@ function decodeEntities(s: string): string {
 
 const squash = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+/** Timed-text XML beyond this many characters is ignored (the LLM input is capped at 20,000 chars anyway). */
+export const MAX_CAPTION_XML_CHARS = 512 * 1024;
+
 /** Plain text from a json3 body or timed-text XML (<text>/<p> elements): no timestamps, entities decoded, whitespace collapsed. */
 export function captionsToText(body: string): string {
   const trimmed = body.trim();
@@ -166,10 +169,21 @@ export function captionsToText(body: string): string {
       return '';
     }
   }
+  // One linear pass over the <text>/<p> tags (no backtracking regex: a hostile body of unclosed tags stays O(n)).
+  // `[^<>]*` stops at the next '<', so each tag match is bounded by the distance to the next tag.
+  const xml = trimmed.slice(0, MAX_CAPTION_XML_CHARS);
   const parts: string[] = [];
-  for (const m of trimmed.matchAll(/<(text|p)\b[^>]*>([\s\S]*?)<\/\1>/g)) {
-    // timedtext bodies are commonly double-encoded (&amp;#39;), so decode twice
-    parts.push(decodeEntities(decodeEntities((m[2] ?? '').replace(/<[^>]+>/g, ''))));
+  let open: string | undefined;
+  let start = 0;
+  for (const m of xml.matchAll(/<(\/?)(text|p)\b[^<>]*>/g)) {
+    if (!m[1]) {
+      open = m[2];
+      start = m.index + m[0].length;
+    } else if (open === m[2]) {
+      // timedtext bodies are commonly double-encoded (&amp;#39;), so decode twice
+      parts.push(decodeEntities(decodeEntities(xml.slice(start, m.index).replace(/<[^<>]*>/g, ''))));
+      open = undefined;
+    }
   }
   return squash(parts.join(' '));
 }

@@ -300,7 +300,7 @@ describe('LLM fallback and Instagram needs_text', () => {
     steps: ['Mix.', 'Bake.'],
     tags: [],
   };
-  let parsed: { text: string; sourceUrl?: string }[];
+  let parsed: { text: string; sourceUrl?: string; forceRecipe?: boolean }[];
   let result: () => Promise<unknown>;
 
   beforeEach(() => {
@@ -308,7 +308,7 @@ describe('LLM fallback and Instagram needs_text', () => {
     result = async () => aiRecipe;
     setLlmParser({
       parse: async (text, ctx) => {
-        parsed.push({ text, sourceUrl: ctx.sourceUrl });
+        parsed.push({ text, sourceUrl: ctx.sourceUrl, ...(ctx.forceRecipe ? { forceRecipe: true } : {}) });
         return (await result()) as never;
       },
     });
@@ -590,7 +590,17 @@ describe('LLM fallback and Instagram needs_text', () => {
       expect(llmCounts()).toEqual({ owner: 1, global: 1 });
     });
 
-    it('text: forceRecipe true keeps the heuristic draft (200)', async () => {
+    it('text: forceRecipe makes the one LLM call a forced best-effort one -> AI draft (200)', async () => {
+      result = async () => (parsed.at(-1)!.forceRecipe ? aiRecipe : NOT);
+      const res = await call({ text: LOW, forceRecipe: true });
+      expect(res.status).toBe(200);
+      expect(res.json.draft.confidence).toBe('ai');
+      expect(res.json.draft.recipe.title).toBe('AI Dish');
+      expect(parsed).toEqual([expect.objectContaining({ forceRecipe: true })]);
+      expect(llmCounts()).toEqual({ owner: 1, global: 1 });
+    });
+
+    it('text: a forced call that still refuses keeps the heuristic draft (200)', async () => {
       const res = await call({ text: LOW, forceRecipe: true });
       expect(res.status).toBe(200);
       expect(res.json.draft.confidence).toBe('heuristic');
@@ -623,6 +633,7 @@ describe('LLM fallback and Instagram needs_text', () => {
       const forced = await call({ url: 'https://example.com/r', forceRecipe: true });
       expect(forced.status).toBe(200);
       expect(forced.json.draft.confidence).toBe('heuristic');
+      expect(parsed.map((p) => p.forceRecipe)).toEqual([undefined, true]);
     });
 
     it('Instagram caption: 422 not_a_recipe is not swallowed into needs_text; forceRecipe -> 200', async () => {
@@ -634,6 +645,7 @@ describe('LLM fallback and Instagram needs_text', () => {
       const forced = await call({ url: IG, forceRecipe: true });
       expect(forced.status).toBe(200);
       expect(forced.json.draft.confidence).toBe('heuristic');
+      expect(parsed.map((p) => p.forceRecipe)).toEqual([undefined, true]);
     });
 
     it('JS-shell reduced text: 422 not_a_recipe, not needs_text; forceRecipe -> needs_text (no heuristic text to keep)', async () => {
@@ -1177,12 +1189,12 @@ describe('YouTube import', () => {
     expect(llmCounts()).toEqual({ owner: 2, global: 2 });
   });
 
-  it('forceRecipe on the text path keeps the heuristic fallback (no forceRecipe ctx sent to the LLM)', async () => {
+  it('forceRecipe on the text path sends a forced ctx; a forced refusal keeps the heuristic fallback', async () => {
     result = async () => ({ notRecipe: true, reason: 'nope' });
     const res = await call({ text: 'Mystery dish\n\nIngredients\n2 cups flour\n', forceRecipe: true });
     expect(res.status).toBe(200);
     expect(res.json.draft.confidence).toBe('heuristic');
-    expect(parsed[0]!.ctx).toEqual({});
+    expect(parsed[0]!.ctx).toEqual({ forceRecipe: true });
   });
 
   it.each(['yes', 1, null, {}])('non-boolean ignoreLinkedRecipe %j -> 400', async (v) => {
@@ -1191,11 +1203,24 @@ describe('YouTube import', () => {
     expect(fetched).toEqual([]);
   });
 
-  it('time budget: ordered deadlines; LLM start + counters + the full 15 s LLM ends by ~24 s (API Gateway cuts at 29 s)', () => {
-    expect(YOUTUBE_LINKS_DEADLINE_MS).toBe(5_000);
-    expect(YOUTUBE_LLM_START_DEADLINE_MS).toBe(8_000);
-    expect(YOUTUBE_LINKS_DEADLINE_MS).toBeLessThan(YOUTUBE_LLM_START_DEADLINE_MS);
-    expect(YOUTUBE_LLM_START_DEADLINE_MS + 1_000 + 15_000).toBeLessThanOrEqual(24_000);
+  it('time budget: a caption fetch that hangs is cut off at the LLM start deadline -> needs_text, no LLM call', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      captions = () => new Promise(() => {});
+      let settled = false;
+      const pending = call({ url: VID, ignoreLinkedRecipe: true }).finally(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(YOUTUBE_LLM_START_DEADLINE_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(2);
+      const res = await pending;
+      expect(res.json).toEqual({ error: 'needs_text' });
+      expect(parsed).toHaveLength(0);
+      expect(llmCounts()).toEqual({ owner: undefined, global: undefined });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('time budget: linked links are skipped once the deadline has passed', async () => {

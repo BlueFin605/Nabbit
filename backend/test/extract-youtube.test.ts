@@ -110,6 +110,19 @@ describe('hardening', () => {
     expect(() => captionsToText(xml)).not.toThrow();
     expect(captionsToText(xml)).toBe('a � b � c � d � e');
   });
+  it.each([
+    ['unclosed <p> tags', '<p>a'],
+    ['unterminated <p attributes', '<p a'],
+    ['unclosed <text> with stray < in the content', '<text>a<b'],
+  ])('captionsToText stays linear on a hostile 2 MB body of %s', (_, unit) => {
+    const body = unit.repeat(Math.ceil((2 * 1024 * 1024) / unit.length));
+    const start = performance.now();
+    captionsToText(body);
+    expect(performance.now() - start).toBeLessThan(1_000);
+  });
+  it('captionsToText keeps nested and repeated elements in order', () => {
+    expect(captionsToText('<transcript><p t="1">One <s>two</s></p><p>three</p><text>four</text></transcript>')).toBe('One two three four');
+  });
   it('extractPlayerData drops caption tracks not on an https YouTube host', () => {
     const track = (u: string) => `{"baseUrl":"${u}","languageCode":"en"}`;
     const urls = ['https://evil.com/api/timedtext', 'http://www.youtube.com/api/timedtext', 'https://youtube.com@evil.com/x', 'https://www.youtube.com/api/timedtext?v=1', 'https://fixture.test/t'];
