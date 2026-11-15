@@ -11,7 +11,7 @@ namespace Infrastructure.Tests
 {
     public class NabbitStackTests
     {
-        private static Template Synth(string llmModelId = null, int? llmGlobalDailyLimit = null)
+        private static Template Synth(string llmModelId = null, int? llmGlobalDailyLimit = null, string youtubeApiKeyParam = null)
         {
             var codeDir = Path.Combine(Path.GetTempPath(), "nabbit-test-api");
             Directory.CreateDirectory(codeDir);
@@ -21,7 +21,7 @@ namespace Infrastructure.Tests
             Directory.CreateDirectory(importDir);
             File.WriteAllText(Path.Combine(importDir, "index.js"), "exports.handler = async () => ({});");
 
-            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir, LlmModelId = llmModelId, LlmGlobalDailyLimit = llmGlobalDailyLimit };
+            var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir, LlmModelId = llmModelId, LlmGlobalDailyLimit = llmGlobalDailyLimit, YoutubeApiKeyParam = youtubeApiKeyParam };
             var app = new App();
             var globalCert = Amazon.CDK.AWS.CertificateManager.Certificate.FromCertificateArn(app, "GlobalCert",
                 "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000");
@@ -259,6 +259,35 @@ namespace Infrastructure.Tests
         {
             var t = Synth(null, 50);
             Assert.False(EnvOf(t, "nabbit-import-production").ContainsKey("LLM_GLOBAL_DAILY_LIMIT"));
+        }
+
+        private static List<JsonElement> SsmStatements(Template t, string rolePrefix) =>
+            AllowStatementsFor(t, rolePrefix).Where(st => Actions(st).Any(a => a.StartsWith("ssm:"))).ToList();
+
+        [Fact]
+        public void YoutubeApiKeyParam_Set_ImportLambdaGetsEnvAndScopedSsmRead()
+        {
+            var t = Synth(youtubeApiKeyParam: "/nabbit/youtube-api-key");
+            Assert.Equal("/nabbit/youtube-api-key", EnvOf(t, "nabbit-import-production")["YOUTUBE_API_KEY_PARAM"].GetString());
+            var st = Assert.Single(SsmStatements(t, "ImportFunctionServiceRole"));
+            Assert.Equal(new[] { "ssm:GetParameter" }, Actions(st).ToArray());
+            Assert.Equal(new[] { "arn:aws:ssm:ap-southeast-2:123456789012:parameter/nabbit/youtube-api-key" }, ResourceStrings(st).ToArray());
+        }
+
+        [Fact]
+        public void YoutubeApiKeyParam_Set_ApiLambdaHasNoSsmOrEnv()
+        {
+            var t = Synth(youtubeApiKeyParam: "/nabbit/youtube-api-key");
+            Assert.Empty(SsmStatements(t, "ApiFunctionServiceRole"));
+            Assert.False(EnvOf(t, "nabbit-api-production").ContainsKey("YOUTUBE_API_KEY_PARAM"));
+        }
+
+        [Fact]
+        public void YoutubeApiKeyParam_Unset_NoSsmPermissionOrEnv()
+        {
+            var t = Synth();
+            Assert.Empty(SsmStatements(t, "ImportFunctionServiceRole"));
+            Assert.False(EnvOf(t, "nabbit-import-production").ContainsKey("YOUTUBE_API_KEY_PARAM"));
         }
 
         [Fact]

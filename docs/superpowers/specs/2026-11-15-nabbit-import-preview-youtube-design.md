@@ -52,6 +52,9 @@ The shared LLM prompt (all LLM paths: pasted text, Instagram captions, JS-shell 
 - Kill switch `YOUTUBE_AUTOFETCH=0`, read per request; the CDK stack does not set it.
 - Share target (Android) works unchanged: YouTube share links go to `/import`.
 
+### Data API fallback (added after first deploy)
+The first deployed import of `https://youtu.be/yk6tQfArMvw` failed: from AWS the watch page hits a bot/consent wall (so the description link was never read), and YouTube returns empty caption bodies anonymously. So when the watch page fails, is a wall, has no player data or an empty description, title + description come from the YouTube Data API v3 (`backend/src/import/youtube-api.ts`; key in an SSM SecureString named by `YOUTUBE_API_KEY_PARAM`, set by CDK `youtubeApiKeyParam`; off when unset). The order of attempts then continues unchanged (linked page, then transcript only if a caption track exists, else `needs_text`). An empty caption body counts as no captions. Each stage logs a structured JSON line (`evt: "yt"`). Unverified against real YouTube until Dean provisions the key and redeploys.
+
 ### Spike gate
 `backend/scripts/spike-youtube.mjs`, run from CloudShell and the deployed import Lambda against several videos including `https://youtu.be/yk6tQfArMvw`. Checks: player data present, caption track fetchable, description links extractable. A no-go makes YouTube paste-only; A and B still ship.
 

@@ -1259,3 +1259,117 @@ describe('YouTube import', () => {
     expect(llmCounts()).toEqual({ owner: undefined, global: undefined });
   });
 });
+
+describe('YouTube Data API fallback and logging', () => {
+  const VID = 'https://www.youtube.com/watch?v=abcdEFGhij1';
+  const RECIPE_LINK = 'https://recipes.example.com/lasagne';
+  let snippetCalls: string[];
+  let snippet: () => Promise<{ title: string; description: string } | undefined>;
+  let watch: () => Promise<{ url: string; html: string }>;
+  let logs: string[];
+
+  beforeEach(() => {
+    snippetCalls = [];
+    snippet = async () => ({ title: 'API Lasagne', description: `Recipe: ${RECIPE_LINK}` });
+    watch = async () => {
+      throw new ImportError('bad_status', 'wall');
+    };
+    logs = [];
+    vi.spyOn(console, 'log').mockImplementation((l: string) => void logs.push(String(l)));
+    vi.spyOn(console, 'warn').mockImplementation((l: string) => void logs.push(String(l)));
+    setImportDeps({
+      safeFetch: async (url) => {
+        if (url === VID) return watch();
+        if (url === RECIPE_LINK) return { url: RECIPE_LINK, html: LD_HTML };
+        throw new ImportError('bad_status', 'nf');
+      },
+      fetchCaptions: async () => ({ url: 'https://www.youtube.com/api/timedtext?v=x', text: '' }),
+      fetchVideoSnippet: async (id) => {
+        snippetCalls.push(id);
+        return snippet();
+      },
+      now: () => nowMs,
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    setLlmParser(undefined);
+  });
+  const events = () => logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((e) => e.evt === 'yt');
+
+  it('watch page fails -> API snippet supplies the description -> linked recipe page wins', async () => {
+    const res = await call({ url: VID });
+    expect(res.status).toBe(200);
+    expect(res.json.source).toBe('linked-page');
+    expect(res.json.draft.recipe.title).toBe('Pancakes');
+    expect(snippetCalls).toEqual(['abcdEFGhij1']);
+    const stages = events().map((e) => e.stage);
+    expect(stages).toEqual(['watch_page', 'player_data', 'api_snippet', 'linked', 'result']);
+    expect(events().at(-1)).toMatchObject({ kind: 'linked-page' });
+    expect(events()[3]).toMatchObject({ tried: 1, hit: true });
+  });
+
+  it('wall redirect and a page with no player data also fall back to the API', async () => {
+    watch = async () => ({ url: 'https://consent.youtube.com/m', html: '' });
+    expect((await call({ url: VID })).json.source).toBe('linked-page');
+    watch = async () => ({ url: VID, html: '<html>bot wall</html>' });
+    expect((await call({ url: VID })).json.source).toBe('linked-page');
+    expect(snippetCalls).toHaveLength(2);
+  });
+
+  it('player data with an empty description also uses the API', async () => {
+    watch = async () => ({ url: VID, html: '<script>var ytInitialPlayerResponse = {"videoDetails":{"title":"T","shortDescription":""}};</script>' });
+    expect((await call({ url: VID })).json.source).toBe('linked-page');
+    expect(snippetCalls).toHaveLength(1);
+  });
+
+  it('no API call when the watch page already gave a description', async () => {
+    watch = async () => ({ url: VID, html: `<script>var ytInitialPlayerResponse = ${JSON.stringify({ videoDetails: { title: 'T', shortDescription: `See ${RECIPE_LINK}` } })};</script>` });
+    expect((await call({ url: VID })).json.source).toBe('linked-page');
+    expect(snippetCalls).toEqual([]);
+  });
+
+  it('API unavailable (undefined) and no page -> needs_text', async () => {
+    snippet = async () => undefined;
+    const res = await call({ url: VID });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(events().at(-1)).toMatchObject({ stage: 'result', kind: 'needs_text', reason: 'no_page_no_api' });
+  });
+
+  it('API description without a recipe link and no caption tracks -> needs_text (no description-only LLM call)', async () => {
+    snippet = async () => ({ title: 'T', description: 'x'.repeat(500) });
+    const parse = vi.fn();
+    setLlmParser({ parse });
+    const res = await call({ url: VID });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parse).not.toHaveBeenCalled();
+    expect(events().at(-1)).toMatchObject({ reason: 'no_caption_track' });
+  });
+
+  it('an empty caption body (HTTP 200) is "no captions": needs_text, logged, no LLM call', async () => {
+    const track = 'https://www.youtube.com/api/timedtext?v=abcdEFGhij1';
+    watch = async () => ({
+      url: VID,
+      html: `<script>var ytInitialPlayerResponse = ${JSON.stringify({
+        videoDetails: { title: 'T', shortDescription: 'y'.repeat(400) },
+        captions: { playerCaptionsTracklistRenderer: { captionTracks: [{ baseUrl: track, languageCode: 'en' }] } },
+      })};</script>`,
+    });
+    const parse = vi.fn();
+    setLlmParser({ parse });
+    const res = await call({ url: VID });
+    expect(res.json).toEqual({ error: 'needs_text' });
+    expect(parse).not.toHaveBeenCalled();
+    const ev = events();
+    expect(ev.find((e) => e.stage === 'captions')).toMatchObject({ ok: false, textLen: 0 });
+    expect(ev.at(-1)).toMatchObject({ reason: 'empty_captions' });
+  });
+
+  it('logs never contain the description or full URLs', async () => {
+    snippet = async () => ({ title: 'T', description: `SECRET-DESCRIPTION ${RECIPE_LINK}` });
+    await call({ url: VID });
+    const all = logs.join('\n');
+    expect(all).not.toContain('SECRET-DESCRIPTION');
+    expect(all).not.toContain('https://');
+  });
+});

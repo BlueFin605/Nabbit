@@ -197,6 +197,19 @@ namespace Infrastructure.Stacks
                     Resources = BedrockModelArns(modelId, config.Region, Account),
                 }));
             }
+            // Optional YouTube Data API fallback (title + description when the watch page is walled). The key lives in an SSM
+            // SecureString whose NAME is config youtubeApiKeyParam; the Lambda may read that one parameter only.
+            if (!string.IsNullOrWhiteSpace(config.YoutubeApiKeyParam))
+            {
+                var param = config.YoutubeApiKeyParam.Trim();
+                ImportFunction.AddEnvironment("YOUTUBE_API_KEY_PARAM", param);
+                ImportFunction.AddToRolePolicy(new PolicyStatement(new PolicyStatementProps
+                {
+                    Effect = Effect.ALLOW,
+                    Actions = new[] { "ssm:GetParameter" },
+                    Resources = new[] { $"arn:aws:ssm:{config.Region}:{Account}:parameter/{param.TrimStart('/')}" },
+                }));
+            }
             // Presigned POST uploads only need s3:PutObject; the API never reads or deletes image objects itself.
             ImageBucket.GrantPut(ApiFunction);
             // The import Lambda stores images fetched for POST /recipes/images/import: PutObject only, no read/delete/list.
