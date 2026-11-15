@@ -1,0 +1,84 @@
+:host {
+  display: block;
+}
+
+.landing {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+h1 {
+  font-size: 2.5rem;
+  margin: 0 0 8px;
+}
+
+h2 {
+  margin: 0 0 16px;
+}
+
+h3 {
+  margin: 8px 0 4px;
+}
+
+.pitch {
+  font-size: 1.15rem;
+  margin: 0 0 20px;
+}
+
+.shot {
+  aspect-ratio: 4 / 3;
+  border-radius: 12px;
+  border: 1px dashed currentColor;
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  mat-icon {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+  }
+}
+
+.grid,
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.card {
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 12px;
+  padding: 16px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.foot {
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+}

@@ -1,0 +1,56 @@
+<main class="landing">
+  <section class="hero">
+    <div class="hero-text">
+      <h1>Nabbit</h1>
+      <p class="pitch">Collect recipes from anywhere, scale them to fit, and shop for them in one tap.</p>
+      <a mat-flat-button routerLink="/signin" class="signin-btn">Sign in / Get started</a>
+    </div>
+    <div class="shot" role="img" aria-label="Screenshot of Nabbit coming soon">
+      <mat-icon aria-hidden="true">restaurant_menu</mat-icon>
+    </div>
+  </section>
+
+  <section class="features" aria-labelledby="features-h">
+    <h2 id="features-h">What you can do</h2>
+    <div class="grid">
+      @for (f of features; track f.title) {
+        <article class="card feature">
+          <mat-icon aria-hidden="true">{{ f.icon }}</mat-icon>
+          <h3>{{ f.title }}</h3>
+          <p>{{ f.text }}</p>
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="how" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <ol class="steps">
+      @for (s of steps; track s.title) {
+        <li class="card step">
+          <mat-icon aria-hidden="true">{{ s.icon }}</mat-icon>
+          <h3>{{ s.title }}</h3>
+          <p>{{ s.text }}</p>
+        </li>
+      }
+    </ol>
+  </section>
+
+  <section class="faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">Questions</h2>
+    <mat-accordion>
+      @for (item of faqs; track item.q) {
+        <mat-expansion-panel class="faq-item">
+          <mat-expansion-panel-header>
+            <mat-panel-title>{{ item.q }}</mat-panel-title>
+          </mat-expansion-panel-header>
+          <p>{{ item.a }}</p>
+        </mat-expansion-panel>
+      }
+    </mat-accordion>
+  </section>
+
+  <footer class="foot">
+    <a mat-button routerLink="/help" class="help-link">Help (sign in required)</a>
+  </footer>
+</main>
