@@ -42,8 +42,10 @@ This supersedes the Nabbit part of
 - Footer: Help link (requires sign-in).
 - Prospects cannot read help before signing in, so the landing page must carry
   the what/how content itself.
-- Honesty: URL import is disabled in prod (`importReservedConcurrency: 0`).
-  Copy must match what is live when it ships.
+- Honesty: `importReservedConcurrency: 0` means "no reservation" (NabbitStack
+  maps `>0 ? n : null`), not "disabled" — import is live in prod (verified
+  with `get-function-concurrency` on `nabbit-import-production`). Copy must
+  match what is live when it ships; recheck before release.
 
 ## Help
 
