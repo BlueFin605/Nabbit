@@ -1,9 +1,15 @@
 import type { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth-guard';
+import { landingGuard } from './core/auth/landing-guard';
 import { unsavedChangesGuard } from './core/guards/unsaved-changes-guard';
 
 export const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'recipes' },
+  {
+    path: '',
+    pathMatch: 'full',
+    canActivate: [landingGuard],
+    loadComponent: () => import('./features/landing/landing').then((m) => m.Landing),
+  },
   { path: 'signin', loadComponent: () => import('./features/signin/signin').then((m) => m.Signin) },
   { path: 'callback', loadComponent: () => import('./features/callback/oauth-callback').then((m) => m.OAuthCallback) },
   {
