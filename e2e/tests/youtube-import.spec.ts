@@ -65,7 +65,7 @@ test.describe('journey 12: YouTube import', () => {
 
   test('no captions asks for the transcript; pasting it previews and saves', async ({ page, api }) => {
     await startImport(page, NO_CAPTIONS);
-    await expect(page.getByRole('status').filter({ hasText: "Couldn't get the transcript automatically" })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: "Couldn't turn this video into a recipe automatically" })).toBeVisible();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await page.getByLabel('Paste the transcript').fill(TRANSCRIPT_TEXT);
     await page.getByRole('button', { name: 'Import', exact: true }).click();

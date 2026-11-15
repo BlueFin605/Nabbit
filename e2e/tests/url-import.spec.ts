@@ -12,11 +12,13 @@ test.describe('journey 6: URL import', () => {
     await expect(page.locator('input.title')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Lemon Pasta' })).toBeVisible();
     await expect(page.getByRole('note').filter({ hasText: 'we guessed at the layout' })).toHaveCount(0);
-    await expect(page.locator('ul.ingredients li').nth(1)).toContainText('240 ml cream');
+    // The preview shows amounts as written on the page; the saved recipe view shows them metric.
+    await expect(page.locator('ul.ingredients li').nth(1)).toContainText('1 cup cream');
     await page.locator('button.save').first().click();
 
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
     await expect(page.getByRole('heading', { level: 1, name: 'Lemon Pasta' })).toBeVisible();
+    await expect(page.locator('ul.ingredients li').nth(1)).toContainText('240 ml cream');
     await expect(page.getByRole('link', { name: 'Source' })).toHaveAttribute('href', 'https://nabbit-fixtures.test/pasta.html');
     expect((await api.recipes()).map((r) => r.title)).toEqual(['Lemon Pasta']);
   });

@@ -1,7 +1,7 @@
 import { expect, test, PANCAKES } from '../fixtures/api';
 
 test.describe('journey 1: paste import', () => {
-  test('empty state -> paste text -> metric preview with heuristic banner -> save -> recipe view', async ({ page, api }) => {
+  test('empty state -> paste text -> as-written preview with heuristic banner -> save -> metric recipe view', async ({ page, api }) => {
     // The e2e frontend build runs with auth disabled (a fixed dev user), so there is no sign-in screen:
     // landing on /recipes must not bounce to /signin.
     await page.goto('/recipes');
@@ -17,7 +17,8 @@ test.describe('journey 1: paste import', () => {
     // The import opens in the read-only preview, not the editor.
     await expect(page.locator('input.title')).toHaveCount(0);
     await expect(page.getByRole('heading', { level: 1, name: 'Fluffy Pancakes' })).toBeVisible();
-    await expect(page.locator('ul.ingredients li').first()).toContainText('480 ml all-purpose flour');
+    // The import preview shows amounts as pasted, so the "check this one" banner checks what was read.
+    await expect(page.locator('ul.ingredients li').first()).toContainText('2 cups all-purpose flour');
 
     await page.locator('button.save').first().click();
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
