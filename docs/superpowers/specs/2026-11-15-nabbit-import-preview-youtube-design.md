@@ -12,7 +12,8 @@ Three pieces, delivered as one initiative on one branch (`feature/import-preview
 
 After an import returns a draft, `/import` opens in **Preview**, not the editor.
 
-- Preview reuses the saved-recipe view component in read-only mode: same layout, photo, ingredients, grouped or flat steps. No scaling in preview.
+- Preview reuses the saved-recipe view component in read-only mode: same layout, photo, ingredients, grouped or flat steps. No scaling in preview. Amounts and temperatures show as written in the source (the view's `original` mode), so the "check the quantities" banners check what was read.
+- While a transcript rerun or comment re-import is in flight, both action bars are disabled and a "Re-importing…" status shows; a result that arrives after the user edited the draft is dropped and the edits kept, with a notice.
 - **Edit** switches to the existing editor on the same draft; **Back to preview** returns, and edits show in the preview.
 - **Action bar**: Save, Edit, Discard. Rendered twice (a sticky bar at the top and one at the bottom of the page), both driven by the same state. Save works from either mode and either bar. In edit mode the Edit button reads "Back to preview".
 - **Discard** confirms only if the draft was edited; otherwise goes straight to the recipe list (`/recipes`).
@@ -25,14 +26,15 @@ After an import returns a draft, `/import` opens in **Preview**, not the editor.
 The shared LLM prompt (all LLM paths: pasted text, Instagram captions, JS-shell pages, YouTube) gets an exit.
 
 - Model output schema adds `isRecipe: boolean` and a short `reason`. `validateModelOutput` accepts `{isRecipe:false, reason}` as valid. Malformed output still keeps the heuristic draft, so the LLM never fails an import.
-- `isRecipe: false` makes the import route answer **422 `not_a_recipe`** with the reason. No heuristic draft is returned.
+- `isRecipe: false` makes the import route answer **422 `not_a_recipe`** with the reason (URLs and control characters stripped, 200 chars max). No heuristic draft is returned.
+- **Exception: Instagram captions.** A caption the model calls not-a-recipe (typically "recipe in the comments") keeps the heuristic draft and the post's photo candidates (200, no 422), because the "Recipe in a comment?" appender is the designed recovery. The appender always sends `forceRecipe: true`: the user has already said the comment is the recipe.
 - **Override:** the error offers "Import anyway", which resends with `forceRecipe: true`. The one LLM call is then a forced best-effort one (no not-a-recipe exit): its draft is used when it is usable, otherwise the heuristic draft is returned (the YouTube transcript and JS-shell paths, which have no heuristic draft, answer `needs_text`). It counts against the same rate and LLM caps. Also offers "Paste text instead".
 - Cost: one LLM call, same as any attempt; the existing 30/owner/day and app-wide daily caps apply unchanged. No second call.
 
 ## C. YouTube import
 
 ### Recognised URLs
-`youtube.com/watch?v=`, `youtu.be/<id>`, `m.youtube.com`, `youtube.com/shorts/<id>`; https only; video id validated as 11 chars of `[A-Za-z0-9_-]`; tracking params (`si=` etc.) stripped from `sourceUrl`.
+`youtube.com/watch?v=`, `youtu.be/<id>`, `m.youtube.com`, `youtube.com/shorts/<id>`, `/live/<id>`, `/embed/<id>`; https only; video id validated as 11 chars of `[A-Za-z0-9_-]`; the client sends and saves the canonical `https://www.youtube.com/watch?v=<id>`, so share params (`si=` etc.) never reach `sourceUrl`.
 
 ### Order of attempts
 1. Fetch the watch page through `safe-fetch` (anonymous, no cookies, honest User-Agent). New `extract-youtube.ts` reads title, description and the caption track list from the embedded player data.
