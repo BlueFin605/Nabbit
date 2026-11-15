@@ -36,6 +36,7 @@ import { ImportError } from '../import/import-error.js';
 import { flattenLeafStrings, getLlmParser, isNotRecipe, type NotRecipe, type ParsedRecipe } from '../import/llm-parse.js';
 import { canonicalYoutubeUrl, captionsToText, extractPlayerData, isYoutubeUrl, pickCaptionTrack } from '../import/extract-youtube.js';
 import { candidateRecipeLinks, tryLinkedRecipe } from '../import/youtube-links.js';
+import { fetchVideoSnippet as realFetchVideoSnippet, type YoutubeSnippet } from '../import/youtube-api.js';
 import { countSteps, type RecipeDraft } from '@nabbit/recipe-core';
 import { safeFetch as realSafeFetch, safeFetchCaptions, safeFetchImage, safeFetchJson, type FetchedImage } from '../import/safe-fetch.js';
 import { putRecipeImage } from '../image-store.js';
@@ -86,6 +87,8 @@ export interface ImportDeps {
   /** A YouTube caption track (XML/json3); SSRF-guarded, redirects pinned to the track's origin. */
   fetchCaptions: (url: string) => Promise<{ url: string; text: string }>;
   fetchImage: (url: string) => Promise<FetchedImage>;
+  /** YouTube Data API title + description by video id (undefined = off or failed; never throws). */
+  fetchVideoSnippet: (videoId: string) => Promise<YoutubeSnippet | undefined>;
   /** Same-origin embedded-app-data fetch (Gatsby page-data.json); SSRF-guarded and size-capped like safeFetch. */
   fetchJson: (url: string) => Promise<{ url: string; text: string }>;
   now: () => number;
@@ -96,6 +99,11 @@ const defaults: ImportDeps = {
   safeFetch: (u) => realSafeFetch(u),
   fetchCaptions: (u) => safeFetchCaptions(u),
   fetchImage: (u) => safeFetchImage(u),
+  fetchVideoSnippet: async (id) => {
+    const r = await realFetchVideoSnippet(id);
+    if (!r.snippet && r.reason !== 'off') ytLog({ stage: 'api_snippet', vid: id, ok: false, reason: r.reason }, true);
+    return r.snippet;
+  },
   fetchJson: (u) => safeFetchJson(u, {}, MAX_APP_DATA_BYTES, { allowedOrigin: new URL(u).origin }),
   now: () => Date.now(),
   importLimit: IMPORT_LIMIT_PER_HOUR,
@@ -199,65 +207,109 @@ function youtubeLlmInput(title: string, description: string, transcript: string)
   return head + truncateAtSentence(transcript, MAX_YOUTUBE_LLM_INPUT_CHARS - head.length);
 }
 
+/** One structured JSON line per YouTube stage. Never pass the description, the API key or full URLs. */
+function ytLog(fields: Record<string, unknown>, warn = false): void {
+  const line = JSON.stringify({ evt: 'yt', ...fields });
+  if (warn) console.warn(line);
+  else console.log(line);
+}
+
 /**
- * YouTube: watch page -> linked recipe page (unless ignoreLinkedRecipe) -> caption transcript + LLM -> needs_text.
- * `startMs` is when the request began; the deadlines above are relative to it.
+ * YouTube: watch page (or, when walled/empty, the Data API snippet) -> linked recipe page (unless ignoreLinkedRecipe)
+ * -> caption transcript + LLM -> needs_text. `startMs` is when the request began; the deadlines above are relative to it.
  */
 async function importYoutube(ownerId: string, rawUrl: string, startMs: number, opts: { forceRecipe: boolean; ignoreLinkedRecipe: boolean }) {
-  if (process.env.YOUTUBE_AUTOFETCH === '0') return NEEDS_TEXT();
   const videoUrl = canonicalYoutubeUrl(rawUrl);
-  if (!videoUrl) return NEEDS_TEXT();
+  const vid = videoUrl ? (new URL(videoUrl).searchParams.get('v') ?? undefined) : undefined;
+  const needsText = (reason: string) => {
+    ytLog({ stage: 'result', vid, kind: 'needs_text', reason });
+    return NEEDS_TEXT();
+  };
+  if (process.env.YOUTUBE_AUTOFETCH === '0') return needsText('autofetch_off');
+  if (!videoUrl || !vid) return needsText('bad_url');
 
   let player: ReturnType<typeof extractPlayerData>;
   try {
     const page = await deps.safeFetch(videoUrl);
     // A redirect off the YouTube hosts (consent.youtube.com, accounts.google.com) is a wall.
-    if (!isYoutubeUrl(page.url)) return NEEDS_TEXT();
-    player = extractPlayerData(page.html);
-  } catch {
-    return NEEDS_TEXT();
+    if (!isYoutubeUrl(page.url)) {
+      ytLog({ stage: 'watch_page', vid, ok: false, reason: 'wall_redirect' });
+    } else {
+      ytLog({ stage: 'watch_page', vid, ok: true });
+      player = extractPlayerData(page.html);
+    }
+  } catch (err) {
+    ytLog({ stage: 'watch_page', vid, ok: false, reason: err instanceof ImportError ? err.code : 'error' }, true);
   }
-  if (!player) return NEEDS_TEXT();
+  ytLog({ stage: 'player_data', vid, present: !!player, descLen: player?.description.length ?? 0, trackCount: player?.captionTracks.length ?? 0 });
 
+  let title = player?.title ?? '';
+  let description = player?.description ?? '';
+  if (!description.trim()) {
+    // Walled, no player data, or an empty description: the Data API (when configured) can still supply title + description.
+    const apiDeadline = startMs + YOUTUBE_LLM_START_DEADLINE_MS;
+    const snippet = await beforeDeadline(() => deps.fetchVideoSnippet(vid), apiDeadline).catch(() => undefined);
+    if (snippet) {
+      ytLog({ stage: 'api_snippet', vid, ok: true, descLen: snippet.description.length });
+      title = title || snippet.title;
+      description = snippet.description;
+    }
+  }
+  if (!player && !description.trim()) return needsText('no_page_no_api');
+
+  const captionTracks = player?.captionTracks ?? [];
   if (!opts.ignoreLinkedRecipe) {
     const linksDeadline = startMs + YOUTUBE_LINKS_DEADLINE_MS;
-    const linked = await tryLinkedRecipe(candidateRecipeLinks(player.description), {
+    const links = candidateRecipeLinks(description);
+    const linked = await tryLinkedRecipe(links, {
       safeFetch: (u) => beforeDeadline(() => deps.safeFetch(u), linksDeadline),
     });
+    ytLog({ stage: 'linked', vid, tried: links.length, hit: !!linked });
     if (linked) {
       const { recipe, imageUrl, candidates } = linked;
       // RecipeDraft has no notes field, so the video link travels as videoUrl only.
       const body: ImportResponseBody = { draft: recipe, source: 'linked-page', videoUrl, ...(imageUrl ? { imageUrl } : {}), ...(candidates ? { candidates } : {}) };
+      ytLog({ stage: 'result', vid, kind: 'linked-page' });
       return { status: 200, body };
     }
   }
 
-  const track = pickCaptionTrack(player.captionTracks);
-  if (!track || !isYoutubeUrl(track.baseUrl)) return NEEDS_TEXT();
+  const track = pickCaptionTrack(captionTracks);
+  if (!track || !isYoutubeUrl(track.baseUrl)) return needsText('no_caption_track');
   const llmDeadline = startMs + YOUTUBE_LLM_START_DEADLINE_MS;
   let transcript: string;
   try {
     const captions = await beforeDeadline(() => deps.fetchCaptions(track.baseUrl), llmDeadline);
-    if (!isYoutubeUrl(captions.url)) return NEEDS_TEXT();
+    if (!isYoutubeUrl(captions.url)) {
+      ytLog({ stage: 'captions', vid, ok: false, reason: 'redirect_off_youtube' });
+      return needsText('captions_unavailable');
+    }
     transcript = captionsToText(captions.text);
-  } catch {
-    return NEEDS_TEXT();
+    ytLog({ stage: 'captions', vid, ok: transcript.length > 0, status: 'fetched', textLen: transcript.length });
+  } catch (err) {
+    ytLog({ stage: 'captions', vid, ok: false, reason: err instanceof ImportError ? err.code : 'error' }, true);
+    return needsText('captions_unavailable');
   }
-  if ((player.description.trim() + transcript).length < MIN_YOUTUBE_TEXT_CHARS) return NEEDS_TEXT();
-  if (!getLlmParser() || deps.now() >= llmDeadline) return NEEDS_TEXT();
+  // YouTube answers anonymous caption requests with an empty 200 body: that is "no captions", not a short transcript.
+  if (!transcript) return needsText('empty_captions');
+  if ((description.trim() + transcript).length < MIN_YOUTUBE_TEXT_CHARS) return needsText('too_short');
+  if (!getLlmParser()) return needsText('no_llm');
+  if (deps.now() >= llmDeadline) return needsText('deadline');
 
   // Spoken prose has no heuristic parse, so the transcript path always asks the LLM (same caps as every other call).
   // With forceRecipe ("Import anyway" after not_a_recipe) there is no heuristic draft to keep, so the single LLM call
   // is a forced best-effort one (no isRecipe exit); nothing usable -> needs_text.
   const ctx = { sourceUrl: videoUrl, flatSteps: true, ...(opts.forceRecipe ? { forceRecipe: true } : {}) };
-  const recipe = await callLlm(ownerId, youtubeLlmInput(player.title, player.description, transcript), ctx);
-  if (!recipe) return NEEDS_TEXT();
+  const recipe = await callLlm(ownerId, youtubeLlmInput(title, description, transcript), ctx);
+  if (!recipe) return needsText('llm_unavailable');
   if (isNotRecipe(recipe)) {
-    if (opts.forceRecipe) return NEEDS_TEXT();
+    if (opts.forceRecipe) return needsText('llm_not_recipe_forced');
+    ytLog({ stage: 'result', vid, kind: 'not_a_recipe' });
     throw new ImportError('not_a_recipe', recipe.reason, recipe.reason);
   }
   const draft: RecipeDraft = { recipe: { ...recipe, steps: flattenLeafStrings(recipe.steps), sourceUrl: videoUrl }, confidence: 'ai' };
   const body: ImportResponseBody = { draft, source: 'transcript', videoUrl };
+  ytLog({ stage: 'result', vid, kind: 'transcript' });
   return { status: 200, body };
 }
 

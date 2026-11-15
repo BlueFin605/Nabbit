@@ -24,6 +24,9 @@ namespace Infrastructure
         /// <summary>Optional app-wide cap on LLM calls per UTC day, across all users. Null = the backend default (300); 0 = no LLM calls. Only applied when LlmModelId is set.</summary>
         public int? LlmGlobalDailyLimit { get; set; }
 
+        /// <summary>Optional NAME of an SSM SecureString parameter holding a YouTube Data API v3 key (the name, never the key). Set = the import Lambda gets YOUTUBE_API_KEY_PARAM and ssm:GetParameter on that parameter only. Unset = feature off.</summary>
+        public string YoutubeApiKeyParam { get; set; }
+
         /// <summary>Folder holding the built API router (index.js). Relative to the cdk working directory.</summary>
         public string ApiCodePath { get; set; } = "../backend/dist/api";
 
@@ -70,6 +73,7 @@ namespace Infrastructure
                 ApiCodePath = Str("apiCodePath", "../backend/dist/api"),
                 ImportCodePath = Str("importCodePath", "../backend/dist/import"),
                 LlmModelId = Str("llmModelId", null),
+                YoutubeApiKeyParam = Str("youtubeApiKeyParam", null),
             };
             if (s.TryGetProperty("importReservedConcurrency", out var c) && c.ValueKind == JsonValueKind.Number)
                 cfg.ImportReservedConcurrency = c.GetInt32();
