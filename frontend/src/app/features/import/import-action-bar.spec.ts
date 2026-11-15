@@ -33,4 +33,19 @@ describe('ImportActionBar', () => {
     expect(btn(f, '.save').disabled).toBe(true);
     expect(btn(f, '.discard').disabled).toBe(true);
   });
+
+  it('disables all three buttons while busy (a re-import is in flight)', () => {
+    const f = make('edit');
+    f.componentRef.setInput('busy', true);
+    f.detectChanges();
+    expect(['.save', '.toggle-edit', '.discard'].map((c) => btn(f, c).disabled)).toEqual([true, true, true]);
+  });
+
+  it('is a toolbar named by its label', () => {
+    const f = make('preview');
+    f.componentRef.setInput('label', 'Import actions (top)');
+    f.detectChanges();
+    const bar = (f.nativeElement as HTMLElement).querySelector('[role="toolbar"]');
+    expect(bar?.getAttribute('aria-label')).toBe('Import actions (top)');
+  });
 });

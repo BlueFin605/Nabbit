@@ -36,9 +36,11 @@ export const IMPORT_ERROR_MESSAGES: Record<ImportErrorCode, string> = {
 /** needs_text for a non-Instagram page (client-rendered recipe the server could not read). */
 export const NEEDS_TEXT_GENERIC_MESSAGE =
   "That site builds its recipes with JavaScript, so we can't read it. Copy the recipe text from the page and paste it here.";
-/** needs_text for a YouTube URL (no transcript could be fetched). */
+/** needs_text for a YouTube URL (no transcript, or nothing usable came out of it). */
 export const NEEDS_TEXT_YOUTUBE_MESSAGE =
-  "Couldn't get the transcript automatically. On YouTube open the description, tap Show transcript, copy it and paste it here.";
+  "Couldn't turn this video into a recipe automatically. On YouTube open the description and tap Show transcript, then paste the transcript (or the recipe text) here.";
+/** A rerun / comment re-import came back after the user edited the draft: the edits win, the result is dropped. */
+export const STALE_RESULT_MESSAGE = 'You edited the recipe while it was re-importing, so your edits were kept and the new result was not applied.';
 /** Rerun with ignoreLinkedRecipe answered needs_text: there is no paste box while a draft is showing. */
 export const RERUN_NO_TRANSCRIPT_MESSAGE = 'No transcript is available for this video, so the recipe page version is kept.';
 /** A transcript rerun answered not_a_recipe: the linked-page draft stays (there is no paste box while a draft shows). */
@@ -87,7 +89,23 @@ export function isYoutubeUrl(url: string | undefined): boolean {
   }
 }
 
-const IG_POST_PATH = /^\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)\/?$/;
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
+
+/**
+ * https://www.youtube.com/watch?v=<id> for a watch, youtu.be, /shorts/, /live/ or /embed/ URL, so share params (si,
+ * feature, t, list...) are never sent or saved; undefined when there is no valid video id. An e2e fixture host
+ * (environment.extraYoutubeHosts) keeps its own host. Mirrors the backend `canonicalYoutubeUrl`.
+ */
+export function canonicalYoutubeUrl(url: string): string | undefined {
+  if (!isYoutubeUrl(url)) return undefined;
+  const u = new URL(url);
+  const host = u.hostname.toLowerCase().replace(/\.$/, '');
+  const id = host === 'youtu.be' ? u.pathname.split('/')[1] : u.pathname === '/watch' ? u.searchParams.get('v') : /^\/(?:shorts|live|embed)\/([^/]+)\/?$/.exec(u.pathname)?.[1];
+  if (!id || !YOUTUBE_ID.test(id)) return undefined;
+  return `https://${YOUTUBE_HOSTS.has(host) ? 'www.youtube.com' : host}/watch?v=${id}`;
+}
+
+const IG_POST_PATH =/^\/(?:[^/]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)\/?$/;
 
 /**
  * Canonical form of an Instagram URL so share params (igsh, igshid, utm_source, rpxt, srtk...) are never sent or saved:
@@ -251,7 +269,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
             }
           </div>
           @if (source() === 'linked-page' && editorDirty()) {
-            <p class="hint rerun-hint" role="note">You've edited the recipe below. Save or discard your edits before switching to the transcript, or they would be lost.</p>
+            <p class="hint rerun-hint" role="note">You've edited the recipe, so it can't be switched to the transcript (that would replace your edits). Save it as it is, or import the video again to start over.</p>
           }
           @if (rerunError(); as e) {
             <p class="error rerun-error" role="alert">{{ e }}</p>
@@ -268,7 +286,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
               <textarea matInput rows="4" [value]="comment()" (input)="onComment($event)"></textarea>
             </mat-form-field>
             @if (editorDirty()) {
-              <p class="hint" role="note">You've edited the recipe below. Save or discard your edits before adding a comment, or they would be lost.</p>
+              <p class="hint" role="note">You've edited the recipe, so a comment can't be added now (re-importing would replace your edits). Add the comment's ingredients and steps in the editor instead.</p>
             }
             <button mat-stroked-button type="button" class="add-comment" [disabled]="loading() || !comment().trim() || editorDirty()" (click)="addComment()">
               Add and re-import
@@ -278,7 +296,13 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
             }
           </details>
         }
-        <app-import-action-bar class="top" [mode]="mode()" [saving]="saving()" (save)="onSave()" (edit)="toggleMode()" (discard)="discard()" />
+        <app-import-action-bar class="top" label="Import actions (top)" [mode]="mode()" [saving]="saving()" [busy]="loading()" (save)="onSave()" (edit)="toggleMode()" (discard)="discard()" />
+        @if (loading()) {
+          <div class="loading reimporting" role="status" aria-live="polite" aria-busy="true">
+            <mat-spinner diameter="20" />
+            <span>Re-importing…</span>
+          </div>
+        }
         @if (mode() === 'preview') {
           @if (!d.recipe.imageKey && (chosenCandidate() || candidates().length)) {
             @if (chosenCandidate()) {
@@ -297,7 +321,8 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
               </div>
             }
           }
-          <app-recipe-view [recipe]="d.recipe" [imageUrl]="previewSrc()" [readOnly]="true" />
+          <!-- 'original': amounts and temperatures as parsed from the source, so the "check the quantities" banners check what was read -->
+          <app-recipe-view [recipe]="d.recipe" [imageUrl]="previewSrc()" [readOnly]="true" [mode]="'original'" />
           @if (saveError(); as e) {
             <p class="error" role="alert">{{ e }}</p>
           }
@@ -313,7 +338,7 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
             (saved)="save($event)"
           />
         }
-        <app-import-action-bar [mode]="mode()" [saving]="saving()" (save)="onSave()" (edit)="toggleMode()" (discard)="discard()" />
+        <app-import-action-bar label="Import actions (bottom)" [mode]="mode()" [saving]="saving()" [busy]="loading()" (save)="onSave()" (edit)="toggleMode()" (discard)="discard()" />
       }
     }
   `,
@@ -458,6 +483,7 @@ export class Import implements OnInit {
     }
     let request: ImportRequest = this.needsText() ? { text: v } : toImportRequest(v);
     if (request.url && isInstagramUrl(request.url)) request = { url: canonicalInstagramUrl(request.url) };
+    else if (request.url && isYoutubeUrl(request.url)) request = { url: canonicalYoutubeUrl(request.url) ?? request.url };
     this.sourceUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
     this.caption = request.text;
     this.igSource.set(isInstagramUrl(request.url) || (this.needsText() && !this.needsTextGeneric()));
@@ -473,6 +499,14 @@ export class Import implements OnInit {
     this.api.importRecipe(request).subscribe({
       next: (res) => {
         this.needsText.set(false);
+        // A rerun / comment re-import only starts on an unedited draft (its buttons are off while dirty), so a dirty
+        // draft now means the user edited in the still-open editor meanwhile: keep their edits, drop the result.
+        if (mode !== 'fresh' && this.editorDirty()) {
+          this.loading.set(false);
+          if (mode === 'rerun') this.rerunError.set(STALE_RESULT_MESSAGE);
+          else this.error.set(STALE_RESULT_MESSAGE);
+          return;
+        }
         this.onResult(res, mode);
       },
       error: (err: unknown) => {
@@ -488,12 +522,13 @@ export class Import implements OnInit {
           this.info.set(youtube ? NEEDS_TEXT_YOUTUBE_MESSAGE : generic ? NEEDS_TEXT_GENERIC_MESSAGE : IMPORT_ERROR_MESSAGES.needs_text);
         } else if (mode === 'rerun') {
           this.rerunError.set(
-            this.isNeedsText(err) ? RERUN_NO_TRANSCRIPT_MESSAGE : this.isNotRecipe(err) ? RERUN_NOT_RECIPE_MESSAGE : this.messageFor(err),
+            this.isNeedsText(err) ? RERUN_NO_TRANSCRIPT_MESSAGE : this.isNotRecipe(err) ? RERUN_NOT_RECIPE_MESSAGE : this.messageFor(err, false),
           );
         } else if (mode === 'fresh' && this.isNotRecipe(err)) {
           this.notRecipe.set({ request, reason: (err.error as { reason?: string }).reason });
         } else {
-          this.error.set(this.messageFor(err));
+          // only a fresh import has the paste box to fall back to
+          this.error.set(this.messageFor(err, mode === 'fresh'));
         }
         if (mode === 'fresh') setTimeout(() => this.box()?.nativeElement.focus());
       },
@@ -538,10 +573,11 @@ export class Import implements OnInit {
   protected addComment(): void {
     const c = this.comment().trim();
     if (!c || this.loading()) return;
+    // forceRecipe: the user has said the comment holds the recipe, so there is no not-a-recipe exit here.
     if (this.caption) this.run({ text: `${this.caption}
 
-${c}` }, 'replace');
-    else this.run({ text: c }, 'merge');
+${c}`, forceRecipe: true }, 'replace');
+    else this.run({ text: c, forceRecipe: true }, 'merge');
   }
 
   private isNotRecipe(err: unknown): err is HttpErrorResponse {
@@ -566,20 +602,23 @@ ${c}` }, 'replace');
       this.source.set(res.source);
       this.videoUrl.set(res.videoUrl);
     }
-    if (mode !== 'fresh') return; // keep the photo choice the user already has
+    // A comment re-import keeps the photo choice the user already has. A fresh import or a transcript rerun takes the
+    // result's photos (none for a transcript, so the linked page's photo is not saved with the transcript recipe).
+    if (mode === 'merge' || mode === 'replace') return;
     // Always offer the found photo(s) so they can be re-picked after declining.
     this.candidates.set(res.candidates?.length ? res.candidates : res.imageUrl ? [res.imageUrl] : []);
     this.fetched = undefined;
     this.chosenCandidate.set(res.candidates?.[0] ?? res.imageUrl);
   }
 
-  private messageFor(err: unknown): string {
+  /** `pasteFallback`: append "Paste the recipe text instead." (only where the paste box is showing). */
+  private messageFor(err: unknown, pasteFallback: boolean): string {
     if (err instanceof HttpErrorResponse) {
       if (err.status === 429) return RATE_LIMIT_MESSAGE;
       if (err.status === 422) {
         const code = (err.error as { error?: string } | null)?.error as ImportErrorCode | undefined;
         const msg = (code && IMPORT_ERROR_MESSAGES[code]) ?? GENERIC_ERROR_MESSAGE;
-        return `${msg} ${FALLBACK}`;
+        return pasteFallback ? `${msg} ${FALLBACK}` : msg;
       }
     }
     return GENERIC_ERROR_MESSAGE;
