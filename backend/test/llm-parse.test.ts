@@ -208,6 +208,11 @@ describe('validateModelOutput notRecipe and flattenLeafStrings', () => {
     const r = validateModelOutput({ isRecipe: false, reason: 'Not a recipe;\u0007 visit https://evil.example/x?y=1 or http://a.b now‮.\nThanks' });
     expect(r).toEqual({ notRecipe: true, reason: 'Not a recipe; visit or now. Thanks' });
   });
+  it('only the first 1000 chars of the reason are cleaned (bounded work on hostile output)', () => {
+    // the URL covers the first 1000 chars, so nothing is left once it is stripped; the tail is never looked at
+    expect(validateModelOutput({ isRecipe: false, reason: `https://evil.example/${'a'.repeat(2000)} visible tail` })).toBeUndefined();
+    expect(validateModelOutput({ isRecipe: false, reason: 'word '.repeat(100_000) })).toEqual({ notRecipe: true, reason: expect.stringMatching(/^(word ){39}word$/) });
+  });
   it('a reason that is only a URL is no usable reason', () => {
     expect(validateModelOutput({ isRecipe: false, reason: ' https://evil.example/ ' })).toBeUndefined();
   });

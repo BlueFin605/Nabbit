@@ -40,7 +40,8 @@ export function youtubeVideoId(rawUrl: string, env: NodeJS.ProcessEnv = process.
         id = m?.[1];
       }
     }
-    return id !== undefined && VIDEO_ID.test(id) ? id : undefined;
+    // /embed/videoseries?list=... is an embedded playlist; its "id" happens to be 11 characters
+    return id !== undefined && id !== 'videoseries' && VIDEO_ID.test(id) ? id : undefined;
   } catch {
     return undefined;
   }

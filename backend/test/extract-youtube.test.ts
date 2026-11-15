@@ -37,6 +37,8 @@ describe('youtubeVideoId', () => {
     expect(youtubeVideoId(`https://youtube.com/embed/${ID}`)).toBe(ID);
     expect(youtubeVideoId(`https://www.youtube.com/embed/${ID}/`)).toBe(ID);
     expect(youtubeVideoId(`https://www.youtube.com/live/${ID}/extra`)).toBeUndefined();
+    // an embedded playlist, not a video (11 chars, so it would pass the id pattern)
+    expect(youtubeVideoId('https://www.youtube.com/embed/videoseries?list=PL123')).toBeUndefined();
   });
   it('rejects bad ids, wrong paths, other hosts and garbage', () => {
     expect(youtubeVideoId('https://www.youtube.com/watch?v=short')).toBeUndefined();

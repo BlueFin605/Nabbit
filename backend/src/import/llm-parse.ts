@@ -53,11 +53,14 @@ const FLAT_STEPS_LINE = 'steps must be a flat list of strings, no grouping.';
 const MAX_REASON_CHARS = 200;
 
 /**
- * The not-a-recipe reason is model output steered by untrusted page text and is shown to the user verbatim: drop URLs
- * (anything scheme://... or www....), control and bidi/format characters, and collapse whitespace.
+ * The not-a-recipe reason is model output steered by untrusted page text and is shown to the user verbatim: drop
+ * scheme URLs (scheme://...) and www.... links, control and bidi/format characters, and collapse whitespace. Bare
+ * domains ("example.com") are not removed. Only the first MAX_REASON_SCAN chars are looked at.
  */
+const MAX_REASON_SCAN = 1000;
 function cleanReason(s: string): string {
   return s
+    .slice(0, MAX_REASON_SCAN)
     .replace(/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S*/gi, '')
     .replace(/[\p{Cc}\p{Cf}]/gu, (ch) => (/\s/.test(ch) ? ' ' : ''))
     .replace(/\s+/g, ' ')
