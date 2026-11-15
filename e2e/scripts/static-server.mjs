@@ -20,6 +20,7 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.txt': 'text/plain',
+  '.xml': 'text/xml; charset=utf-8',
 };
 
 async function file(path) {

@@ -512,3 +512,23 @@ export async function safeFetchJson(
   );
   return { url: r.url, text: new TextDecoder('utf-8').decode(r.bytes) };
 }
+
+/** Caption track bodies: timed-text XML, json3 or plain text. */
+function isCaptionType(contentType: string | null): boolean {
+  const t = (contentType ?? '').split(';')[0]!.trim().toLowerCase();
+  return ['text/xml', 'application/xml', 'text/plain', 'text/vtt'].includes(t) || t.endsWith('+xml') || isJsonType(t);
+}
+
+/**
+ * A YouTube caption track (safeFetch is HTML-only, so it would refuse timed-text XML/json3). Same SSRF guard and timeout;
+ * every redirect hop must stay on the track URL's origin, so a hop off the YouTube host is refused before it is fetched.
+ */
+export async function safeFetchCaptions(rawUrl: string, deps: SafeFetchDeps = {}): Promise<{ url: string; text: string }> {
+  const allowedOrigin = parseSafeUrl(rawUrl).origin; // throws ImportError('bad_url'), never a TypeError
+  const r = await guardedFetch(
+    rawUrl,
+    { accept: 'text/xml,application/json;q=0.9,text/plain;q=0.5', isAllowedType: isCaptionType, notAllowedCode: 'not_html', maxBytes: MAX_BYTES, allowedOrigin },
+    deps,
+  );
+  return { url: r.url, text: decoderFor(r.contentType).decode(r.bytes) };
+}

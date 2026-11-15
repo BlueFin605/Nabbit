@@ -1,0 +1,67 @@
+# Nabbit: import preview, not-a-recipe guardrail, YouTube import
+
+Date: 2026-11-15. Status: approved; implemented.
+
+Three pieces, delivered as one initiative on one branch (`feature/import-preview-youtube`):
+
+- **A. Preview mode and action bar** (frontend). Independent.
+- **B. Not-a-recipe guardrail** (backend + frontend error). Independent of A.
+- **C. YouTube import** (backend + frontend banner). Builds on B.
+
+## A. Preview mode and action bar (frontend)
+
+After an import returns a draft, `/import` opens in **Preview**, not the editor.
+
+- Preview reuses the saved-recipe view component in read-only mode: same layout, photo, ingredients, grouped or flat steps. No scaling in preview. Amounts and temperatures show as written in the source (the view's `original` mode), so the "check the quantities" banners check what was read.
+- While a transcript rerun or comment re-import is in flight, both action bars are disabled and a "Re-importing…" status shows; a result that arrives after the user edited the draft is dropped and the edits kept, with a notice shown beside that status (not inside the collapsible appender).
+- **Edit** switches to the existing editor on the same draft; **Back to preview** returns, and edits show in the preview.
+- **Action bar**: Save, Edit, Discard. Rendered twice (a sticky bar at the top and one at the bottom of the page), both driven by the same state. Save works from either mode and either bar. In edit mode the Edit button reads "Back to preview".
+- **Discard** confirms only if the draft was edited; otherwise goes straight to the recipe list (`/recipes`).
+- Banners above the preview: the existing AI confidence badge; the YouTube linked-recipe banner (C); the Instagram "Recipe in a comment?" appender (unchanged).
+- The photo candidate chooser stays visible in preview.
+- Scope: the import preview and its edit mode only. Saved-recipe edit screens do not change.
+
+## B. Not-a-recipe guardrail
+
+The shared LLM prompt (all LLM paths: pasted text, Instagram captions, JS-shell pages, YouTube) gets an exit.
+
+- Model output schema adds `isRecipe: boolean` and a short `reason`. `validateModelOutput` accepts `{isRecipe:false, reason}` as valid. Malformed output still keeps the heuristic draft, so the LLM never fails an import.
+- `isRecipe: false` makes the import route answer **422 `not_a_recipe`** with the reason (scheme URLs, `www.` links and control characters stripped, bare domains kept, 200 chars max; a reason left empty is invalid output, so the heuristic draft is kept). No heuristic draft is returned.
+- **Exception: Instagram captions.** No Instagram caption ends in the 422, because the "Recipe in a comment?" appender is the designed recovery for "recipe in the comments" posts. An auto-fetched caption the model calls not-a-recipe keeps the heuristic draft and the post's photo candidates on the server (200). A pasted caption (after a login wall) is plain text to the server, so the client sends it with `forceRecipe: true`. The appender also always sends `forceRecipe: true`: the user has already said the comment is the recipe. An empty Instagram draft's banner points at the appender.
+- **Override:** the error offers "Import anyway", which resends with `forceRecipe: true`. The one LLM call is then a forced best-effort one (no not-a-recipe exit): its draft is used when it is usable, otherwise the heuristic draft is returned (the YouTube transcript and JS-shell paths, which have no heuristic draft, answer `needs_text`). It counts against the same rate and LLM caps. Also offers "Paste text instead".
+- Cost: one LLM call, same as any attempt; the existing 30/owner/day and app-wide daily caps apply unchanged. No second call.
+
+## C. YouTube import
+
+### Recognised URLs
+`youtube.com/watch?v=`, `youtu.be/<id>`, `m.youtube.com`, `youtube.com/shorts/<id>`, `/live/<id>`, `/embed/<id>` (not `embed/videoseries`, a playlist); https only; video id validated as 11 chars of `[A-Za-z0-9_-]`; the client sends and saves the canonical `https://www.youtube.com/watch?v=<id>`, so share params (`si=` etc.) never reach `sourceUrl`.
+
+### Order of attempts
+1. Fetch the watch page through `safe-fetch` (anonymous, no cookies, honest User-Agent). New `extract-youtube.ts` reads title, description and the caption track list from the embedded player data.
+2. **Linked recipe first.** Take up to 3 https links from the description, skipping YouTube, social, shop and affiliate hosts (Instagram, TikTok, Amazon, `amzn.to`, `bit.ly` and similar). Each goes through the normal URL import path and its SSRF guard. The first that returns **structured schema.org Recipe data** wins: a structured draft with no LLM, steps keep groups as JSON-LD imports do today. Links without structured data are discarded.
+3. Otherwise **transcript**: pick a manual English track, then auto-generated English, then the first track; fetch it and flatten to plain text (timestamps dropped). Send title + description + transcript to the LLM, with the description kept in full and the transcript truncated at a sentence boundary to a fixed cap.
+4. No captions, under about 200 characters of text, a consent or bot wall, any fetch error, no LLM configured, or `YOUTUBE_AUTOFETCH=0` returns **422 `needs_text`**; the frontend asks the user to paste the transcript, which is then imported as text (the Instagram pattern).
+
+### Rules
+- The transcript path always uses the LLM (spoken prose is not heuristically parseable).
+- **Flat steps**: the YouTube prompt and validation require flat steps; any group the model returns is flattened to strings. Only structured (JSON-LD/microdata) imports keep groups.
+- B's not-a-recipe check applies to the transcript path.
+- Response adds `source: 'linked-page' | 'transcript'` and `videoUrl` (the canonical video URL, both sources). `sourceUrl` is the recipe page for a linked recipe and the video for a transcript; the draft has no notes field, so the video link travels only as `videoUrl`.
+- Request takes optional `ignoreLinkedRecipe`. The preview banner "Imported from the recipe page linked in the video" has a "Use the video transcript instead" button that resends the same URL with it set.
+- Time budget (29 s API Gateway/Lambda limit), measured from the request start: linked-page lookups stop at 5 s; the caption fetch is cut off at 8 s and the LLM is not started after 8 s (`needs_text` instead); the LLM call itself has the parser's 15 s timeout.
+- Kill switch `YOUTUBE_AUTOFETCH=0`, read per request; the CDK stack does not set it.
+- Share target (Android) works unchanged: YouTube share links go to `/import`.
+
+### Spike gate
+`backend/scripts/spike-youtube.mjs`, run from CloudShell and the deployed import Lambda against several videos including `https://youtu.be/yk6tQfArMvw`. Checks: player data present, caption track fetchable, description links extractable. A no-go makes YouTube paste-only; A and B still ship.
+
+## Testing
+- Unit: URL recognition and id validation; description link filtering (host skips, 3-link cap); caption track selection and flattening; `isRecipe` schema; step flattening in the YouTube path; pre-LLM text checks.
+- e2e (Playwright, fixture-fetch hook and stub LLM): linked recipe wins; transcript fallback; `needs_text` then paste; `not_a_recipe` then "Import anyway"; preview, Edit, back to preview, Save from the top bar and the bottom bar; Discard with confirmation.
+- Run lint for touched packages before closing tickets.
+
+## Docs and unverified
+SYSDOCs (root data-flow diagram and key decisions, backend, frontend) are updated. Real YouTube fetching from Lambda and real Bedrock output are listed under Known gaps until Dean's smoke test.
+
+## Delivery
+Jira tickets on the Nabbit board under a new initiative. One branch, `feature/import-preview-youtube`. A and B are independent; C depends on B.

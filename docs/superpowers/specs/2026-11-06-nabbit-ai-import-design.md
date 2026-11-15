@@ -2,6 +2,8 @@
 
 Date: 2026-11-06. Branch: `feature/nabbit-ai-import` (cut from master; builds on `feature/nabbit-enhancements` once that is merged, since both edit `backend/src/routes/import.ts`).
 
+> Superseded in part by `2026-11-15-nabbit-import-preview-youtube-design.md`: the LLM now first decides whether the text is a recipe (422 `not_a_recipe`, `forceRecipe` override), the import page opens a read-only preview rather than an editable one, and YouTube URLs are auto-fetched. Where this document and the SYSDOCs disagree, the SYSDOCs describe the shipped behaviour.
+
 ## Problem
 
 Import today relies on schema.org structured data, then a deterministic text heuristic. It fails on messy captions and pages with no structured data. The biggest gap (the main thing the household wants from an AnyList-style app) is recipes saved from **Instagram**, where the recipe is in the caption or a pinned comment.

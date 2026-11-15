@@ -3,7 +3,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
-import { FIXTURE_HOST, FIXTURE_IG_HOST, fixtureFetchDeps } from '../src/e2e-fixture-fetch.js';
+import { FIXTURE_HOST, FIXTURE_IG_HOST, FIXTURE_YT_HOST, fixtureFetchDeps } from '../src/e2e-fixture-fetch.js';
 import { installE2eFixtureFetch } from '../src/local.js';
 import { handler as importHandler } from '../src/handlers/import.js';
 import { resetRoutes } from '../src/router.js';
@@ -46,6 +46,7 @@ describe('fixture deps are confined to the fixture host', () => {
     await expect(deps.fetchImpl!('https://example.com/x')).rejects.toThrow();
     expect(await deps.resolve!(FIXTURE_HOST)).toHaveLength(1);
     expect(await deps.resolve!(FIXTURE_IG_HOST)).toHaveLength(1);
+    expect(await deps.resolve!(FIXTURE_YT_HOST)).toHaveLength(1);
   });
 
   describe('end to end through the real guard', () => {
@@ -67,6 +68,17 @@ describe('fixture deps are confined to the fixture host', () => {
       await expect(safeFetch('https://127.0.0.1/x', deps)).rejects.toMatchObject({ code: 'blocked_address' });
       await expect(safeFetch(`http://${FIXTURE_HOST}/x`, deps)).rejects.toMatchObject({ code: 'bad_url' });
       await expect(safeFetch(`https://${FIXTURE_HOST}:8443/x`, deps)).rejects.toMatchObject({ code: 'bad_url' });
+    });
+
+    it('maps YouTube /watch?v=<id> to /yt/<id>.html and 404s a malformed id without fetching', async () => {
+      const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const deps = fixtureFetchDeps({ ...ON, NABBIT_E2E_FIXTURE_ORIGIN: origin })!;
+      const ok = await deps.fetchImpl!(`https://${FIXTURE_YT_HOST}/watch?v=abcDEF_1-23`);
+      expect(await ok.text()).toContain('/yt/abcDEF_1-23.html');
+      for (const bad of ['', 'short', '../../etc12', 'abcDEF_1-23x']) {
+        const res = await deps.fetchImpl!(`https://${FIXTURE_YT_HOST}/watch?v=${encodeURIComponent(bad)}`);
+        expect(res.status).toBe(404);
+      }
     });
   });
 });

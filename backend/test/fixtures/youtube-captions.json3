@@ -1,0 +1,1 @@
+{"wireMagic":"pb3","events":[{"tStartMs":0,"dDurationMs":1000},{"tStartMs":1000,"dDurationMs":2000,"segs":[{"utf8":"Boil the "},{"utf8":"noodles"}]},{"tStartMs":3000,"dDurationMs":2000,"segs":[{"utf8":"\n"}]},{"tStartMs":4000,"dDurationMs":2000,"segs":[{"utf8":"then add   garlic\nand butter"}]}]}

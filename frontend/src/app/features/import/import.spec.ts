@@ -1,12 +1,13 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router, provideRouter } from '@angular/router';
-import { NEVER, of, throwError } from 'rxjs';
+import { NEVER, Subject, of, throwError } from 'rxjs';
 import type { Ingredient, StepNode } from '@nabbit/recipe-core';
 import { ApiClient } from '../../core/api/api-client';
 import type { ImportErrorCode, ImportResult, Recipe, RecipeInput } from '../../core/api/api.types';
-import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, canonicalInstagramUrl, firstUrl, isInstagramUrl, mergeDrafts, toImportRequest } from './import';
+import { IMPORT_ERROR_MESSAGES, Import, NEEDS_TEXT_GENERIC_MESSAGE, NEEDS_TEXT_YOUTUBE_MESSAGE, RERUN_NOT_RECIPE_MESSAGE, RERUN_NO_TRANSCRIPT_MESSAGE, STALE_RESULT_MESSAGE, canonicalInstagramUrl, canonicalYoutubeUrl, firstUrl, isInstagramUrl, isYoutubeUrl, mergeDrafts, toImportRequest } from './import';
 
 const ing = (): Ingredient => ({
   id: 'i1',
@@ -133,9 +134,8 @@ describe('Import', () => {
     await setup({}, () => of(result({}, 'https://example.com/p.jpg')));
     type('x');
     await tapImport();
-    expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
-    expect(q('summary')?.textContent).toContain('240 ml');
-    expect(q('details .original')?.textContent).toContain('1 cup flour');
+    expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
+    expect(q('app-recipe-view .ingredients')?.textContent).toContain('flour');
     // third-party photo is not loaded automatically and is labelled as unsaved
     expect(q('img.photo')).toBeNull();
     expect(q('.photo-note')?.textContent).toContain('Photo found, will be saved');
@@ -154,13 +154,28 @@ describe('Import', () => {
     expect(q('.banner')?.textContent).toContain('Check this one carefully');
   });
 
-  it('empty extraction opens a blank editor with the source link kept', async () => {
+  it('an empty Instagram draft points at the comment appender; other empty drafts do not', async () => {
+    const empty = () => of(result({ confidence: 'heuristic', recipe: { title: 'T', servings: 4, ingredients: [], steps: [], tags: [] } }));
+    await setup({}, empty);
+    type('https://www.instagram.com/p/abc/');
+    await tapImport();
+    expect(q('.empty-banner')?.textContent).toContain('Recipe in a comment?');
+    await setup({}, empty);
+    type('https://example.com/r');
+    await tapImport();
+    expect(q('.empty-banner')?.textContent).toContain("We couldn't find a recipe there");
+    expect(q('.empty-banner')?.textContent).not.toContain('comment');
+  });
+
+  it('empty extraction opens a blank preview; Edit gives a blank editor with the source link kept', async () => {
     await setup({}, () =>
       of(result({ confidence: 'heuristic', recipe: { title: '', servings: 4, ingredients: [], steps: [], tags: [] } })),
     );
     jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     type('https://example.com/r');
     await tapImport();
+    q('.toggle-edit')?.click();
+    fixture.detectChanges();
     expect(q('input.title')).not.toBeNull();
     q('.save')?.click();
     expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: 'https://example.com/r' }));
@@ -189,6 +204,8 @@ describe('Import', () => {
     const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     type('https://example.com/r');
     await tapImport();
+    q('.toggle-edit')?.click();
+    fixture.detectChanges();
     const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
     title.value = 'Better pancakes';
     title.dispatchEvent(new Event('input'));
@@ -299,6 +316,63 @@ describe('Import', () => {
     });
   });
 
+  describe('not_a_recipe', () => {
+    const notRecipe = () => httpErr(422, { error: 'not_a_recipe', reason: 'It is a cooking-show trailer' });
+
+    it('shows the reason with Import anyway and Paste text instead buttons', async () => {
+      await setup({}, notRecipe);
+      type('https://example.com/r');
+      await tapImport();
+      expect(q('.not-recipe')?.textContent).toContain("That doesn't look like a recipe");
+      expect(q('.not-recipe')?.textContent).toContain('It is a cooking-show trailer');
+      expect(q('.import-anyway')?.textContent).toContain('Import anyway');
+      expect(q('.paste-instead')?.textContent).toContain('Paste text instead');
+    });
+
+    it('Import anyway re-sends the same request with forceRecipe: true', async () => {
+      let n = 0;
+      await setup({}, () => (n++ === 0 ? notRecipe() : of(result())));
+      type('https://example.com/r');
+      await tapImport();
+      q('.import-anyway')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: 'https://example.com/r', forceRecipe: true });
+      expect(q('.not-recipe')).toBeNull();
+    });
+
+    it('Import anyway also works for a text request', async () => {
+      let n = 0;
+      await setup({}, () => (n++ === 0 ? notRecipe() : of(result())));
+      type('some text');
+      await tapImport();
+      q('.import-anyway')?.click();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'some text', forceRecipe: true });
+    });
+
+    it('Paste text instead keeps the url in the box, focuses it and hides the panel', async () => {
+      jest.useFakeTimers();
+      try {
+        await setup({}, notRecipe);
+        document.body.appendChild(el());
+        type('https://example.com/r');
+        q('.import-btn')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        q('.paste-instead')?.click();
+        fixture.detectChanges();
+        jest.runAllTimers();
+        fixture.detectChanges();
+        expect(q('.not-recipe')).toBeNull();
+        expect(q<HTMLTextAreaElement>('textarea')?.value).toBe('https://example.com/r');
+        expect(document.activeElement).toBe(q('textarea'));
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
   describe('AI import', () => {
     const IG = 'https://www.instagram.com/reel/abc/';
     const needsText = () => httpErr(422, { error: 'needs_text' });
@@ -382,13 +456,13 @@ describe('Import', () => {
       });
     });
 
-    it('pasting the caption sends {text} and sets sourceUrl to the remembered URL', async () => {
+    it('pasting the caption sends {text} with forceRecipe (an Instagram caption never gets the not-a-recipe panel) and sets sourceUrl', async () => {
       await setup({}, onlyOnce(needsText, () => of(result())));
       type(IG);
       await tapImport();
       type('Pancakes\n2 eggs');
       await tapImport();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs', forceRecipe: true });
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
       expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: IG }));
@@ -473,6 +547,10 @@ describe('Import', () => {
       fixture.detectChanges();
     }
     function editTitle(text: string) {
+      if (!q('input.title')) {
+        q('.toggle-edit')?.click();
+        fixture.detectChanges();
+      }
       const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
       title.value = text;
       title.dispatchEvent(new Event('input'));
@@ -494,9 +572,10 @@ describe('Import', () => {
       q('.add-comment')?.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment' });
-      expect(q<HTMLInputElement>('input.title')?.value).toBe('Other');
-      expect(el().querySelectorAll('.ingredient')).toHaveLength(2);
+      // the user already said the comment holds the recipe, so no not-a-recipe exit
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the caption\n\nthe comment', forceRecipe: true });
+      expect(q('app-recipe-view h1')?.textContent).toContain('Other');
+      expect(el().querySelectorAll('app-recipe-view .ingredients li')).toHaveLength(2);
       expect(q('.photo-note')).not.toBeNull(); // photo choice kept
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
@@ -523,8 +602,8 @@ describe('Import', () => {
       q('.add-comment')?.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment' });
-      expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'the comment', forceRecipe: true });
+      expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
       expect(q('.banner')?.textContent).toContain('AI-assisted');
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
@@ -574,6 +653,30 @@ describe('Import', () => {
       });
     });
 
+    it('an appender result arriving after the user edited the draft keeps the edits and shows a notice', async () => {
+      const pending = new Subject<ImportResult>();
+      await setup({}, onlyOnce(() => of(result()), () => pending));
+      type(IG);
+      await tapImport();
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+      writeComment('the comment');
+      q('.add-comment')?.click();
+      fixture.detectChanges();
+      const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      title.value = 'Typed meanwhile';
+      title.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      pending.next(result({ recipe: { title: 'From comment', servings: 2, ingredients: [ing()], steps: ['x'], tags: [] } }));
+      pending.complete();
+      fixture.detectChanges();
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('Typed meanwhile');
+      // shown outside the (possibly collapsed) appender, next to the re-import status
+      expect(q('.reimport-notice')?.textContent).toContain(STALE_RESULT_MESSAGE);
+      expect(q('.comment-appender .reimport-notice')).toBeNull();
+      expect(q<HTMLButtonElement>('.toggle-edit')?.disabled).toBe(false);
+    });
+
     it('disables the appender once the editor is dirty so edits are never wiped', async () => {
       await toAppender(() => of(result()));
       writeComment('the comment');
@@ -592,7 +695,7 @@ describe('Import', () => {
       await tapImport();
       type('https://example.com/r great pancakes\n2 eggs');
       await tapImport();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'https://example.com/r great pancakes\n2 eggs' });
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'https://example.com/r great pancakes\n2 eggs', forceRecipe: true });
     });
 
     it('a single non-Instagram https URL after needs_text is a normal URL import', async () => {
@@ -628,12 +731,139 @@ describe('Import', () => {
         fixture.detectChanges();
         expect(q('.comment-appender [role="alert"]')?.textContent).toContain("Instagram wouldn't let us read this post");
         expect(q('.info')).toBeNull();
-        expect(q<HTMLInputElement>('input.title')?.value).toBe('Pancakes');
+        expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
         expect(q('mat-label')?.textContent ?? '').not.toContain('Paste the caption');
         expect(document.activeElement).not.toBe(q('textarea'));
       } finally {
         jest.useRealTimers();
       }
+    });
+  });
+
+  describe('preview and edit modes', () => {
+    const all = (s: string) => el().querySelectorAll<HTMLButtonElement>(s);
+    async function imported(impl: (r: unknown) => unknown = () => of(result())) {
+      await setup({}, impl);
+      type('https://example.com/r');
+      await tapImport();
+    }
+    function toggle() {
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+    }
+    function editTitle(text: string) {
+      const title = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      title.value = text;
+      title.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('opens in read-only preview after an import', async () => {
+      await imported();
+      expect(q('app-recipe-view')).not.toBeNull();
+      expect(q('app-recipe-editor')).toBeNull();
+      expect(q('app-recipe-view h1')?.textContent).toContain('Pancakes');
+    });
+
+    it('renders the action bar twice, top (sticky) and bottom', async () => {
+      await imported();
+      expect(el().querySelectorAll('app-import-action-bar')).toHaveLength(2);
+      expect(q('app-import-action-bar.top')).not.toBeNull();
+    });
+
+    it('the two bars are toolbars with distinct labels', async () => {
+      await imported();
+      const labels = [...el().querySelectorAll('[role="toolbar"]')].map((t) => t.getAttribute('aria-label'));
+      expect(labels).toEqual(['Import actions (top)', 'Import actions (bottom)']);
+    });
+
+    it('the preview shows quantities and temperatures as written in the source (not unit-converted)', async () => {
+      await imported(() => of(result({ recipe: { title: 'Pancakes', servings: 4, ingredients: [ing()], steps: ['Bake at 350°F'], tags: [] } })));
+      const view = q('app-recipe-view')?.textContent ?? '';
+      expect(view).toContain('1 cup');
+      expect(view).not.toContain('240');
+      expect(view).toContain('350°F');
+    });
+
+    it('Save from the top and from the bottom bar each save once', async () => {
+      await imported();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      all('app-import-action-bar .save')[0].click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      TestBed.resetTestingModule();
+      await imported();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      all('app-import-action-bar .save')[1].click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['a blank title', { title: '  ', servings: 4, ingredients: [ing()], steps: ['Mix'], tags: [] }],
+      ['an empty draft', { title: 'T', servings: 4, ingredients: [], steps: [], tags: [] }],
+    ])('Save in preview with %s goes through the editor (edit mode, its save path) instead of posting the raw draft', async (_, recipe) => {
+      await imported(() => of(result({ confidence: 'heuristic', recipe })));
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      all('app-import-action-bar .save')[0].click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(q('app-recipe-editor')).not.toBeNull();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      expect((createRecipe.mock.calls[0] as [RecipeInput])[0].title).toBe(recipe.title.trim() || 'Untitled recipe');
+    });
+
+    it('Edit switches to the editor and the toggle reads Back to preview on both bars', async () => {
+      await imported();
+      expect(all('.toggle-edit')[0].textContent?.trim()).toBe('Edit');
+      toggle();
+      expect(q('app-recipe-editor')).not.toBeNull();
+      expect(q('app-recipe-view')).toBeNull();
+      expect(all('.toggle-edit')[0].textContent?.trim()).toBe('Back to preview');
+      expect(all('.toggle-edit')[1].textContent?.trim()).toBe('Back to preview');
+      expect(q('app-recipe-editor .save')).toBeNull(); // editor's own buttons hidden
+    });
+
+    it('editor edits appear in the preview', async () => {
+      await imported();
+      toggle();
+      editTitle('Better pancakes');
+      toggle();
+      expect(q('app-recipe-view h1')?.textContent).toContain('Better pancakes');
+    });
+
+    it('Save from the bottom bar in edit mode saves the edited recipe through the editor', async () => {
+      await imported();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      toggle();
+      editTitle('Edited');
+      all('app-import-action-bar .save')[1].click();
+      expect(createRecipe).toHaveBeenCalledTimes(1);
+      expect((createRecipe.mock.calls[0] as [RecipeInput])[0].title).toBe('Edited');
+    });
+
+    it('Discard goes straight back when the draft was not edited', async () => {
+      await imported();
+      const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const open = jest.spyOn(TestBed.inject(MatDialog), 'open');
+      all('.discard')[1].click();
+      expect(open).not.toHaveBeenCalled();
+      expect(nav).toHaveBeenCalledWith(['/recipes']);
+    });
+
+    it.each(['in edit mode', 'back in preview'])('Discard confirms when the draft was edited (%s)', async (where) => {
+      await imported();
+      const nav = jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      const open = jest
+        .spyOn(TestBed.inject(MatDialog), 'open')
+        .mockReturnValue({ afterClosed: () => of(false) } as never);
+      toggle();
+      editTitle('Edited');
+      if (where === 'back in preview') toggle();
+      q('.discard')?.click();
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(nav).not.toHaveBeenCalled();
+      open.mockReturnValue({ afterClosed: () => of(true) } as never);
+      q('.discard')?.click();
+      expect(nav).toHaveBeenCalledWith(['/recipes']);
     });
   });
 
@@ -645,6 +875,258 @@ describe('Import', () => {
     q('.discard')?.click();
     expect(nav).toHaveBeenCalledWith(['/recipes']);
     expect(createRecipe).not.toHaveBeenCalled();
+  });
+
+  describe('YouTube import', () => {
+    const YT = 'https://www.youtube.com/watch?v=abc123';
+    const needsText = () => httpErr(422, { error: 'needs_text' });
+    const yt = (source: 'linked-page' | 'transcript', title = 'Pancakes'): ImportResult => ({
+      ...result({ confidence: source === 'transcript' ? 'ai' : 'structured', recipe: { title, servings: 4, ingredients: [ing()], steps: ['Mix'], tags: [] } }),
+      source,
+      videoUrl: YT,
+    });
+    const onlyOnceYt = (first: () => unknown, then: () => unknown) => {
+      let n = 0;
+      return () => (n++ === 0 ? first() : then());
+    };
+
+    it('isYoutubeUrl matches youtube hosts over https only', () => {
+      expect(isYoutubeUrl(YT)).toBe(true);
+      expect(isYoutubeUrl('https://m.youtube.com/watch?v=1')).toBe(true);
+      expect(isYoutubeUrl('https://youtube.com/watch?v=1')).toBe(true);
+      expect(isYoutubeUrl('https://youtu.be/abc')).toBe(true);
+      expect(isYoutubeUrl('http://youtu.be/abc')).toBe(false);
+      expect(isYoutubeUrl('https://notyoutube.com/x')).toBe(false);
+      expect(isYoutubeUrl('https://youtube.com.evil.test/x')).toBe(false);
+      expect(isYoutubeUrl(undefined)).toBe(false);
+    });
+
+    it('needs_text shows the transcript message and paste box; pasted text imports as text with the video URL as source', async () => {
+      await setup({}, (() => {
+        let n = 0;
+        return () => (n++ === 0 ? needsText() : of(result()));
+      })());
+      type(YT);
+      await tapImport();
+      expect(q('[role="alert"]')).toBeNull();
+      expect(q('.info')?.textContent).toContain(NEEDS_TEXT_YOUTUBE_MESSAGE);
+      expect(NEEDS_TEXT_YOUTUBE_MESSAGE).toBe(
+        "Couldn't turn this video into a recipe automatically. On YouTube open the description and tap Show transcript, then paste the transcript (or the recipe text) here.",
+      );
+      expect(q('mat-label')?.textContent).toContain('Paste the transcript');
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+      expect(q('.comment-appender')).toBeNull();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: YT }));
+    });
+
+    it('a shared youtu.be link arriving via the url input starts a URL import', async () => {
+      await setup({ url: 'https://youtu.be/abc123' });
+      expect(importRecipe).toHaveBeenCalledWith({ url: 'https://youtu.be/abc123' });
+    });
+
+    it('linked-page drafts show the banner and a Watch the video link', async () => {
+      await setup({}, () => of(yt('linked-page')));
+      type(YT);
+      await tapImport();
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
+      expect(q('.use-transcript')?.textContent).toContain('Use the video transcript instead');
+      const a = q<HTMLAnchorElement>('a.watch-video');
+      expect(a?.getAttribute('href')).toBe(YT);
+      expect(a?.getAttribute('target')).toBe('_blank');
+      expect(a?.getAttribute('rel')).toBe('noopener noreferrer');
+    });
+
+    it('the rerun re-sends the same URL with ignoreLinkedRecipe, replaces the draft and swaps the banner', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? of(yt('transcript', 'From Video')) : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: YT, ignoreLinkedRecipe: true });
+      expect(q('h1:not(:first-child), app-recipe-view h1')?.textContent).toContain('From Video');
+      expect(q('.use-transcript')).toBeNull();
+      expect(q('.source-banner')?.textContent).toContain('From the video transcript - check quantities');
+      expect(el().textContent).toContain('AI-assisted - check the ingredients');
+    });
+
+    it('shows a loading state during the rerun and disables the button', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? NEVER : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      fixture.detectChanges();
+      expect(q<HTMLButtonElement>('.use-transcript')?.disabled).toBe(true);
+    });
+
+    it('a failed rerun keeps the current draft and shows the error beside the banner', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? needsText() : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
+      expect(q('.rerun-error')?.textContent).toContain(RERUN_NO_TRANSCRIPT_MESSAGE);
+      expect(q('.rerun-error')?.textContent).not.toContain('paste');
+      expect(q('app-recipe-view')?.textContent).toContain('Pancakes');
+    });
+
+    it('a rerun answered not_a_recipe keeps the linked-page draft with an honest message (no paste prompt)', async () => {
+      await setup({}, (r) =>
+        (r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? httpErr(422, { error: 'not_a_recipe', reason: 'A vlog' }) : of(yt('linked-page')),
+      );
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(q('.rerun-error')?.textContent?.trim()).toBe(RERUN_NOT_RECIPE_MESSAGE);
+      expect(RERUN_NOT_RECIPE_MESSAGE).toBe("The video transcript doesn't look like a recipe, so the recipe page version is kept.");
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
+      expect(q('app-recipe-view')?.textContent).toContain('Pancakes');
+    });
+
+    it.each(['javascript:alert(1)', 'https://evil.example/watch?v=1', 'http://www.youtube.com/watch?v=1'])('never renders %s as a link', async (bad) => {
+      await setup({}, () => of({ ...yt('linked-page'), videoUrl: bad } as ImportResult));
+      type(YT);
+      await tapImport();
+      expect(q('a.watch-video')).toBeNull();
+      expect(q('.source-banner')).not.toBeNull();
+    });
+
+    it('a videoUrl without a source renders no banner', async () => {
+      await setup({}, () => of({ ...result(), videoUrl: YT } as ImportResult));
+      type(YT);
+      await tapImport();
+      expect(q('.source-banner')).toBeNull();
+    });
+
+    it('explains the disabled rerun button when editor edits are unsaved', async () => {
+      await setup({}, () => of(yt('linked-page')));
+      type(YT);
+      await tapImport();
+      expect(q('.rerun-hint')).toBeNull();
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+      const t = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      t.value = 'Edited';
+      t.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+      expect(q<HTMLButtonElement>('.use-transcript')?.disabled).toBe(true);
+      expect(q('.rerun-hint')?.textContent).toContain("You've edited the recipe, so it can't be switched to the transcript");
+      expect(q('.rerun-hint')?.textContent).not.toContain('discard your edits');
+    });
+
+    it('a share link with si= is sent and saved in the canonical watch form', async () => {
+      const ID = 'dQw4w9WgXcQ';
+      const want = `https://www.youtube.com/watch?v=${ID}`;
+      expect(canonicalYoutubeUrl(`https://youtu.be/${ID}?si=abc&t=3`)).toBe(want);
+      expect(canonicalYoutubeUrl(`https://m.youtube.com/shorts/${ID}?feature=share`)).toBe(want);
+      expect(canonicalYoutubeUrl(`https://www.youtube.com/live/${ID}?si=x`)).toBe(want);
+      expect(canonicalYoutubeUrl('https://www.youtube.com/@channel')).toBeUndefined();
+      expect(canonicalYoutubeUrl('https://www.youtube.com/embed/videoseries?list=PL123')).toBeUndefined();
+      await setup({}, onlyOnceYt(needsText, () => of(result())));
+      type(`https://youtu.be/${ID}?si=TRACKME`);
+      await tapImport();
+      expect(importRecipe).toHaveBeenLastCalledWith({ url: want });
+      type('Pancakes\n2 eggs');
+      await tapImport();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: want }));
+    });
+
+    it('a rerun generic error does not ask to paste (there is no paste box while a draft shows)', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? httpErr(422, { error: 'timeout' }) : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(q('.rerun-error')?.textContent).toContain('took too long');
+      expect(q('.rerun-error')?.textContent).not.toContain('Paste');
+    });
+
+    it('while a rerun is in flight: both bars are disabled and a re-importing indicator shows', async () => {
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? NEVER : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      expect(q('.reimporting')).toBeNull();
+      q('.use-transcript')?.click();
+      fixture.detectChanges();
+      const bars = el().querySelectorAll<HTMLButtonElement>('app-import-action-bar button');
+      expect(bars).toHaveLength(6);
+      expect([...bars].every((b) => b.disabled)).toBe(true);
+      const busy = q('.reimporting');
+      expect(busy?.getAttribute('aria-busy')).toBe('true');
+      expect(busy?.textContent).toContain('Re-importing');
+    });
+
+    it('a rerun result arriving after the user edited the draft keeps the edits and shows a notice', async () => {
+      const pending = new Subject<ImportResult>();
+      await setup({}, (r) => ((r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe ? pending : of(yt('linked-page'))));
+      type(YT);
+      await tapImport();
+      q('.toggle-edit')?.click();
+      fixture.detectChanges();
+      q('.use-transcript')?.click();
+      fixture.detectChanges();
+      const t = q<HTMLInputElement>('input.title') as HTMLInputElement;
+      t.value = 'Typed meanwhile';
+      t.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      pending.next(yt('transcript', 'From Video'));
+      pending.complete();
+      fixture.detectChanges();
+      expect(q<HTMLInputElement>('input.title')?.value).toBe('Typed meanwhile');
+      expect(q('.reimport-notice')?.textContent).toContain(STALE_RESULT_MESSAGE);
+      expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
+    });
+
+    it('a transcript rerun drops the linked page photo (nothing is saved with the transcript recipe)', async () => {
+      await setup({}, (r) =>
+        (r as { ignoreLinkedRecipe?: boolean }).ignoreLinkedRecipe
+          ? of(yt('transcript', 'From Video'))
+          : of({ ...yt('linked-page'), imageUrl: 'https://img.example/p.jpg', candidates: ['https://img.example/p.jpg'] }),
+      );
+      type(YT);
+      await tapImport();
+      expect(q('.photo-note')).not.toBeNull();
+      q('.use-transcript')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(q('.photo-note')).toBeNull();
+      expect(q('.show-options')).toBeNull();
+      jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+      q('.save')?.click();
+      expect(importImage).not.toHaveBeenCalled();
+      expect((createRecipe.mock.calls[0] as [RecipeInput])[0].imageKey).toBeUndefined();
+    });
+
+    it('a transcript draft shows the AI banner and the transcript note but no rerun button', async () => {
+      await setup({}, () => of(yt('transcript')));
+      type(YT);
+      await tapImport();
+      expect(q('.source-banner')?.textContent).toContain('From the video transcript - check quantities');
+      expect(el().textContent).toContain('AI-assisted - check the ingredients');
+      expect(q('.use-transcript')).toBeNull();
+      expect(q('a.watch-video')).not.toBeNull();
+    });
+
+    it('non-YouTube drafts show none of the video banners', async () => {
+      await setup();
+      type('https://example.com/r');
+      await tapImport();
+      expect(q('.source-banner')).toBeNull();
+      expect(q('a.watch-video')).toBeNull();
+    });
   });
 });
 
@@ -659,6 +1141,7 @@ describe('IMPORT_ERROR_MESSAGES', () => {
     'not_image',
     'too_many_redirects',
     'needs_text',
+    'not_a_recipe',
   ];
 
   it.each(codes)('has a message for %s', (code) => {

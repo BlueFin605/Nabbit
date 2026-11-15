@@ -1,0 +1,83 @@
+:host {
+  display: block;
+}
+
+.photo {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.tags li {
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--mat-sys-surface-container, #eee);
+}
+
+.ingredients {
+  list-style: none;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.ingredients li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.add-one {
+  margin-left: auto;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+.ingredients li.fixed .qty::after {
+  content: ' (not scaled)';
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.note {
+  opacity: 0.7;
+}
+
+.steps {
+  padding-left: 1.5em;
+  font-size: 1.25rem;
+  line-height: 1.6;
+}
+
+.steps li {
+  margin-bottom: 12px;
+}
+
+/* display:block (not list-item) so a group does not consume a number in the parent ol. */
+.steps li.group {
+  display: block;
+  padding-left: 0;
+}
+
+.steps h3 {
+  margin: 16px 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.steps ol {
+  padding-left: 1.5em;
+}
