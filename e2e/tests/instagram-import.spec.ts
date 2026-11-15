@@ -102,7 +102,7 @@ test.describe('journey 11: Instagram paste and AI-assisted import', () => {
     await expect(page).toHaveURL(/\/recipes\/[\w-]+$/);
     const [saved] = await api.recipes();
     expect(saved.imageKey).toMatch(/^local-dev-user-id\//);
-    expect(saved.sourceUrl).toBe(IG_COMMENTS_URL);
+    expect((await api.recipe(saved.id)).sourceUrl).toBe(IG_COMMENTS_URL);
   });
 
   test('a normal structured page is unaffected: no AI banner', async ({ page }) => {
