@@ -147,6 +147,28 @@ describe('AvatarMenu', () => {
     expect(document.activeElement).toBe(btn());
   });
 
+  it('moves between menu items with arrow keys, Home and End (wrapping), so Help is reachable', async () => {
+    await open();
+    const help = el().querySelector<HTMLElement>('a[role="menuitem"]')!;
+    const key = (k: string) => {
+      const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true });
+      (document.activeElement as HTMLElement).dispatchEvent(e);
+      return e;
+    };
+    expect(document.activeElement).toBe(item());
+    expect(key('ArrowUp').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(help);
+    key('ArrowUp');
+    expect(document.activeElement).toBe(item());
+    key('ArrowDown');
+    expect(document.activeElement).toBe(help);
+    key('End');
+    expect(document.activeElement).toBe(item());
+    key('Home');
+    expect(document.activeElement).toBe(help);
+    expect(menu()).not.toBeNull();
+  });
+
   it('closes on an outside click without stealing focus', async () => {
     await open();
     const outside = el().querySelector<HTMLButtonElement>('#outside')!;

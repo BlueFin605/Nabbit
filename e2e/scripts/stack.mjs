@@ -106,6 +106,7 @@ async function up() {
         '',
       ].join('\n'),
     );
+    execFileSync('node', ['scripts/help-index.mjs'], { cwd: join(repo, 'frontend'), stdio: 'inherit' });
     const ng = join(repo, 'node_modules/@angular/cli/bin/ng.js');
     execFileSync('node', [ng, 'build', '--configuration', 'e2e', '--output-path', join(e2eDir, '.dist')], { cwd: join(repo, 'frontend'), stdio: 'inherit' });
 

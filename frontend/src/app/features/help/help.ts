@@ -15,6 +15,7 @@ export interface HelpTopic {
   selector: 'app-help',
   imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { '(click)': 'onBodyClick($event)' },
   styles: `
     :host { display: block; max-width: 48rem; margin: 0 auto; padding: 16px; }
     ul.topics { list-style: none; padding: 0; margin: 0; }
@@ -24,6 +25,7 @@ export interface HelpTopic {
   template: `
     @if (error()) {
       <p class="help-error" role="alert">{{ error() }}</p>
+      <p><a routerLink="/help">All help topics</a></p>
     } @else if (topics() === null) {
       <p class="help-loading">Loading help…</p>
     } @else if (!topic()) {
@@ -57,6 +59,17 @@ export class Help {
   protected readonly html = signal<SafeHtml | null>(null);
   protected readonly error = signal<string | null>(null);
 
+  /** Guide-to-guide links are plain /help/:slug hrefs in the rendered HTML; route them in-app instead of reloading the SPA. */
+  protected onBodyClick(event: MouseEvent): void {
+    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    const anchor = (event.target as Element | null)?.closest?.('a');
+    if (!anchor || !anchor.closest('.help-body') || anchor.hasAttribute('target')) return;
+    const href = anchor.getAttribute('href') ?? '';
+    if (!/^\/help(\/|$)/.test(href)) return;
+    event.preventDefault();
+    void this.router.navigateByUrl(href);
+  }
+
   constructor() {
     this.http.get<HelpTopic[]>('assets/help-index.json').subscribe({
       next: (t) => this.topics.set(t),
@@ -67,6 +80,7 @@ export class Help {
       const list = this.topics();
       const slug = this.topic();
       this.html.set(null);
+      this.error.set(null);
       if (!list || !slug) return;
       const found = list.find((t) => t.slug === slug);
       if (!found) {

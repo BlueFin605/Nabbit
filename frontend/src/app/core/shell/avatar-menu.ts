@@ -173,6 +173,17 @@ export class AvatarMenu {
     if (event.key === 'Escape') {
       event.stopPropagation();
       this.close(true);
+    } else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      const items = Array.from(this.host.nativeElement.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+      if (!items.length) return;
+      event.preventDefault();
+      const current = items.indexOf(document.activeElement as HTMLElement);
+      let next: number;
+      if (event.key === 'Home') next = 0;
+      else if (event.key === 'End') next = items.length - 1;
+      else if (event.key === 'ArrowDown') next = current < 0 ? 0 : (current + 1) % items.length;
+      else next = current < 0 ? items.length - 1 : (current - 1 + items.length) % items.length;
+      items[next].focus();
     } else if (event.key === 'Tab') {
       // Close and park focus on the button so the browser's Tab continues from there.
       this.close(true);

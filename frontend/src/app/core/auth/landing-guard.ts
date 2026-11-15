@@ -8,5 +8,7 @@ export const landingGuard: CanActivateFn = async () => {
   const auth = inject(Auth);
   const router = inject(Router);
   await auth.whenReady();
+  // Sign-out lands here; drop its flag so a later Sign in goes to the Hosted UI instead of "You have been signed out."
+  auth.takeSignedOutFlag();
   return auth.isAuthenticated() ? router.createUrlTree(['/recipes']) : true;
 };

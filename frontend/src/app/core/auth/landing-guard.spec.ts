@@ -4,9 +4,14 @@ import { Auth } from './auth';
 import { landingGuard } from './landing-guard';
 import { routes } from '../../app.routes';
 
+const takeSignedOutFlag = jest.fn(() => false);
+
 function run(signedIn: boolean) {
+  takeSignedOutFlag.mockClear();
   TestBed.configureTestingModule({
-    providers: [{ provide: Auth, useValue: { whenReady: () => Promise.resolve(), isAuthenticated: () => signedIn } }],
+    providers: [
+      { provide: Auth, useValue: { whenReady: () => Promise.resolve(), isAuthenticated: () => signedIn, takeSignedOutFlag } },
+    ],
   });
   return TestBed.runInInjectionContext(() =>
     landingGuard({} as ActivatedRouteSnapshot, { url: '/' } as RouterStateSnapshot),
@@ -16,6 +21,11 @@ function run(signedIn: boolean) {
 describe('landingGuard', () => {
   it('shows the landing page to signed-out visitors', async () => {
     expect(await run(false)).toBe(true);
+  });
+
+  it('clears the sign-out flag so a later Sign in is not stuck on "signed out"', async () => {
+    await run(false);
+    expect(takeSignedOutFlag).toHaveBeenCalledTimes(1);
   });
 
   it('redirects signed-in users to /recipes', async () => {
