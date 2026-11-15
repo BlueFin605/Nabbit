@@ -101,7 +101,7 @@ export function canonicalYoutubeUrl(url: string): string | undefined {
   const u = new URL(url);
   const host = u.hostname.toLowerCase().replace(/\.$/, '');
   const id = host === 'youtu.be' ? u.pathname.split('/')[1] : u.pathname === '/watch' ? u.searchParams.get('v') : /^\/(?:shorts|live|embed)\/([^/]+)\/?$/.exec(u.pathname)?.[1];
-  if (!id || !YOUTUBE_ID.test(id)) return undefined;
+  if (!id || id === 'videoseries' || !YOUTUBE_ID.test(id)) return undefined; // embed/videoseries = a playlist
   return `https://${YOUTUBE_HOSTS.has(host) ? 'www.youtube.com' : host}/watch?v=${id}`;
 }
 
@@ -276,7 +276,11 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
           }
         }
         @if (isEmpty()) {
-          <p class="banner" role="note">We couldn't find a recipe there. Fill it in yourself — the source link is kept.</p>
+          @if (igSource()) {
+            <p class="banner empty-banner" role="note">We couldn't find a recipe in the caption. If it's in a comment, paste it under "Recipe in a comment?" below, or fill it in yourself — the source link is kept.</p>
+          } @else {
+            <p class="banner empty-banner" role="note">We couldn't find a recipe there. Fill it in yourself — the source link is kept.</p>
+          }
         }
         @if (igSource()) {
           <details class="comment-appender">
@@ -302,6 +306,9 @@ export function mergeDrafts(base: RecipeDraft, extra: RecipeDraft): RecipeDraft 
             <mat-spinner diameter="20" />
             <span>Re-importing…</span>
           </div>
+        }
+        @if (reimportNotice(); as n) {
+          <p class="info reimport-notice" role="status">{{ n }}</p>
         }
         @if (mode() === 'preview') {
           @if (!d.recipe.imageKey && (chosenCandidate() || candidates().length)) {
@@ -400,6 +407,8 @@ export class Import implements OnInit {
   protected readonly videoUrl = signal<string | undefined>(undefined);
   /** Error from the "Use the video transcript instead" rerun; the current draft is kept. */
   protected readonly rerunError = signal<string | null>(null);
+  /** A rerun / comment re-import result was dropped because the draft was edited meanwhile (always-visible notice). */
+  protected readonly reimportNotice = signal<string | null>(null);
 
   /** Set after a not_a_recipe 422: the request to re-run with forceRecipe, and the model's reason. */
   protected readonly notRecipe = signal<{ request: ImportRequest; reason?: string } | null>(null);
@@ -487,6 +496,9 @@ export class Import implements OnInit {
     this.sourceUrl = request.url ? stripTrackingParams(request.url) : this.pendingUrl;
     this.caption = request.text;
     this.igSource.set(isInstagramUrl(request.url) || (this.needsText() && !this.needsTextGeneric()));
+    // A pasted Instagram caption gets no not-a-recipe exit (as the server does for an auto-fetched caption): a
+    // "recipe in the comments" caption must reach the preview and its comment appender.
+    if (request.text && this.igSource()) request = { ...request, forceRecipe: true };
     this.run(request, 'fresh');
   }
 
@@ -495,6 +507,7 @@ export class Import implements OnInit {
     this.info.set(null);
     this.notRecipe.set(null);
     this.rerunError.set(null);
+    this.reimportNotice.set(null);
     this.loading.set(true);
     this.api.importRecipe(request).subscribe({
       next: (res) => {
@@ -503,8 +516,7 @@ export class Import implements OnInit {
         // draft now means the user edited in the still-open editor meanwhile: keep their edits, drop the result.
         if (mode !== 'fresh' && this.editorDirty()) {
           this.loading.set(false);
-          if (mode === 'rerun') this.rerunError.set(STALE_RESULT_MESSAGE);
-          else this.error.set(STALE_RESULT_MESSAGE);
+          this.reimportNotice.set(STALE_RESULT_MESSAGE);
           return;
         }
         this.onResult(res, mode);

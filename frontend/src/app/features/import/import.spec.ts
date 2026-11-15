@@ -154,6 +154,19 @@ describe('Import', () => {
     expect(q('.banner')?.textContent).toContain('Check this one carefully');
   });
 
+  it('an empty Instagram draft points at the comment appender; other empty drafts do not', async () => {
+    const empty = () => of(result({ confidence: 'heuristic', recipe: { title: 'T', servings: 4, ingredients: [], steps: [], tags: [] } }));
+    await setup({}, empty);
+    type('https://www.instagram.com/p/abc/');
+    await tapImport();
+    expect(q('.empty-banner')?.textContent).toContain('Recipe in a comment?');
+    await setup({}, empty);
+    type('https://example.com/r');
+    await tapImport();
+    expect(q('.empty-banner')?.textContent).toContain("We couldn't find a recipe there");
+    expect(q('.empty-banner')?.textContent).not.toContain('comment');
+  });
+
   it('empty extraction opens a blank preview; Edit gives a blank editor with the source link kept', async () => {
     await setup({}, () =>
       of(result({ confidence: 'heuristic', recipe: { title: '', servings: 4, ingredients: [], steps: [], tags: [] } })),
@@ -443,13 +456,13 @@ describe('Import', () => {
       });
     });
 
-    it('pasting the caption sends {text} and sets sourceUrl to the remembered URL', async () => {
+    it('pasting the caption sends {text} with forceRecipe (an Instagram caption never gets the not-a-recipe panel) and sets sourceUrl', async () => {
       await setup({}, onlyOnce(needsText, () => of(result())));
       type(IG);
       await tapImport();
       type('Pancakes\n2 eggs');
       await tapImport();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs' });
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'Pancakes\n2 eggs', forceRecipe: true });
       jest.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       q('.save')?.click();
       expect(createRecipe).toHaveBeenCalledWith(expect.objectContaining({ sourceUrl: IG }));
@@ -658,7 +671,9 @@ describe('Import', () => {
       pending.complete();
       fixture.detectChanges();
       expect(q<HTMLInputElement>('input.title')?.value).toBe('Typed meanwhile');
-      expect(q('.comment-appender [role="alert"]')?.textContent).toContain(STALE_RESULT_MESSAGE);
+      // shown outside the (possibly collapsed) appender, next to the re-import status
+      expect(q('.reimport-notice')?.textContent).toContain(STALE_RESULT_MESSAGE);
+      expect(q('.comment-appender .reimport-notice')).toBeNull();
       expect(q<HTMLButtonElement>('.toggle-edit')?.disabled).toBe(false);
     });
 
@@ -680,7 +695,7 @@ describe('Import', () => {
       await tapImport();
       type('https://example.com/r great pancakes\n2 eggs');
       await tapImport();
-      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'https://example.com/r great pancakes\n2 eggs' });
+      expect(importRecipe).toHaveBeenLastCalledWith({ text: 'https://example.com/r great pancakes\n2 eggs', forceRecipe: true });
     });
 
     it('a single non-Instagram https URL after needs_text is a normal URL import', async () => {
@@ -1016,6 +1031,7 @@ describe('Import', () => {
       expect(canonicalYoutubeUrl(`https://m.youtube.com/shorts/${ID}?feature=share`)).toBe(want);
       expect(canonicalYoutubeUrl(`https://www.youtube.com/live/${ID}?si=x`)).toBe(want);
       expect(canonicalYoutubeUrl('https://www.youtube.com/@channel')).toBeUndefined();
+      expect(canonicalYoutubeUrl('https://www.youtube.com/embed/videoseries?list=PL123')).toBeUndefined();
       await setup({}, onlyOnceYt(needsText, () => of(result())));
       type(`https://youtu.be/${ID}?si=TRACKME`);
       await tapImport();
@@ -1070,7 +1086,7 @@ describe('Import', () => {
       pending.complete();
       fixture.detectChanges();
       expect(q<HTMLInputElement>('input.title')?.value).toBe('Typed meanwhile');
-      expect(q('.rerun-error')?.textContent).toContain(STALE_RESULT_MESSAGE);
+      expect(q('.reimport-notice')?.textContent).toContain(STALE_RESULT_MESSAGE);
       expect(q('.source-banner')?.textContent).toContain('Imported from the recipe page linked in the video');
     });
 
