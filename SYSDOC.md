@@ -18,6 +18,12 @@ Tech stack: Angular PWA / Node 24 TypeScript Lambda backend / shared TypeScript 
 
 npm workspaces: `shared/*`, `backend`, `frontend`, `e2e`. `infrastructure` is .NET, not a workspace.
 
+## Public landing and in-app help
+
+- **Routes** (`frontend/src/app/app.routes.ts`): `/` is a public landing page behind `landingGuard` (signed-in users are redirected to `/recipes`, visitors see the landing). `/help` and `/help/:topic` render the help guides behind `authGuard`, and the avatar menu has a Help entry.
+- **Help pipeline**: the guides are markdown in `docs/help/` (numbered `NN-slug.md`, first heading is the title; `docs/help/README.md` is not a topic) with screenshots in `docs/help/images/`. `frontend/scripts/help-index.mjs` runs as `prebuild`, `prebuild:dev`, `prestart` and `pretest`: it mirrors `docs/help` into the git-ignored `frontend/src/assets/help/` and writes `help-index.json` (ordered slug/title list). The `src/assets` glob in `angular.json` serves them at `/assets/help`, and the help viewer renders them with `marked`. Edit `docs/help`, never the mirror.
+- **Screenshots**: `npm run help:screenshots` (`e2e/screenshots/capture.mjs`, Playwright) needs the e2e stack running first (`npm run stack:up -w e2e`). It writes desktop and phone shots to `docs/help/images/` and the landing page images to `frontend/src/assets/screens/`. `src/assets` is git-ignored, so the landing images are force-added (`git add -f`); re-run and re-add after UI changes.
+
 ## Data flow: import, preview, save
 
 ```mermaid
