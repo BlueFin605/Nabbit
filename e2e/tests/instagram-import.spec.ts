@@ -81,17 +81,20 @@ test.describe('journey 11: Instagram paste and AI-assisted import', () => {
   });
 
   test('"recipe in the comments" post: no not-a-recipe panel, the photo is kept and the pasted comment is added', async ({ page, api }) => {
-    // The caption gets a NotRecipe verdict from the fake LLM; on Instagram that keeps the (empty) heuristic draft and the
+    // The auto-fetched caption gets a NotRecipe verdict from the fake LLM; on Instagram that keeps the (empty) heuristic draft and the
     // post photo instead of a 422, so the comment appender can recover the recipe.
     await page.goto('/import');
     await page.getByLabel('Paste a link or recipe text').fill(IG_COMMENTS_URL);
     await page.getByRole('button', { name: 'Import', exact: true }).click();
-    await expect(page.getByText('Recipe in a comment?')).toBeVisible();
+    const appender = page.locator('.comment-appender summary');
+    await expect(appender).toBeVisible();
     await expect(page.locator('.not-recipe')).toHaveCount(0);
     await expect(page.getByText('Photo found, will be saved')).toBeVisible();
+    // the empty draft's banner points at the appender
+    await expect(page.locator('.empty-banner')).toContainText('paste it under "Recipe in a comment?" below');
 
     // The comment also reads as not-a-recipe to the fake LLM, but the appender sends forceRecipe (the user said it is one).
-    await page.getByText('Recipe in a comment?').click();
+    await appender.click();
     await page.getByLabel('Paste the comment').fill('[[fake-not-recipe]] here it is: stock, onion, carrots');
     await page.getByRole('button', { name: 'Add and re-import' }).click();
     await expect(page.locator('ol.steps li').filter({ hasText: 'Simmer everything in the stock.' })).toBeVisible();
@@ -103,6 +106,18 @@ test.describe('journey 11: Instagram paste and AI-assisted import', () => {
     const [saved] = await api.recipes();
     expect(saved.imageKey).toMatch(/^local-dev-user-id\//);
     expect((await api.recipe(saved.id)).sourceUrl).toBe(IG_COMMENTS_URL);
+  });
+
+  test('a pasted caption is sent with forceRecipe, so it never shows the not-a-recipe panel', async ({ page }) => {
+    await page.goto('/import');
+    await page.getByLabel('Paste a link or recipe text').fill(IG_URL);
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    await page.getByLabel('Paste the caption').fill('Best ever cake [[fake-not-recipe]] full recipe in the comments!');
+    await page.getByRole('button', { name: 'Import', exact: true }).click();
+    // the fake LLM answers a forced call with its soup instead of a NotRecipe verdict
+    await expect(page.getByRole('heading', { level: 1, name: 'Fake AI Soup' })).toBeVisible();
+    await expect(page.locator('.not-recipe')).toHaveCount(0);
+    await expect(page.locator('.comment-appender summary')).toBeVisible();
   });
 
   test('a normal structured page is unaffected: no AI banner', async ({ page }) => {
