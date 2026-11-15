@@ -8,6 +8,7 @@ interface Feature {
   icon: string;
   title: string;
   text: string;
+  shot?: { src: string; alt: string };
 }
 
 interface Faq {
@@ -28,16 +29,19 @@ export class Landing {
       icon: 'cloud_download',
       title: 'Import recipes',
       text: 'Paste a web link or the recipe text, or bring one in from an Instagram post or a YouTube video. If a site or post cannot be read automatically, paste the text instead.',
+      shot: { src: 'assets/screens/import.png', alt: 'The Nabbit import screen with a recipe link ready to import' },
     },
     {
       icon: 'balance',
       title: 'Scale by ingredient',
       text: 'Change the servings, or pick the ingredient you have and scale everything else to match. Metric by default.',
+      shot: { src: 'assets/screens/scale.png', alt: 'A Sunday Lasagne recipe scaled to six servings, with a Scale by menu and metric units' },
     },
     {
       icon: 'shopping_cart',
       title: 'Shopping lists',
       text: "Add a recipe's ingredients, already scaled, to a shopping list.",
+      shot: { src: 'assets/screens/lists.png', alt: 'A Nabbit shopping list with items ready to tick off' },
     },
     {
       icon: 'install_mobile',

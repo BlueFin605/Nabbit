@@ -2,7 +2,7 @@
 
 The **Lists** tab holds your shopping lists. A list called **Shopping** is created for you; add more for different stores or occasions, and rename or delete them from the list picker.
 
-![A shopping list grouped by aisle](images/shopping-list.png)
+![A shopping list with items ready to tick off](images/shopping-list.png)
 
 ## Adding items by hand
 
@@ -18,7 +18,7 @@ For a single ingredient, use the add button beside it on the recipe. One tap add
 
 ## Working the list
 
-- Items are grouped by aisle. Tap an item to tick it off; it moves to the bottom of its group, struck through. Tap again to untick.
+- Items are grouped under an aisle heading (items without a known aisle sit under Other). Tap an item to tick it off; it moves to the bottom of its group, struck through. Tap again to untick.
 - Double-tap an item to delete it. A short **Undo** message lets you bring it back.
 - Press and hold an item to change its aisle.
 

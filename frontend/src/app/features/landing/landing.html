@@ -5,9 +5,9 @@
       <p class="pitch">Collect recipes from anywhere, scale them to fit, and shop for them in one tap.</p>
       <a mat-flat-button routerLink="/signin" class="signin-btn">Sign in / Get started</a>
     </div>
-    <div class="shot" role="img" aria-label="Screenshot of Nabbit coming soon">
-      <mat-icon aria-hidden="true">restaurant_menu</mat-icon>
-    </div>
+    <figure class="shot">
+      <img src="assets/screens/hero.png" width="780" height="1587" alt="A Nabbit recipe, Sunday Lasagne, scaled to six servings on a phone" fetchpriority="high" />
+    </figure>
   </section>
 
   <section class="features" aria-labelledby="features-h">
@@ -18,6 +18,9 @@
           <mat-icon aria-hidden="true">{{ f.icon }}</mat-icon>
           <h3>{{ f.title }}</h3>
           <p>{{ f.text }}</p>
+          @if (f.shot) {
+            <img class="feature-shot" [src]="f.shot.src" width="780" height="1587" [alt]="f.shot.alt" loading="lazy" />
+          }
         </article>
       }
     </div>

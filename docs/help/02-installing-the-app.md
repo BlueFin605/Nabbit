@@ -8,8 +8,6 @@ Nabbit is a progressive web app (PWA). Installing it gives you an icon on your h
 2. Open the Chrome menu and choose **Install app** (or **Add to Home screen**).
 3. Confirm. The Nabbit icon appears with your other apps.
 
-![Chrome on Android offering to install Nabbit](images/install-android.png)
-
 Once installed, Nabbit also appears in Android's share sheet. See [Importing a recipe](03-importing-a-recipe.md).
 
 ## iPhone and iPad (Safari)

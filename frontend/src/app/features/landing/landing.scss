@@ -37,19 +37,30 @@ h3 {
 }
 
 .shot {
-  aspect-ratio: 4 / 3;
-  border-radius: 12px;
-  border: 1px dashed currentColor;
-  opacity: 0.5;
+  margin: 0;
   display: flex;
-  align-items: center;
   justify-content: center;
 
-  mat-icon {
-    font-size: 64px;
-    width: 64px;
-    height: 64px;
+  img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: 480px;
+    height: auto;
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    box-shadow: 0 6px 24px color-mix(in srgb, currentColor 18%, transparent);
   }
+}
+
+.feature-shot {
+  display: block;
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+  margin: 12px auto 0;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
 }
 
 .grid,
