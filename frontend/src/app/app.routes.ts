@@ -39,5 +39,15 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./features/import/import').then((m) => m.Import),
   },
+  {
+    path: 'help',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/help/help').then((m) => m.Help),
+  },
+  {
+    path: 'help/:topic',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/help/help').then((m) => m.Help),
+  },
   { path: '**', redirectTo: 'recipes' },
 ];

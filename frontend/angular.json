@@ -19,7 +19,7 @@
             "polyfills": ["src/global-polyfill.ts"],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
-            "assets": [{ "glob": "**/*", "input": "public" }],
+            "assets": [{ "glob": "**/*", "input": "public" }, { "glob": "**/*", "input": "src/assets", "output": "assets" }],
             "styles": ["src/styles.scss"]
           },
           "configurations": {

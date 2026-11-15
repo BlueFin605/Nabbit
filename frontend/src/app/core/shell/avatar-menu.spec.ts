@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { Auth, type AuthUser } from '../auth/auth';
 import { AvatarMenu, avatarColour, avatarInitial } from './avatar-menu';
 
@@ -77,7 +78,7 @@ describe('AvatarMenu', () => {
   const btn = () => el().querySelector<HTMLButtonElement>('button.avatar-btn')!;
   const menu = () => el().querySelector<HTMLElement>('[role="menu"]');
   const popover = () => el().querySelector<HTMLElement>('.popover');
-  const item = () => el().querySelector<HTMLButtonElement>('[role="menuitem"]');
+  const item = () => el().querySelector<HTMLButtonElement>('button[role="menuitem"]');
 
   async function settle() {
     fixture.detectChanges();
@@ -91,7 +92,7 @@ describe('AvatarMenu', () => {
 
   beforeEach(async () => {
     user.set({ userId: 'u1', email: 'dev@example.com', displayName: 'Local Dev User' });
-    TestBed.configureTestingModule({ providers: [{ provide: Auth, useValue: { user } }] });
+    TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: Auth, useValue: { user } }] });
     fixture = TestBed.createComponent(Host);
     host = fixture.componentInstance;
     document.body.appendChild(el());
@@ -121,7 +122,8 @@ describe('AvatarMenu', () => {
     expect(popover()!.textContent).toContain('Local Dev User');
     expect(popover()!.textContent).toContain('dev@example.com');
     expect(menu()!.textContent).not.toContain('dev@example.com');
-    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(1);
+    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(2);
+    expect(menu()!.querySelector('a[role="menuitem"]')!.getAttribute('href')).toBe('/help');
     expect(menu()!.getAttribute('aria-labelledby')).toBe(btn().id);
     expect(btn().getAttribute('aria-controls')).toBe(menu()!.id);
     expect(item()!.textContent).toContain('Sign out');

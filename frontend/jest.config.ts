@@ -12,7 +12,7 @@ const config: Config = {
       { tsconfig: '<rootDir>/tsconfig.spec.json', stringifyContentPathRegex: '\\.(html|svg)$' },
     ],
   },
-  moduleNameMapper: { '^src/(.*)$': '<rootDir>/src/$1' },
+  moduleNameMapper: { '^src/(.*)$': '<rootDir>/src/$1', '^marked$': '<rootDir>/../node_modules/marked/lib/marked.umd.js' },
 };
 
 export default config;

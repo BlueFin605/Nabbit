@@ -5,13 +5,16 @@
   "scripts": {
     "ng": "ng",
     "start": "node scripts/serve.mjs",
-    "prebuild": "node scripts/build-env.mjs",
+    "prebuild": "node scripts/build-env.mjs && node scripts/help-index.mjs",
     "build": "ng build --configuration production",
     "build:dev": "ng build --configuration development",
     "icons": "node scripts/generate-icons.mjs",
     "test": "jest",
     "lint": "ng lint",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.spec.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.spec.json",
+    "prebuild:dev": "node scripts/help-index.mjs",
+    "prestart": "node scripts/help-index.mjs",
+    "pretest": "node scripts/help-index.mjs"
   },
   "dependencies": {
     "@angular/cdk": "^22.2.1",
@@ -24,6 +27,7 @@
     "@angular/service-worker": "^22.2.1",
     "@nabbit/recipe-core": "^0.0.0",
     "amazon-cognito-identity-js": "^6.3.16",
+    "marked": "^18.0.14",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

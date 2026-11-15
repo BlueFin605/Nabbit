@@ -12,6 +12,7 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Auth } from '../auth/auth';
 
 /** First letter (uppercased) of the display name, else the email, else '?'. */
@@ -41,6 +42,7 @@ let nextAvatarMenuId = 0;
 /** Round avatar button with an account popover (name, email, Sign out). Sign out is an output; the shell decides what it does. */
 @Component({
   selector: 'app-avatar-menu',
+  imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown)': 'onKeydown($event)' },
   styles: `
@@ -69,6 +71,12 @@ let nextAvatarMenuId = 0;
       display: block; width: 100%; min-height: 48px; padding: 0 16px; border: 0; background: none;
       color: inherit; font: inherit; text-align: start; cursor: pointer;
     }
+    .menu-item {
+      box-sizing: border-box; display: flex; align-items: center; width: 100%; min-height: 48px; padding: 0 16px;
+      color: inherit; font: inherit; text-decoration: none; cursor: pointer;
+    }
+    .menu-item:hover { background: rgb(128 128 128 / 0.15); }
+    .menu-item:focus-visible { outline: 3px solid #1b1b1f; outline-offset: -5px; box-shadow: inset 0 0 0 2px #fff; }
     .signout:hover { background: rgb(128 128 128 / 0.15); }
   `,
   template: `
@@ -93,6 +101,7 @@ let nextAvatarMenuId = 0;
           <div class="email">{{ auth.user()?.email }}</div>
         </div>
         <div role="menu" [id]="menuId" [attr.aria-labelledby]="triggerId">
+          <a role="menuitem" class="menu-item help-link" routerLink="/help">Help</a>
           <button #signOutItem type="button" role="menuitem" class="signout" (click)="onSignOut()">Sign out</button>
         </div>
       </div>
