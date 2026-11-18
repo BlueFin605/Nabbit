@@ -3,6 +3,7 @@
 // Seeds demo recipes and a shopping list through the dev API, drives the built PWA, optimises PNGs with sharp.
 import { chromium, devices, request } from '@playwright/test';
 import sharp from 'sharp';
+import { Buffer } from 'node:buffer';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
