@@ -51,6 +51,8 @@ The backend build bundles each handler with esbuild to `backend/dist/<name>/inde
 
 Deployment is handled by a private repo, not this one, and is manual: it builds the backend and frontend with the deployment config, runs `cdk deploy` for the infrastructure (see `infrastructure/SYSDOC.md`), and syncs `frontend/dist/browser` to the site bucket. CI here (`.github/workflows/build.yml`) only typechecks, lints, tests and builds.
 
+**Using an existing Cognito user pool (optional).** By default `cdk deploy` creates its own user pool, Google identity provider and hosted-UI domain. To use a pool that already exists, pass both CDK context values: `-c identityUserPoolId=<user-pool-id> -c identityDomain=<hosted-ui-domain>`, where the domain is the pool's hosted-UI host without a scheme (a custom domain such as `auth.example.com`, or `<prefix>.auth.<region>.amazoncognito.com`). Pass both or neither. The stack then creates only its app client in that pool, so the pool needs a Google identity provider named exactly `Google` (the client always lists it) and a hosted-UI domain matching `identityDomain`.
+
 ## Tests
 
 - Unit: `npm test` runs every workspace (Vitest for `shared/recipe-core` and `backend`, Jest for `frontend`).
