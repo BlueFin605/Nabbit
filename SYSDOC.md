@@ -18,6 +18,12 @@ Tech stack: Angular PWA / Node 24 TypeScript Lambda backend / shared TypeScript 
 
 npm workspaces: `shared/*`, `backend`, `frontend`, `e2e`. `infrastructure` is .NET, not a workspace.
 
+## Public landing and in-app help
+
+- **Routes** (`frontend/src/app/app.routes.ts`): `/` is a public landing page behind `landingGuard` (signed-in users are redirected to `/recipes`, visitors see the landing). `/help` and `/help/:topic` render the help guides behind `authGuard`, and the avatar menu has a Help entry.
+- **Help pipeline**: the guides are markdown in `docs/help/` (numbered `NN-slug.md`, first heading is the title; `docs/help/README.md` is not a topic) with screenshots in `docs/help/images/`. `frontend/scripts/help-index.mjs` runs as `prebuild`, `prebuild:dev`, `prestart` and `pretest`: it mirrors `docs/help` into the git-ignored `frontend/src/assets/help/` and writes `help-index.json` (ordered slug/title list). The `src/assets` glob in `angular.json` serves them at `/assets/help`, and the help viewer renders them with `marked`. Edit `docs/help`, never the mirror.
+- **Screenshots**: `npm run help:screenshots` (`e2e/screenshots/capture.mjs`, Playwright) needs the e2e stack running first (`npm run stack:up -w e2e`). It writes desktop and phone shots to `docs/help/images/` and the landing page images to `frontend/src/assets/screens/`. `src/assets` is git-ignored, so the landing images are force-added (`git add -f`); re-run and re-add after UI changes.
+
 ## Data flow: import, preview, save
 
 ```mermaid
@@ -98,7 +104,7 @@ Code and tests exist, but these have not been verified end to end:
 
 - `npm run dev` (the Aspire stack) was run for real on alternate ports (2026-11-02): containers, `init-db`, backend `/health`, an `X-Dev-Sub` POST/GET round trip and the frontend dev server all worked. Not verified: the Cognito Local sign-in flow, running on the default ports, and a clean Ctrl+C shutdown (the verification run was killed, which orphaned its containers).
 - The deploy script and the manual deploy workflow in Home (which now update both the API and import Lambdas) have never been run.
-- Unverified on real infrastructure: the Cognito sign-in and Hosted UI sign-out round trip (the frontend does a real logout and lands on a "signed out" screen), the install prompt, the Android share sheet, S3 presigned upload against the bucket CORS rule, and API Gateway answering CORS preflight itself (the API has no authorized `$default` route).
+- Unverified on real infrastructure: the Cognito sign-in and Hosted UI sign-out round trip (the frontend does a real logout and lands on the public landing page), the install prompt, the Android share sheet, S3 presigned upload against the bucket CORS rule, and API Gateway answering CORS preflight itself (the API has no authorized `$default` route).
 - `pinnedFetch` (the real TLS path of `safe-fetch`) has no automated test; the e2e fixture hook bypasses it.
 - `POST /recipes/images/import` and the photo candidate chooser are unverified on real infrastructure until Dean's smoke test (the import Lambda's S3 write and its new API Gateway route have never been exercised in AWS).
 - The Bedrock LLM path (model access, the scoped `bedrock:InvokeModel` grant, `LLM_MODEL_ID`, real model output) is unverified on real infrastructure until Dean's smoke test; unit and e2e tests use a stub parser. Bedrock model access must be enabled in the account first.

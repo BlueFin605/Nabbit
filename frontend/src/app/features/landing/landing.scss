@@ -1,0 +1,150 @@
+:host {
+  display: block;
+}
+
+.landing {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: center;
+  padding: 24px 0;
+}
+
+h1 {
+  font-size: 3.5rem;
+  line-height: 1.05;
+  margin: 0 0 16px;
+}
+
+h2 {
+  margin: 0 0 16px;
+}
+
+h3 {
+  margin: 12px 0 6px;
+}
+
+.pitch {
+  font-size: 1.25rem;
+  line-height: 1.5;
+  margin: 0 0 28px;
+}
+
+.shot {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+
+  img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    max-height: 560px;
+    height: auto;
+    border-radius: 16px;
+    border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+    box-shadow: 0 6px 24px color-mix(in srgb, currentColor 18%, transparent);
+  }
+}
+
+.feature-shot {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  height: auto;
+  margin: 16px auto 0;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.grid .card {
+  grid-column: span 2;
+}
+
+.grid .card:nth-child(n + 4) {
+  grid-column: span 3;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.icon {
+  display: block;
+  color: var(--mat-sys-primary, #2e7d32);
+}
+
+.num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--mat-sys-primary, #2e7d32);
+  color: var(--mat-sys-on-primary, #fff);
+  font-weight: 600;
+}
+
+.card {
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-radius: 12px;
+  padding: 20px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.foot {
+  text-align: center;
+  padding: 16px 0 8px;
+}
+
+@media (max-width: 800px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .grid .card,
+  .grid .card:nth-child(n + 4) {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    text-align: center;
+  }
+
+  h1 {
+    font-size: 2.75rem;
+  }
+
+  .shot img {
+    max-height: 420px;
+  }
+}

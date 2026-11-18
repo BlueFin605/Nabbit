@@ -1,5 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { Auth, type AuthUser } from '../auth/auth';
 import { AvatarMenu, avatarColour, avatarInitial } from './avatar-menu';
 
@@ -77,7 +78,7 @@ describe('AvatarMenu', () => {
   const btn = () => el().querySelector<HTMLButtonElement>('button.avatar-btn')!;
   const menu = () => el().querySelector<HTMLElement>('[role="menu"]');
   const popover = () => el().querySelector<HTMLElement>('.popover');
-  const item = () => el().querySelector<HTMLButtonElement>('[role="menuitem"]');
+  const item = () => el().querySelector<HTMLButtonElement>('button[role="menuitem"]');
 
   async function settle() {
     fixture.detectChanges();
@@ -91,7 +92,7 @@ describe('AvatarMenu', () => {
 
   beforeEach(async () => {
     user.set({ userId: 'u1', email: 'dev@example.com', displayName: 'Local Dev User' });
-    TestBed.configureTestingModule({ providers: [{ provide: Auth, useValue: { user } }] });
+    TestBed.configureTestingModule({ providers: [provideRouter([]), { provide: Auth, useValue: { user } }] });
     fixture = TestBed.createComponent(Host);
     host = fixture.componentInstance;
     document.body.appendChild(el());
@@ -121,7 +122,8 @@ describe('AvatarMenu', () => {
     expect(popover()!.textContent).toContain('Local Dev User');
     expect(popover()!.textContent).toContain('dev@example.com');
     expect(menu()!.textContent).not.toContain('dev@example.com');
-    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(1);
+    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(2);
+    expect(menu()!.querySelector('a[role="menuitem"]')!.getAttribute('href')).toBe('/help');
     expect(menu()!.getAttribute('aria-labelledby')).toBe(btn().id);
     expect(btn().getAttribute('aria-controls')).toBe(menu()!.id);
     expect(item()!.textContent).toContain('Sign out');
@@ -143,6 +145,28 @@ describe('AvatarMenu', () => {
     await settle();
     expect(menu()).toBeNull();
     expect(document.activeElement).toBe(btn());
+  });
+
+  it('moves between menu items with arrow keys, Home and End (wrapping), so Help is reachable', async () => {
+    await open();
+    const help = el().querySelector<HTMLElement>('a[role="menuitem"]')!;
+    const key = (k: string) => {
+      const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true });
+      (document.activeElement as HTMLElement).dispatchEvent(e);
+      return e;
+    };
+    expect(document.activeElement).toBe(item());
+    expect(key('ArrowUp').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(help);
+    key('ArrowUp');
+    expect(document.activeElement).toBe(item());
+    key('ArrowDown');
+    expect(document.activeElement).toBe(help);
+    key('End');
+    expect(document.activeElement).toBe(item());
+    key('Home');
+    expect(document.activeElement).toBe(help);
+    expect(menu()).not.toBeNull();
   });
 
   it('closes on an outside click without stealing focus', async () => {

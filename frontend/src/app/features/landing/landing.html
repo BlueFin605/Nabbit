@@ -1,0 +1,59 @@
+<div class="landing">
+  <section class="hero">
+    <div class="hero-text">
+      <h1>Nabbit</h1>
+      <p class="pitch">Collect recipes from anywhere, scale them to fit, and shop for them in one tap.</p>
+      <a mat-flat-button routerLink="/signin" class="signin-btn">Sign in / Get started</a>
+    </div>
+    <figure class="shot">
+      <img src="assets/screens/hero.png" width="780" height="1587" alt="A Nabbit recipe, Sunday Lasagne, scaled to six servings on a phone" fetchpriority="high" />
+    </figure>
+  </section>
+
+  <section class="features" aria-labelledby="features-h">
+    <h2 id="features-h">What you can do</h2>
+    <div class="grid">
+      @for (f of features; track f.title) {
+        <article class="card feature">
+          <svg class="icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path [attr.d]="f.icon" /></svg>
+          <h3>{{ f.title }}</h3>
+          <p>{{ f.text }}</p>
+          @if (f.shot) {
+            <img class="feature-shot" [src]="f.shot.src" width="780" height="1587" [alt]="f.shot.alt" loading="lazy" />
+          }
+        </article>
+      }
+    </div>
+  </section>
+
+  <section class="how" aria-labelledby="how-h">
+    <h2 id="how-h">How it works</h2>
+    <ol class="steps">
+      @for (s of steps; track s.title) {
+        <li class="card step">
+          <span class="num" aria-hidden="true">{{ s.icon }}</span>
+          <h3>{{ s.title }}</h3>
+          <p>{{ s.text }}</p>
+        </li>
+      }
+    </ol>
+  </section>
+
+  <section class="faq" aria-labelledby="faq-h">
+    <h2 id="faq-h">Questions</h2>
+    <mat-accordion>
+      @for (item of faqs; track item.q) {
+        <mat-expansion-panel class="faq-item">
+          <mat-expansion-panel-header>
+            <mat-panel-title>{{ item.q }}</mat-panel-title>
+          </mat-expansion-panel-header>
+          <p>{{ item.a }}</p>
+        </mat-expansion-panel>
+      }
+    </mat-accordion>
+  </section>
+
+  <footer class="foot">
+    <a mat-button routerLink="/help" class="help-link">Help (sign in required)</a>
+  </footer>
+</div>
