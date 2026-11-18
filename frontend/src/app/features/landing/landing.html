@@ -15,7 +15,7 @@
     <div class="grid">
       @for (f of features; track f.title) {
         <article class="card feature">
-          <mat-icon aria-hidden="true">{{ f.icon }}</mat-icon>
+          <svg class="icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path [attr.d]="f.icon" /></svg>
           <h3>{{ f.title }}</h3>
           <p>{{ f.text }}</p>
           @if (f.shot) {
@@ -31,7 +31,7 @@
     <ol class="steps">
       @for (s of steps; track s.title) {
         <li class="card step">
-          <mat-icon aria-hidden="true">{{ s.icon }}</mat-icon>
+          <span class="num" aria-hidden="true">{{ s.icon }}</span>
           <h3>{{ s.title }}</h3>
           <p>{{ s.text }}</p>
         </li>
