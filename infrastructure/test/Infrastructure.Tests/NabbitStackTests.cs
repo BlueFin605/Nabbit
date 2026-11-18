@@ -137,12 +137,12 @@ namespace Infrastructure.Tests
                 : new List<string> { st.GetProperty("Action").GetString() };
 
         [Fact]
-        public void ImportRole_CanOnlyUpdateItemOnTable()
+        public void ImportRole_CanOnlyUpdateAndGetItemOnTable()
         {
             var tableActions = AllowStatementsFor(Synth(), "ImportFunctionServiceRole")
                 .Where(st => st.GetProperty("Resource").ToString().Contains("DataTable"))
                 .SelectMany(Actions).ToList();
-            Assert.Equal(new[] { "dynamodb:UpdateItem" }, tableActions.Distinct().ToArray());
+            Assert.Equal(new[] { "dynamodb:GetItem", "dynamodb:UpdateItem" }, tableActions.Distinct().OrderBy(a => a).ToArray());
         }
 
         [Fact]
@@ -173,9 +173,9 @@ namespace Infrastructure.Tests
                 .SelectMany(Actions).ToList();
             Assert.Contains("s3:PutObject", s3Actions);
             Assert.All(s3Actions, a => Assert.True(a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
-            // No other new permissions: table is still UpdateItem only, and nothing but dynamodb/s3/logs-style statements exist.
+            // No other new permissions: table is UpdateItem + GetItem only, and nothing but dynamodb/s3/logs-style statements exist.
             var allActions = AllowStatementsFor(t, "ImportFunctionServiceRole").SelectMany(Actions).ToList();
-            Assert.All(allActions, a => Assert.True(a == "dynamodb:UpdateItem" || a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
+            Assert.All(allActions, a => Assert.True(a == "dynamodb:UpdateItem" || a == "dynamodb:GetItem" || a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
             var import = Resources(t, "AWS::Lambda::Function").Single(f =>
                 f.Value.GetProperty("Properties").TryGetProperty("FunctionName", out var n) && n.GetString() == "nabbit-import-production");
             Assert.True(import.Value.GetProperty("Properties").GetProperty("Environment").GetProperty("Variables").TryGetProperty("IMAGE_BUCKET", out _));

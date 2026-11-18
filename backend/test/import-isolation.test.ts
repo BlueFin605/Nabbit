@@ -16,7 +16,13 @@ function event(rawPath: string, method = 'POST', body: unknown = {}): APIGateway
 }
 type H = (e: APIGatewayProxyEventV2) => Promise<{ statusCode?: number }>;
 
-beforeEach(() => vi.resetModules());
+beforeEach(async () => {
+  vi.resetModules();
+  // Fresh module registry: inject an in-memory db so owner resolution never reaches real DynamoDB.
+  const { setDb } = await import('../src/db.js');
+  const { createMemoryDb } = await import('../src/db-memory.js');
+  setDb(createMemoryDb());
+});
 
 describe('import route isolation', () => {
   it('api handler does not serve POST /recipes/import or path variants', async () => {
@@ -35,6 +41,9 @@ describe('import route isolation', () => {
     const api = (await import('../src/handlers/api.js')) as { handler: H };
     expect((await api.handler(event('/recipes/images/import'))).statusCode).toBe(404);
     vi.resetModules();
+    const { setDb } = await import('../src/db.js');
+    const { createMemoryDb } = await import('../src/db-memory.js');
+    setDb(createMemoryDb());
     const imp = (await import('../src/handlers/import.js')) as { handler: H };
     expect((await imp.handler(event('/recipes/images/import'))).statusCode).toBe(400);
   });

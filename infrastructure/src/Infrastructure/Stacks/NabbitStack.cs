@@ -186,11 +186,11 @@ namespace Infrastructure.Stacks
                     { "IMPORT_CONTACT_URL", $"https://{config.Domain}" },
                 },
             });
-            // The import Lambda only bumps the per-user rate counter, so it gets UpdateItem and nothing else.
+            // The import Lambda bumps the per-user rate counter (UpdateItem) and resolves the owner alias item (GetItem); nothing else.
             ImportFunction.AddToRolePolicy(new PolicyStatement(new PolicyStatementProps
             {
                 Effect = Effect.ALLOW,
-                Actions = new[] { "dynamodb:UpdateItem" },
+                Actions = new[] { "dynamodb:UpdateItem", "dynamodb:GetItem" },
                 Resources = new[] { DataTable.TableArn },
             }));
             // Optional LLM fallback parser. Bedrock Converse is authorised by bedrock:InvokeModel (there is no separate
