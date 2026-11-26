@@ -296,7 +296,7 @@ function extract(text: string, opts: TextExtractOptions): RecipeDraft {
     if (SERVINGS_LINE.test(l)) continue;
     if (section === 'method') {
       if (l.length <= MAX_GROUP_HEADING && /:$/.test(l) && !NUMBERED.test(l)) {
-        const heading = l.replace(/[:s]+$/, '');
+        const heading = l.replace(/[:\s]+$/, '');
         if (heading) {
           group = { heading, steps: [] };
           steps.push(group);

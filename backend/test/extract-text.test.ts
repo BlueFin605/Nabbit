@@ -233,4 +233,11 @@ Great recipe!`;
   it('keeps the first-line title for plain text without page markers', () => {
     expect(extractFromText(HEADED).recipe.title).toBe('Fluffy Pancakes');
   });
+
+  it('keeps the full group heading when it ends in the letter s', () => {
+    const d = extractFromText(
+      ['Pie', 'Ingredients', '1 cup flour', 'Directions', 'For the sauces:', 'Mix the flour and water well.', 'Bake it until golden brown.'].join('\n'),
+    );
+    expect(d.recipe.steps).toEqual([{ heading: 'For the sauces', steps: ['Mix the flour and water well.', 'Bake it until golden brown.'] }]);
+  });
 });
