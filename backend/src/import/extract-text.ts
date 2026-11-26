@@ -1,6 +1,6 @@
 import { parse, type Node as HtmlNode, type HTMLElement } from 'node-html-parser';
 import { MAX_STEP_COUNT, convertTemperatures, normaliseUnit, parseIngredient, toMetric } from '@nabbit/recipe-core';
-import type { RecipeDraft } from '@nabbit/recipe-core';
+import type { RecipeDraft, StepGroup, StepNode } from '@nabbit/recipe-core';
 
 // Limits keeping work bounded on hostile or pathological input.
 const MAX_INPUT = 200_000;
@@ -148,6 +148,51 @@ function headingKind(s: string): 'ing' | 'method' | 'other' | undefined {
   return undefined;
 }
 
+// ---- whole-page paste (page chrome around a recipe card) ----
+
+const JUMP_TO_RECIPE = /^jump to recipe$/i;
+const RATING_NUM = /^[0-5](?:\.\d)?$/;
+const RATING_COUNT = /^\(\d[\d,]*\)$/;
+const RATING_META = /^(?:\d[\d,]*\s+(?:reviews?|ratings?|photos?|comments?)|print|save|share|rate|pin|jump to recipe)$/i;
+const NAV_WORDS = /^(?:skip to (?:main )?content|home|menu|search(?: the site)?|recipes?|newsletters?|sweepstakes|about(?: us)?|contact|log ?in|sign ?(?:in|up)|subscribe|videos?|news|shop|cuisines?|occasions?|ingredients?|categories|breadcrumbs?)$/i;
+/** A scale toggle ("1/2x", "2X") or the "Original recipe (1X) yields N servings" caption. */
+const SCALE_TOGGLE = /^\d+(?:\/\d+)?\s*x$/i;
+const ORIGINAL_YIELD = /^original recipe\b/i;
+/** Photo credit lines ("Photographer: ...", "Photo: ..."). */
+const PHOTO_CREDIT = /^(?:photograph(?:er|y)|photos?(?: credit)?|image(?: credit)?)\s*:/i;
+/** Lines that end the recipe card: whatever follows is not part of the recipe. */
+const END_MARKER = /^(?:from the editor|editor'?s? note|nutrition(?: facts| information)?\b|reviews?\s*(?:\(\d+\))?:?$|most[- ]saved|[\w ]*\bcommunity tips\b|you (?:might|may) also like|related recipes|more recipes|comments?\s*(?:\(\d+\))?:?$|leave a (?:comment|review))/i;
+const MAX_GROUP_HEADING = 60;
+
+/** Drops photo credits and the caption line (no sentence punctuation) that precedes one. */
+function dropPhotoCredits(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (PHOTO_CREDIT.test(lines[i])) continue;
+    if (i + 1 < lines.length && PHOTO_CREDIT.test(lines[i + 1]) && !/[.!?]["')\]]?$/.test(lines[i])) continue;
+    out.push(lines[i]);
+  }
+  return out;
+}
+
+const plausibleTitle = (l: string): boolean =>
+  l.length <= MAX_TITLE && !NAV_WORDS.test(l) && !headingKind(l) && !SERVINGS_LINE.test(l) && !startsWithQuantity(l) && !NUMBERED.test(l);
+
+/**
+ * For a pasted web page: index of the title line just before the recipe card's
+ * rating block / "Jump to Recipe" marker, or -1 when the text has no such marker.
+ */
+function findPageTitle(lines: string[]): number {
+  let marker = lines.findIndex((l, i) => RATING_NUM.test(l) && RATING_COUNT.test(lines[i + 1] ?? ''));
+  if (marker < 0) marker = lines.findIndex((l) => JUMP_TO_RECIPE.test(l));
+  if (marker < 0) return -1;
+  for (let i = marker - 1; i >= 0 && marker - i <= 6; i--) {
+    if (RATING_META.test(lines[i]) || RATING_NUM.test(lines[i]) || RATING_COUNT.test(lines[i])) continue;
+    return plausibleTitle(lines[i]) ? i : -1;
+  }
+  return -1;
+}
+
 const stripStep = (s: string): string => s.replace(NUMBERED, '').trim();
 
 function findServings(lines: string[]): number {
@@ -199,7 +244,7 @@ export function extractFromText(text: string, opts: TextExtractOptions = {}): Re
 
 function extract(text: string, opts: TextExtractOptions): RecipeDraft {
   const tags = new Set<string>();
-  const lines: string[] = [];
+  let lines: string[] = [];
   for (const raw of text.slice(0, MAX_INPUT).split(/\r\n|\r|\n/)) {
     if (!raw.trim()) continue;
     const l = cleanLine(raw, tags);
@@ -207,10 +252,15 @@ function extract(text: string, opts: TextExtractOptions): RecipeDraft {
     if (lines.length >= MAX_LINES) break;
   }
 
+  lines = dropPhotoCredits(lines);
   const draft = empty();
   const hint = typeof opts.titleHint === 'string' ? cleanLine(opts.titleHint, new Set()).slice(0, MAX_TITLE) : '';
   let title = hint;
-  if (!title && lines.length) {
+  const pageTitleAt = title ? -1 : findPageTitle(lines);
+  if (pageTitleAt >= 0) {
+    title = lines[pageTitleAt];
+    lines = lines.slice(pageTitleAt + 1);
+  } else if (!title && lines.length) {
     const f = lines[0];
     if (f.length <= MAX_TITLE && !headingKind(f) && !SERVINGS_LINE.test(f) && !startsWithQuantity(f) && !NUMBERED.test(f)) {
       title = f;
@@ -220,35 +270,54 @@ function extract(text: string, opts: TextExtractOptions): RecipeDraft {
 
   const hasHeadings = lines.some((l) => headingKind(l) === 'ing' || headingKind(l) === 'method');
   const ingredients: string[] = [];
-  const steps: string[] = [];
+  const steps: StepNode[] = [];
+  let group: StepGroup | undefined;
+  let stepCount = 0;
+  const addStep = (s: string): void => {
+    if (stepCount >= MAX_STEP_COUNT) return;
+    stepCount++;
+    (group ? group.steps : steps).push(convertTemperatures(s));
+  };
   let section: 'auto' | 'ing' | 'method' | 'other' = 'auto';
   let last: 'ing' | 'step' | undefined;
 
   for (const l of lines) {
-    if (ingredients.length >= MAX_ITEMS && steps.length >= MAX_STEP_COUNT) break;
+    if (ingredients.length >= MAX_ITEMS && stepCount >= MAX_STEP_COUNT) break;
+    if ((section === 'ing' || section === 'method') && l.length <= 60 && END_MARKER.test(l)) break;
     const h = headingKind(l);
     if (h) {
       section = h;
+      group = undefined;
       last = undefined;
       continue;
     }
+    if (SCALE_TOGGLE.test(l) || ORIGINAL_YIELD.test(l)) continue;
     if (section === 'other' || (section === 'auto' && hasHeadings)) continue;
     if (SERVINGS_LINE.test(l)) continue;
     if (section === 'method') {
+      if (l.length <= MAX_GROUP_HEADING && /:$/.test(l) && !NUMBERED.test(l)) {
+        const heading = l.replace(/[:s]+$/, '');
+        if (heading) {
+          group = { heading, steps: [] };
+          steps.push(group);
+        }
+        last = undefined;
+        continue;
+      }
       const s = stripStep(l);
-      if (s) steps.push(s);
+      if (s) addStep(s);
       last = 'step';
       continue;
     }
     if (NUMBERED.test(l) || NUMBERED_ONLY.test(l)) {
       const s = stripStep(l);
-      if (s) steps.push(s);
+      if (s) addStep(s);
       last = 'step';
     } else if (startsWithQuantity(l) && !isSentence(l)) {
       ingredients.push(l);
       last = 'ing';
     } else if (isSentence(l)) {
-      steps.push(l);
+      addStep(l);
       last = 'step';
     } else if (last === 'ing' && l.length <= 60 && !/[.!?]$/.test(l) && !(section === 'ing' && l.endsWith(':'))) {
       ingredients.push(l);
@@ -258,7 +327,7 @@ function extract(text: string, opts: TextExtractOptions): RecipeDraft {
   draft.recipe.title = title.slice(0, MAX_TITLE);
   draft.recipe.servings = findServings(lines);
   draft.recipe.ingredients = ingredients.slice(0, MAX_ITEMS).map((l) => toMetric(parseIngredient(l)));
-  draft.recipe.steps = steps.slice(0, MAX_STEP_COUNT).map(convertTemperatures);
+  draft.recipe.steps = steps.filter((n) => typeof n === 'string' || n.steps.length > 0);
   draft.recipe.tags = [...tags].slice(0, MAX_TAGS);
   const url = validUrl(opts.sourceUrl);
   if (url) draft.recipe.sourceUrl = url;
