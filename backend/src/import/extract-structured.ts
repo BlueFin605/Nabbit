@@ -1,5 +1,5 @@
 import { parse, type HTMLElement } from 'node-html-parser';
-import { mapSteps, MAX_STEP_DEPTH, convertTemperatures, parseIngredient, toMetric } from '@nabbit/recipe-core';
+import { mapSteps, MAX_STEP_COUNT, MAX_STEP_DEPTH, convertTemperatures, parseIngredient, toMetric } from '@nabbit/recipe-core';
 import type { RecipeDraft, StepNode } from '@nabbit/recipe-core';
 
 export type StructuredDraft = RecipeDraft & { imageUrl?: string };
@@ -101,7 +101,7 @@ interface StepBudget {
  * group headed by its name, at any depth; a recipe without sections yields the flat list it always did. Groups nested
  * deeper than the stored-recipe depth cap are spliced into their parent so the draft still validates.
  */
-function stepsFrom(v: Json, budget: StepBudget = { left: MAX_ITEMS }, depth = 0, level = 0): StepNode[] {
+function stepsFrom(v: Json, budget: StepBudget = { left: MAX_STEP_COUNT }, depth = 0, level = 0): StepNode[] {
   const out: StepNode[] = [];
   if (budget.left <= 0 || depth > MAX_DEPTH) return out;
   if (typeof v === 'string') {
@@ -288,7 +288,7 @@ function microdataRecipe(root: HTMLElement, base: string): Raw | undefined {
     .map((e) => cleanText(propValue(e)))
     .filter(Boolean);
 
-  const budget: StepBudget = { left: MAX_ITEMS };
+  const budget: StepBudget = { left: MAX_STEP_COUNT };
   const steps: StepNode[] = [];
   for (const el of named('recipeInstructions')) {
     steps.push(...microSteps(el, budget, 0));

@@ -1,5 +1,5 @@
 import { parse, type Node as HtmlNode, type HTMLElement } from 'node-html-parser';
-import { convertTemperatures, normaliseUnit, parseIngredient, toMetric } from '@nabbit/recipe-core';
+import { MAX_STEP_COUNT, convertTemperatures, normaliseUnit, parseIngredient, toMetric } from '@nabbit/recipe-core';
 import type { RecipeDraft } from '@nabbit/recipe-core';
 
 // Limits keeping work bounded on hostile or pathological input.
@@ -225,7 +225,7 @@ function extract(text: string, opts: TextExtractOptions): RecipeDraft {
   let last: 'ing' | 'step' | undefined;
 
   for (const l of lines) {
-    if (ingredients.length >= MAX_ITEMS && steps.length >= MAX_ITEMS) break;
+    if (ingredients.length >= MAX_ITEMS && steps.length >= MAX_STEP_COUNT) break;
     const h = headingKind(l);
     if (h) {
       section = h;
@@ -258,7 +258,7 @@ function extract(text: string, opts: TextExtractOptions): RecipeDraft {
   draft.recipe.title = title.slice(0, MAX_TITLE);
   draft.recipe.servings = findServings(lines);
   draft.recipe.ingredients = ingredients.slice(0, MAX_ITEMS).map((l) => toMetric(parseIngredient(l)));
-  draft.recipe.steps = steps.slice(0, MAX_ITEMS).map(convertTemperatures);
+  draft.recipe.steps = steps.slice(0, MAX_STEP_COUNT).map(convertTemperatures);
   draft.recipe.tags = [...tags].slice(0, MAX_TAGS);
   const url = validUrl(opts.sourceUrl);
   if (url) draft.recipe.sourceUrl = url;
