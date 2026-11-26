@@ -168,3 +168,76 @@ describe('htmlToText', () => {
     expect(htmlToText('<p>' + 'x'.repeat(3_000_000) + '</p>').length).toBeLessThanOrEqual(500_000);
   });
 });
+
+describe('extractFromText: whole web page pasted', () => {
+  const orig = (d: ReturnType<typeof extractFromText>) => d.recipe.ingredients.map((i) => i.original);
+
+  it('extracts a clean recipe from a pasted allrecipes page', () => {
+    const d = extractFromText(fx('allrecipes-fish-batter-paste.txt'));
+    expect(d.recipe.title).toBe('Unbelievable Fish Batter');
+    expect(d.recipe.servings).toBe(6);
+    expect(orig(d)).toEqual([
+      '1 cup all-purpose flour',
+      '1/2 cup milk',
+      '1/2 cup water',
+      '2 tablespoons baking powder',
+      '1 teaspoon salt',
+    ]);
+    const steps = d.recipe.steps;
+    expect(steps[0]).toBe('Gather ingredients.');
+    expect(steps[1]).toBe('Whisk flour, milk, water, baking powder, and salt together in a bowl until smooth.');
+    const group = steps[2] as { heading: string; steps: string[] };
+    expect(group.heading).toBe('To Use');
+    expect(group.steps).toHaveLength(5);
+    expect(group.steps[0]).toMatch(/^Heat vegetable or canola oil in a deep fryer/);
+    expect(group.steps[4]).toBe('Serve hot and enjoy.');
+    expect(steps).toHaveLength(3);
+    const all = JSON.stringify(steps);
+    expect(all).not.toMatch(/Photographer|Calories|Perfumella|From the Editor/);
+  });
+
+  it('works on a differently worded page (generic markers)', () => {
+    const page = `Home
+Dinner
+Pasta
+Creamy Garlic Pasta
+4.8
+(212)
+Print
+Jump to Recipe
+A long story about my grandmother and her kitchen, which I loved dearly every single summer.
+Ingredients
+200 g spaghetti
+2 cloves garlic, minced
+1 cup cream
+Instructions
+Boil the spaghetti in salted water until al dente, then drain well.
+Plated pasta in a white bowl
+Photo: Jane Doe
+Stir the garlic and cream in a pan over medium heat until thickened.
+Nutrition Facts
+350 kcal
+Most-Saved Recipes
+Garlic Bread
+Comments
+Great recipe!`;
+    const d = extractFromText(page);
+    expect(d.recipe.title).toBe('Creamy Garlic Pasta');
+    expect(orig(d)).toEqual(['200 g spaghetti', '2 cloves garlic, minced', '1 cup cream']);
+    expect(d.recipe.steps).toEqual([
+      'Boil the spaghetti in salted water until al dente, then drain well.',
+      'Stir the garlic and cream in a pan over medium heat until thickened.',
+    ]);
+  });
+
+  it('keeps the first-line title for plain text without page markers', () => {
+    expect(extractFromText(HEADED).recipe.title).toBe('Fluffy Pancakes');
+  });
+
+  it('keeps the full group heading when it ends in the letter s', () => {
+    const d = extractFromText(
+      ['Pie', 'Ingredients', '1 cup flour', 'Directions', 'For the sauces:', 'Mix the flour and water well.', 'Bake it until golden brown.'].join('\n'),
+    );
+    expect(d.recipe.steps).toEqual([{ heading: 'For the sauces', steps: ['Mix the flour and water well.', 'Bake it until golden brown.'] }]);
+  });
+});
