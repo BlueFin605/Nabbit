@@ -9,6 +9,7 @@
  *   import rate   pk=OWNER#{ownerId}  sk=RATE#import#{epoch hour}  (count, ttl)
  *   LLM per owner pk=OWNER#{ownerId}  sk=RATE#llm#{yyyy-mm-dd}    (count, ttl)
  *   LLM app-wide  pk=GLOBAL           sk=RATE#llm#{yyyy-mm-dd}    (count, ttl)
+ *   owner alias   pk=ALIAS#{sub}      sk=ALIAS            (legacySub) - maps a shared-identity JWT sub to the owner id its data lives under; see owner.ts
  * Helpers `ownerPk` / `recipeSk` build keys so every item is scoped to its owner by construction.
  */
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';

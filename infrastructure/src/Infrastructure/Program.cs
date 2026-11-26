@@ -11,6 +11,10 @@ namespace Infrastructure
             var configFile = app.Node.TryGetContext("configFile")?.ToString() ?? "../config.json";
             var config = NabbitConfig.Load(configFile);
 
+            config.ExternalIdentity = NabbitConfig.ResolveExternalIdentity(
+                app.Node.TryGetContext("identityUserPoolId")?.ToString(),
+                app.Node.TryGetContext("identityDomain")?.ToString());
+
             var account = System.Environment.GetEnvironmentVariable("CDK_DEFAULT_ACCOUNT");
             var tags = new System.Collections.Generic.Dictionary<string, string>
             {

@@ -11,7 +11,7 @@ namespace Infrastructure.Tests
 {
     public class NabbitStackTests
     {
-        private static Template Synth(string llmModelId = null, int? llmGlobalDailyLimit = null, string youtubeApiKeyParam = null)
+        private static Template Synth(string llmModelId = null, int? llmGlobalDailyLimit = null, string youtubeApiKeyParam = null, string identityUserPoolId = null, string identityDomain = null)
         {
             var codeDir = Path.Combine(Path.GetTempPath(), "nabbit-test-api");
             Directory.CreateDirectory(codeDir);
@@ -22,6 +22,7 @@ namespace Infrastructure.Tests
             File.WriteAllText(Path.Combine(importDir, "index.js"), "exports.handler = async () => ({});");
 
             var config = new NabbitConfig { Domain = "nabbit.example.com", ApiCodePath = codeDir, ImportCodePath = importDir, LlmModelId = llmModelId, LlmGlobalDailyLimit = llmGlobalDailyLimit, YoutubeApiKeyParam = youtubeApiKeyParam };
+            config.ExternalIdentity = NabbitConfig.ResolveExternalIdentity(identityUserPoolId, identityDomain);
             var app = new App();
             var globalCert = Amazon.CDK.AWS.CertificateManager.Certificate.FromCertificateArn(app, "GlobalCert",
                 "arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000");
@@ -136,12 +137,12 @@ namespace Infrastructure.Tests
                 : new List<string> { st.GetProperty("Action").GetString() };
 
         [Fact]
-        public void ImportRole_CanOnlyUpdateItemOnTable()
+        public void ImportRole_CanOnlyUpdateAndGetItemOnTable()
         {
             var tableActions = AllowStatementsFor(Synth(), "ImportFunctionServiceRole")
                 .Where(st => st.GetProperty("Resource").ToString().Contains("DataTable"))
                 .SelectMany(Actions).ToList();
-            Assert.Equal(new[] { "dynamodb:UpdateItem" }, tableActions.Distinct().ToArray());
+            Assert.Equal(new[] { "dynamodb:GetItem", "dynamodb:UpdateItem" }, tableActions.Distinct().OrderBy(a => a).ToArray());
         }
 
         [Fact]
@@ -172,9 +173,9 @@ namespace Infrastructure.Tests
                 .SelectMany(Actions).ToList();
             Assert.Contains("s3:PutObject", s3Actions);
             Assert.All(s3Actions, a => Assert.True(a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
-            // No other new permissions: table is still UpdateItem only, and nothing but dynamodb/s3/logs-style statements exist.
+            // No other new permissions: table is UpdateItem + GetItem only, and nothing but dynamodb/s3/logs-style statements exist.
             var allActions = AllowStatementsFor(t, "ImportFunctionServiceRole").SelectMany(Actions).ToList();
-            Assert.All(allActions, a => Assert.True(a == "dynamodb:UpdateItem" || a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
+            Assert.All(allActions, a => Assert.True(a == "dynamodb:UpdateItem" || a == "dynamodb:GetItem" || a.StartsWith("s3:PutObject") || a.StartsWith("s3:Abort"), a));
             var import = Resources(t, "AWS::Lambda::Function").Single(f =>
                 f.Value.GetProperty("Properties").TryGetProperty("FunctionName", out var n) && n.GetString() == "nabbit-import-production");
             Assert.True(import.Value.GetProperty("Properties").GetProperty("Environment").GetProperty("Variables").TryGetProperty("IMAGE_BUCKET", out _));
@@ -395,6 +396,44 @@ namespace Infrastructure.Tests
             {
                 { "SupportedIdentityProviders", new[] { "COGNITO", "Google" } },
             }));
+        }
+
+        [Fact]
+        public void DefaultIdentity_CreatesOwnPoolDomainAndGoogleIdp()
+        {
+            var t = Synth();
+            t.ResourceCountIs("AWS::Cognito::UserPool", 1);
+            t.ResourceCountIs("AWS::Cognito::UserPoolDomain", 1);
+            t.ResourceCountIs("AWS::Cognito::UserPoolIdentityProvider", 1);
+            t.HasResourceProperties("AWS::Cognito::UserPoolDomain", Match.ObjectLike(new Dictionary<string, object> { { "Domain", "nabbit-auth-production" } }));
+        }
+
+        [Fact]
+        public void ExternalIdentity_ImportsPoolAndSkipsOwnIdentityResources()
+        {
+            var t = Synth(identityUserPoolId: "ap-southeast-2_TEST", identityDomain: "auth.example.com");
+            t.ResourceCountIs("AWS::Cognito::UserPool", 0);
+            t.ResourceCountIs("AWS::Cognito::UserPoolDomain", 0);
+            t.ResourceCountIs("AWS::Cognito::UserPoolIdentityProvider", 0);
+            t.ResourceCountIs("AWS::Cognito::UserPoolClient", 1);
+            t.HasResourceProperties("AWS::Cognito::UserPoolClient", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "UserPoolId", "ap-southeast-2_TEST" },
+                { "SupportedIdentityProviders", new[] { "COGNITO", "Google" } },
+                { "CallbackURLs", new[] { "https://nabbit.example.com/", "https://nabbit.example.com/auth/callback", "https://nabbit.example.com/callback" } },
+            }));
+            t.HasOutput("AuthDomain", Match.ObjectLike(new Dictionary<string, object> { { "Value", "auth.example.com" } }));
+            t.HasResourceProperties("AWS::ApiGatewayV2::Authorizer", Match.ObjectLike(new Dictionary<string, object>
+            {
+                { "AuthorizerType", "JWT" },
+            }));
+        }
+
+        [Fact]
+        public void ExternalIdentity_RequiresBothContextValues()
+        {
+            Assert.Throws<System.InvalidOperationException>(() => Synth(identityUserPoolId: "ap-southeast-2_TEST"));
+            Assert.Throws<System.InvalidOperationException>(() => Synth(identityDomain: "auth.example.com"));
         }
 
         [Fact]

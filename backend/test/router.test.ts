@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import { HttpError, handler, resetRoutes, route, type RouteHandler } from '../src/router.js';
+import { setDb } from '../src/db.js';
+import { createMemoryDb } from '../src/db-memory.js';
 
 function event(method: string, path: string, opts: { sub?: string; body?: string; b64?: boolean; query?: string } = {}): APIGatewayProxyEventV2 {
   return {
@@ -24,7 +26,10 @@ const call = async (e: APIGatewayProxyEventV2) => {
 };
 
 describe('router', () => {
-  beforeEach(() => resetRoutes());
+  beforeEach(() => {
+    resetRoutes();
+    setDb(createMemoryDb());
+  });
 
   it('401 without a sub claim', async () => {
     route('GET', '/recipes', async () => ({ status: 200 }));

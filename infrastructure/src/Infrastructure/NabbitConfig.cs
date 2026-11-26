@@ -33,6 +33,19 @@ namespace Infrastructure
         /// <summary>Folder holding the built import Lambda (index.js). Relative to the cdk working directory.</summary>
         public string ImportCodePath { get; set; } = "../backend/dist/import";
 
+        /// <summary>Set from CDK context (never config.json): use a shared, externally managed Cognito pool and hosted-UI domain instead of creating them.</summary>
+        public (string PoolId, string Domain)? ExternalIdentity { get; set; }
+
+        /// <summary>Builds <see cref="ExternalIdentity"/> from the two context values: both set or both empty, else throws.</summary>
+        public static (string PoolId, string Domain)? ResolveExternalIdentity(string poolId, string domain)
+        {
+            var hasPool = !string.IsNullOrWhiteSpace(poolId);
+            var hasDomain = !string.IsNullOrWhiteSpace(domain);
+            if (hasPool != hasDomain)
+                throw new InvalidOperationException("context \"identityUserPoolId\" and \"identityDomain\" must be provided together (or both omitted)");
+            return hasPool ? (poolId.Trim(), domain.Trim()) : null;
+        }
+
         public string ApiDomain => $"api.{Domain}";
         /// <summary>Cognito allows only 4 custom domains per (non-adjustable) account quota, so the hosted UI uses a Cognito prefix domain.</summary>
         public string AuthDomainPrefix => Name("auth");

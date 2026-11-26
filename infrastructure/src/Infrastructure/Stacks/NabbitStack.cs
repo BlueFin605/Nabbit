@@ -22,7 +22,7 @@ namespace Infrastructure.Stacks
     public class NabbitStack : Stack
     {
         public Table DataTable { get; }
-        public UserPool UserPool { get; }
+        public IUserPool UserPool { get; }
         public UserPoolClient UserPoolClient { get; }
         public Bucket ImageBucket { get; }
         public Bucket SpaBucket { get; }
@@ -53,41 +53,52 @@ namespace Infrastructure.Stacks
             });
 
             // ---- Auth ----
-            UserPool = new UserPool(this, "UserPool", new UserPoolProps
+            // External identity (context identityUserPoolId + identityDomain): import a shared pool instead of creating one.
+            // The pool, prefix domain and Google IdP then live outside this stack; the client lists Google by name only.
+            UserPoolIdentityProviderGoogle googleIdp = null;
+            if (config.ExternalIdentity is { } ext)
             {
-                UserPoolName = config.Name("users"),
-                SelfSignUpEnabled = true,
-                SignInAliases = new SignInAliases { Email = true },
-                AutoVerify = new AutoVerifiedAttrs { Email = true },
-                UserVerification = new UserVerificationConfig { EmailStyle = VerificationEmailStyle.CODE },
-                AccountRecovery = AccountRecovery.EMAIL_ONLY,
-                PasswordPolicy = new PasswordPolicy
+                UserPool = Amazon.CDK.AWS.Cognito.UserPool.FromUserPoolId(this, "UserPool", ext.PoolId);
+            }
+            else
+            {
+                var ownPool = new UserPool(this, "UserPool", new UserPoolProps
                 {
-                    MinLength = 12,
-                    RequireLowercase = true,
-                    RequireUppercase = true,
-                    RequireDigits = true,
-                    RequireSymbols = false,
-                },
-                RemovalPolicy = RemovalPolicy.RETAIN,
-            });
+                    UserPoolName = config.Name("users"),
+                    SelfSignUpEnabled = true,
+                    SignInAliases = new SignInAliases { Email = true },
+                    AutoVerify = new AutoVerifiedAttrs { Email = true },
+                    UserVerification = new UserVerificationConfig { EmailStyle = VerificationEmailStyle.CODE },
+                    AccountRecovery = AccountRecovery.EMAIL_ONLY,
+                    PasswordPolicy = new PasswordPolicy
+                    {
+                        MinLength = 12,
+                        RequireLowercase = true,
+                        RequireUppercase = true,
+                        RequireDigits = true,
+                        RequireSymbols = false,
+                    },
+                    RemovalPolicy = RemovalPolicy.RETAIN,
+                });
+                UserPool = ownPool;
 
-            // Google IdP: real credentials live in SSM SecureString (path from config googleOauthSecretName).
-            // CDK creates the IdP with placeholders; deploy-infra.ps1 injects the live values post-deploy
-            // via update-identity-provider, so the secret never enters the template and can rotate freely.
-            var googleIdp = new UserPoolIdentityProviderGoogle(this, "GoogleProvider", new UserPoolIdentityProviderGoogleProps
-            {
-                UserPool = UserPool,
-                ClientId = "PLACEHOLDER_SYNCED_POST_DEPLOY",
-                ClientSecretValue = SecretValue.UnsafePlainText("PLACEHOLDER_SYNCED_POST_DEPLOY"),
-                Scopes = new[] { "openid", "email", "profile" },
-                AttributeMapping = new AttributeMapping
+                // Google IdP: real credentials live in SSM SecureString (path from config googleOauthSecretName).
+                // CDK creates the IdP with placeholders; deploy-infra.ps1 injects the live values post-deploy
+                // via update-identity-provider, so the secret never enters the template and can rotate freely.
+                googleIdp = new UserPoolIdentityProviderGoogle(this, "GoogleProvider", new UserPoolIdentityProviderGoogleProps
                 {
-                    Email = ProviderAttribute.GOOGLE_EMAIL,
-                    GivenName = ProviderAttribute.GOOGLE_GIVEN_NAME,
-                    FamilyName = ProviderAttribute.GOOGLE_FAMILY_NAME,
-                },
-            });
+                    UserPool = ownPool,
+                    ClientId = "PLACEHOLDER_SYNCED_POST_DEPLOY",
+                    ClientSecretValue = SecretValue.UnsafePlainText("PLACEHOLDER_SYNCED_POST_DEPLOY"),
+                    Scopes = new[] { "openid", "email", "profile" },
+                    AttributeMapping = new AttributeMapping
+                    {
+                        Email = ProviderAttribute.GOOGLE_EMAIL,
+                        GivenName = ProviderAttribute.GOOGLE_GIVEN_NAME,
+                        FamilyName = ProviderAttribute.GOOGLE_FAMILY_NAME,
+                    },
+                });
+            }
 
             UserPoolClient = UserPool.AddClient("WebClient", new UserPoolClientOptions
             {
@@ -101,9 +112,9 @@ namespace Infrastructure.Stacks
                     CallbackUrls = new[] { $"{origin}/", $"{origin}/auth/callback", $"{origin}/callback" },
                     LogoutUrls = new[] { $"{origin}/" },
                 },
-                SupportedIdentityProviders = new[] { UserPoolClientIdentityProvider.COGNITO, UserPoolClientIdentityProvider.GOOGLE },
+                SupportedIdentityProviders = new[] { UserPoolClientIdentityProvider.COGNITO, UserPoolClientIdentityProvider.Custom("Google") },
             });
-            UserPoolClient.Node.AddDependency(googleIdp);
+            if (googleIdp != null) UserPoolClient.Node.AddDependency(googleIdp);
 
             // ---- Storage ----
             // Browser uploads directly via presigned POST from the SPA origin; reads go through CloudFront, so POST only.
@@ -175,11 +186,11 @@ namespace Infrastructure.Stacks
                     { "IMPORT_CONTACT_URL", $"https://{config.Domain}" },
                 },
             });
-            // The import Lambda only bumps the per-user rate counter, so it gets UpdateItem and nothing else.
+            // The import Lambda bumps the per-user rate counter (UpdateItem) and resolves the owner alias item (GetItem); nothing else.
             ImportFunction.AddToRolePolicy(new PolicyStatement(new PolicyStatementProps
             {
                 Effect = Effect.ALLOW,
-                Actions = new[] { "dynamodb:UpdateItem" },
+                Actions = new[] { "dynamodb:UpdateItem", "dynamodb:GetItem" },
                 Resources = new[] { DataTable.TableArn },
             }));
             // Optional LLM fallback parser. Bedrock Converse is authorised by bedrock:InvokeModel (there is no separate
@@ -330,10 +341,13 @@ namespace Infrastructure.Stacks
                 RecordName = config.Domain + ".",
                 Target = RecordTarget.FromAlias(new CloudFrontTarget(Distribution)),
             });
-            UserPool.AddDomain("AuthDomain", new UserPoolDomainOptions
+            if (config.ExternalIdentity == null)
             {
-                CognitoDomain = new CognitoDomainOptions { DomainPrefix = config.AuthDomainPrefix },
-            });
+                UserPool.AddDomain("AuthDomain", new UserPoolDomainOptions
+                {
+                    CognitoDomain = new CognitoDomainOptions { DomainPrefix = config.AuthDomainPrefix },
+                });
+            }
 
             new ARecord(this, "ApiAlias", new ARecordProps
             {
@@ -349,7 +363,7 @@ namespace Infrastructure.Stacks
             Out("ImageBucketName", ImageBucket.BucketName);
             Out("SpaBucketName", SpaBucket.BucketName);
             Out("DistributionId", Distribution.DistributionId);
-            Out("AuthDomain", config.AuthDomain);
+            Out("AuthDomain", config.ExternalIdentity?.Domain ?? config.AuthDomain);
             Out("ApiUrl", $"https://{config.ApiDomain}");
             Out("ImportReservedConcurrency", config.ImportReservedConcurrency.ToString());
         }

@@ -1,4 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
+import { resolveOwner } from './owner.js';
 
 export interface RequestCtx {
   ownerId: string;
@@ -99,7 +100,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
         }
       }
       const query = Object.fromEntries(new URLSearchParams(event.rawQueryString ?? ''));
-      const result = await r.handler({ ownerId: sub, params, query, body });
+      // Resolve before any data or S3 access: a shared-identity sub may alias a legacy owner id.
+      const ownerId = await resolveOwner(undefined, sub);
+      const result = await r.handler({ ownerId, params, query, body });
       return json(result.status, result.body, result.headers);
     }
     return json(404, { error: 'not_found' });
